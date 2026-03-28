@@ -2792,17 +2792,18 @@ def build_analysis_group_table(
     )
     grouped["% portf."] = grouped["Clients"].div(total_clients).fillna(0)
 
-    if measure_key == "share":
+    if measure_key in {"share", "clients"}:
         grouped = grouped[[group_label, "Clients", "% portf.", "Vigilances critiques", "Risques avérés"]]
         sort_col = "Clients" if sort_desc else group_label
         ascending = False if sort_desc else True
         grouped = grouped.sort_values(sort_col, ascending=ascending, kind="stable")
         return grouped.head(top_n).reset_index(drop=True), f"Répartition simple par {group_label.lower()} sur le périmètre filtré."
 
-    grouped[measure_label] = grouped["Mesure"]
+    safe_measure_label = measure_label if measure_label not in grouped.columns else f"{measure_label} (mesure)"
+    grouped[safe_measure_label] = grouped["Mesure"]
     grouped["% mesure"] = grouped["Mesure"].div(total_measure).fillna(0) if total_measure else 0.0
-    grouped = grouped[[group_label, "Clients", "% portf.", measure_label, "% mesure", "Vigilances critiques", "Risques avérés"]]
-    sort_col = measure_label if sort_desc else group_label
+    grouped = grouped[[group_label, "Clients", "% portf.", safe_measure_label, "% mesure", "Vigilances critiques", "Risques avérés"]]
+    sort_col = safe_measure_label if sort_desc else group_label
     ascending = False if sort_desc else True
     grouped = grouped.sort_values(sort_col, ascending=ascending, kind="stable")
     return grouped.head(top_n).reset_index(drop=True), f"Répartition simple par {group_label.lower()} ; la mesure choisie est affichée séparément."
@@ -2842,17 +2843,18 @@ def build_analysis_cross_table(
         .rename(columns={row_col: row_label, col_col: col_label, "Vigilance": "Vigilances critiques", "Risque": "Risques avérés"})
     )
     grouped["% portf."] = grouped["Clients"].div(total_clients).fillna(0)
-    if measure_key == "share":
+    if measure_key in {"share", "clients"}:
         grouped = grouped[[row_label, col_label, "Clients", "% portf.", "Vigilances critiques", "Risques avérés"]]
         sort_col = "Clients" if sort_desc else row_label
         ascending = False if sort_desc else True
         grouped = grouped.sort_values(sort_col, ascending=ascending, kind="stable")
         return grouped.head(top_n).reset_index(drop=True), f"Croisements majeurs entre {row_label.lower()} et {col_label.lower()}."
 
-    grouped[measure_label] = grouped["Mesure"]
+    safe_measure_label = measure_label if measure_label not in grouped.columns else f"{measure_label} (mesure)"
+    grouped[safe_measure_label] = grouped["Mesure"]
     grouped["% mesure"] = grouped["Mesure"].div(total_measure).fillna(0) if total_measure else 0.0
-    grouped = grouped[[row_label, col_label, "Clients", "% portf.", measure_label, "% mesure", "Vigilances critiques", "Risques avérés"]]
-    sort_col = measure_label if sort_desc else row_label
+    grouped = grouped[[row_label, col_label, "Clients", "% portf.", safe_measure_label, "% mesure", "Vigilances critiques", "Risques avérés"]]
+    sort_col = safe_measure_label if sort_desc else row_label
     ascending = False if sort_desc else True
     grouped = grouped.sort_values(sort_col, ascending=ascending, kind="stable")
     return grouped.head(top_n).reset_index(drop=True), f"Croisements majeurs entre {row_label.lower()} et {col_label.lower()} avec la mesure sélectionnée."
