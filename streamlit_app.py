@@ -67,15 +67,15 @@ FILTER_MAPPING = {
 }
 
 DISPLAY_COLUMNS = [
-    SOC_COL,
     "SIREN",
     "Dénomination",
+    "Vigilance",
+    "Risque",
+    SOC_COL,
     "Pays de résidence",
     "Segment",
     "Produit(service) principal",
     "Canal d’opérations principal 12 mois",
-    "Vigilance",
-    "Risque",
     "Statut EDD",
     "Flag justificatif complet",
     "Analyste",
@@ -465,6 +465,57 @@ def inject_brand_theme() -> None:
             font-weight: 800;
             line-height: 1.1;
             white-space: nowrap;
+        }}
+
+        .cm-stream-note {{
+            margin: 0.1rem 0 0.65rem 0;
+            color: var(--cm-muted);
+            font-size: 0.86rem;
+            font-weight: 600;
+        }}
+
+        .cm-stream-head {{
+            background: linear-gradient(135deg, var(--cm-primary), #245782);
+            color: #FFFFFF;
+            border-radius: 14px;
+            padding: 0.72rem 0.8rem;
+            font-family: 'Sora', sans-serif;
+            font-size: 0.78rem;
+            font-weight: 800;
+            letter-spacing: 0.04em;
+            text-transform: uppercase;
+            min-height: 48px;
+            display: flex;
+            align-items: center;
+            box-shadow: 0 10px 18px rgba(22, 58, 89, 0.10);
+        }}
+
+        .cm-stream-cell {{
+            background: rgba(255,255,255,0.90);
+            border: 1px solid rgba(22, 58, 89, 0.09);
+            border-radius: 14px;
+            padding: 0.7rem 0.8rem;
+            min-height: 52px;
+            display: flex;
+            align-items: center;
+            color: var(--cm-text);
+            box-shadow: 0 6px 14px rgba(22, 58, 89, 0.04);
+            font-size: 0.93rem;
+        }}
+
+        .cm-stream-cell.cm-even {{
+            background: rgba(238, 245, 253, 0.92);
+        }}
+
+        .cm-stream-cell.cm-number {{
+            justify-content: flex-end;
+            font-variant-numeric: tabular-nums;
+            font-weight: 700;
+        }}
+
+        .cm-stream-cell.cm-text-strong {{
+            font-weight: 700;
+            color: var(--cm-primary);
         }}
 
         .cm-hero-pills {{
@@ -1404,26 +1455,25 @@ def build_priority_table(df: pd.DataFrame, top_n: int = 10) -> pd.DataFrame:
         .head(top_n)
         .copy()
     )
-    priority.insert(0, "#", range(1, len(priority) + 1))
+    priority.insert(0, "Rang", range(1, len(priority) + 1))
     columns = [
-        "#",
-        SOC_COL,
-        "Dénomination",
         "SIREN",
-        "Pays de résidence",
-        "Segment",
+        "Dénomination",
         "Vigilance",
         "Risque",
+        SOC_COL,
+        "Pays de résidence",
+        "Segment",
         "Statut EDD",
         "Analyste",
-        "Motifs",
         "Score priorité",
+        "Motifs",
+        "Rang",
     ]
     columns = [c for c in columns if c in priority.columns]
     return priority[columns].rename(
         columns={
             SOC_COL: "Société",
-            "Dénomination": "Client",
             "Pays de résidence": "Pays",
             "Statut EDD": "EDD",
             "Score priorité": "Score",
@@ -1750,14 +1800,30 @@ def siren_society_column(df: pd.DataFrame) -> str | None:
     return None
 
 
+def reorder_table_columns_for_ui(df: pd.DataFrame) -> pd.DataFrame:
+    if df is None or df.empty:
+        return df
+
+    columns = list(df.columns)
+    preferred: list[str] = []
+    for candidate in ["SIREN", "Dénomination", "Client", "Vigilance", "Risque", SOC_COL, "Société"]:
+        if candidate in columns and candidate not in preferred:
+            preferred.append(candidate)
+
+    remaining = [col for col in columns if col not in preferred]
+    return df[preferred + remaining]
+
+
 def table_column_weight(column_name: str) -> float:
-    if column_name in {SOC_COL, "Société", "SIREN", "#", "Nb", "%"}:
-        return 0.9
+    if column_name in {"SIREN", "#", "Rang", "Nb", "%"}:
+        return 0.95
     if column_name in {"Dénomination", "Client"}:
-        return 1.6
+        return 1.8
+    if column_name in {"Vigilance", "Risque", SOC_COL, "Société", "Statut EDD", "EDD"}:
+        return 1.25
     if column_name in {"Motifs", "Commentaire"}:
-        return 2.1
-    return 1.15
+        return 2.25
+    return 1.1
 
 
 def render_clickable_streamlit_table(
@@ -1770,7 +1836,7 @@ def render_clickable_streamlit_table(
         st.info("Aucune donnée disponible.")
         return
 
-    working = df.copy()
+    working = reorder_table_columns_for_ui(df.copy())
     for col in working.columns:
         if pd.api.types.is_datetime64_any_dtype(working[col]):
             working[col] = pd.to_datetime(working[col], errors="coerce").dt.strftime("%d/%m/%Y")
@@ -1782,6 +1848,9 @@ def render_clickable_streamlit_table(
     society_col = siren_society_column(working)
     columns = list(working.columns)
     weights = [table_column_weight(col) for col in columns]
+
+    if "SIREN" in columns and society_col is not None:
+        st.markdown("<div class='cm-stream-note'>Cliquez sur un SIREN pour ouvrir directement la fiche client.</div>", unsafe_allow_html=True)
 
     container = st.container(height=height, border=False) if height else st.container(border=False)
     with container:
@@ -1795,28 +1864,35 @@ def render_clickable_streamlit_table(
 
         for row_idx, (_, row) in enumerate(working.iterrows()):
             row_cols = st.columns(weights, gap="small")
+            row_class = "cm-even" if row_idx % 2 else "cm-odd"
             for col_obj, col_name in zip(row_cols, columns):
                 value = row.get(col_name)
                 with col_obj:
                     if col_name == "SIREN" and society_col is not None:
-                        label = f"{display_value(value)} ↗"
+                        label = f"↗ {display_value(value)}"
                         if st.button(
                             label,
                             key=f"{key_prefix}_open_{row_idx}",
                             help="Ouvrir la fiche client",
-                            use_container_width=True,
+                            use_container_width=False,
                         ):
                             open_client_detail(str(row.get(society_col, "")), str(value))
                             st.rerun()
                     elif col_name == "Vigilance":
                         rendered = render_status_badge(display_value(value), "vigilance")
-                        st.markdown(f"<div class='cm-stream-cell'>{rendered}</div>", unsafe_allow_html=True)
+                        st.markdown(f"<div class='cm-stream-cell {row_class}'>{rendered}</div>", unsafe_allow_html=True)
                     elif col_name in {"Risque", "Statut"}:
                         rendered = render_status_badge(display_value(value), "risk")
-                        st.markdown(f"<div class='cm-stream-cell'>{rendered}</div>", unsafe_allow_html=True)
+                        st.markdown(f"<div class='cm-stream-cell {row_class}'>{rendered}</div>", unsafe_allow_html=True)
                     else:
+                        extra_classes = ["cm-stream-cell", row_class]
+                        if col_name in {"Dénomination", "Client"}:
+                            extra_classes.append("cm-text-strong")
+                        if pd.api.types.is_number(value) and not isinstance(value, bool):
+                            extra_classes.append("cm-number")
+                        class_attr = " ".join(extra_classes)
                         st.markdown(
-                            f"<div class='cm-stream-cell'>{escape(display_value(value))}</div>",
+                            f"<div class='{class_attr}'>{escape(display_value(value))}</div>",
                             unsafe_allow_html=True,
                         )
 
@@ -2329,7 +2405,7 @@ def main() -> None:
     priority_df = build_priority_table(filtered, top_n=10)
     render_clickable_styled_dataframe(style_dataframe(priority_df), priority_df, use_container_width=True, height=420, hide_index=True, key_prefix="priority_table")
     if not priority_df.empty:
-        launcher_df = priority_df.rename(columns={"Société": SOC_COL, "Client": "Dénomination"})
+        launcher_df = priority_df.rename(columns={"Société": SOC_COL})
         launcher_cols = [c for c in [SOC_COL, "SIREN", "Dénomination"] if c in launcher_df.columns]
         if len(launcher_cols) == 3:
             render_client_launcher(
