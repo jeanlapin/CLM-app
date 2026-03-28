@@ -1,79 +1,91 @@
 import streamlit as st
 import pandas as pd
 
-# Configuration Be CLM
-st.set_page_config(page_title="Be CLM - Portefeuille Clients", layout="wide")
+# Configuration Be CLM Premium
+st.set_page_config(page_title="Be CLM - Dashboard", layout="wide")
 
-# Style CSS personnalisé pour le look Be CLM
+# Style Be CLM : Police Inter, Fond Marine, Textes Blancs
 st.markdown("""
     <style>
-    .stApp { background-color: #002b45; color: white; }
-    .metric-card { background-color: #ffffff1a; padding: 20px; border-radius: 10px; text-align: center; }
-    h1, h2, h3 { color: #ffffff; }
-    .stDataFrame { background-color: white; border-radius: 5px; }
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap');
+
+    html, body, [class*="css"] {
+        font-family: 'Inter', sans-serif;
+    }
+
+    .stApp {
+        background-color: #002b45;
+        color: white;
+    }
+
+    /* FORCER LE BLANC SUR LES LIBELLÉS DES MÉTRIQUES (Ligne Total) */
+    [data-testid="stMetricLabel"] {
+        color: #ffffff !important;
+        font-size: 1.1rem !important;
+        font-weight: 600 !important;
+    }
+
+    /* Couleur des chiffres (Valeurs) */
+    [data-testid="stMetricValue"] {
+        color: #00d4ff !important;
+        font-weight: 700;
+    }
+
+    h1, h2, h3 {
+        color: #ffffff !important;
+        font-weight: 700 !important;
+    }
+
+    /* Nettoyage du tableau pour qu'il soit pro */
+    .stDataFrame {
+        background-color: white;
+        border-radius: 8px;
+    }
     </style>
     """, unsafe_allow_html=True)
 
-st.title("🛡️ Be CLM - Classification Management")
-
-@st.cache_data
-def load_data():
+def load_and_clean(file_name):
     try:
-        # Lecture de votre fichier avec vos colonnes réelles
-        df = pd.read_csv("01_Donnees_base_source.csv", sep=';', encoding='utf-8')
+        # Lecture avec point-virgule
+        df = pd.read_csv(file_name, sep=';', encoding='utf-8')
+        # On supprime les lignes où le SIREN est vide (enlève les 944 lignes inutiles)
+        df = df.dropna(subset=['SIREN'])
         return df
-    except Exception as e:
-        st.error(f"Erreur de lecture du fichier : {e}")
+    except:
         return None
 
-df = load_data()
+# Chargement des données
+df_base = load_and_clean("01_Donnees_base_source.csv")
 
-if df is not None:
-    # --- BANDEAU DE SYNTHÈSE (KPIs) ---
-    st.subheader("Synthèse du Portefeuille")
+st.title("🛡️ Be CLM - Portefeuille Clients")
+
+if df_base is not None:
+    # --- CALCULS ---
+    total_clients = len(df_base)
+    france = len(df_base[df_base['Pays de résidence'] == 'France'])
+    etranger = total_clients - france
+    # On gère les majuscules/minuscules pour le risque potentiel
+    risques_p = len(df_base[df_base['Statut de risque (import SaaS source)'].str.contains('potentiel', na=False, case=False)])
+
+    # --- BANDEAU DE SYNTHÈSE ---
+    st.markdown("### Synthèse du Portefeuille")
     col1, col2, col3, col4 = st.columns(4)
     
     with col1:
-        st.metric("Total Clients", len(df))
-    
+        st.metric("Total Clients", f"{total_clients}")
     with col2:
-        # Calcul des risques potentiels (colonne exacte de votre fichier)
-        risques_potentiels = len(df[df['Statut de risque (import SaaS source)'] == 'Risque potentiel'])
-        st.metric("Risques Potentiels", risques_potentiels)
-
+        st.metric("Risques Potentiels", f"{risques_p}")
     with col3:
-        # Clients en France
-        fr_clients = len(df[df['Pays de résidence'] == 'France'])
-        st.metric("Clients France", fr_clients)
-
+        st.metric("Clients France", f"{france}")
     with col4:
-        # Clients Hors France
-        int_clients = len(df[df['Pays de résidence'] != 'France'])
-        st.metric("Hors France", int_clients)
+        st.metric("Clients International", f"{etranger}")
 
-    # --- TABLEAU DE BORD ---
     st.markdown("---")
-    st.subheader("Détail du Portefeuille")
+    st.subheader("Détail des Dossiers")
     
-    # Filtres interactifs
-    col_f1, col_f2 = st.columns(2)
-    with col_f1:
-        segment_choice = st.multiselect("Filtrer par Segment", options=df['Segment'].unique())
-    with col_f2:
-        pays_choice = st.multiselect("Filtrer par Pays", options=df['Pays de résidence'].unique())
-
-    # Application des filtres
-    df_filtered = df.copy()
-    if segment_choice:
-        df_filtered = df_filtered[df_filtered['Segment'].isin(segment_choice)]
-    if pays_choice:
-        df_filtered = df_filtered[df_filtered['Pays de résidence'].isin(pays_choice)]
-
-    # Affichage du tableau (colonnes principales de votre fichier)
-    st.dataframe(df_filtered[[
-        'SIREN', 'Dénomination', 'Pays de résidence', 
-        'Segment', 'Statut EDD', 'Statut de risque (import SaaS source)'
-    ]], use_container_width=True)
+    # Affichage du tableau nettoyé
+    cols = ['SIREN', 'Dénomination', 'Pays de résidence', 'Segment', 'Statut de risque (import SaaS source)']
+    st.dataframe(df_base[cols], use_container_width=True)
 
 else:
-    st.warning("Veuillez vérifier que le fichier '01_Donnees_base_source.csv' est bien présent à la racine de votre dépôt GitHub.")
+    st.error("Fichier source introuvable. Vérifiez l'import sur GitHub.")
