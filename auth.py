@@ -2,15 +2,14 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-import base64
-import hashlib
 import hmac
-import os
 
 import pandas as pd
 import streamlit as st
 
 USERS_FILE = "users.csv"
+REQUIRED_COLUMNS = {"username", "password", "role", "societes_autorisees", "enabled"}
+OPTIONAL_COLUMNS = {"display_name"}
 
 
 @dataclass
@@ -25,28 +24,8 @@ class AuthenticatedUser:
         return self.role.lower() == "admin"
 
 
-def hash_password(password: str, iterations: int = 260_000) -> str:
-    salt = base64.urlsafe_b64encode(os.urandom(16)).decode("ascii").rstrip("=")
-    digest = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt.encode("utf-8"), iterations)
-    token = base64.urlsafe_b64encode(digest).decode("ascii").rstrip("=")
-    return f"pbkdf2_sha256${iterations}${salt}${token}"
-
-
-def verify_password(password: str, encoded_hash: str) -> bool:
-    try:
-        algorithm, iterations_text, salt, expected = encoded_hash.split("$", 3)
-        if algorithm != "pbkdf2_sha256":
-            return False
-        digest = hashlib.pbkdf2_hmac(
-            "sha256",
-            password.encode("utf-8"),
-            salt.encode("utf-8"),
-            int(iterations_text),
-        )
-        candidate = base64.urlsafe_b64encode(digest).decode("ascii").rstrip("=")
-        return hmac.compare_digest(candidate, expected)
-    except Exception:
-        return False
+def _normalize_bool(series: pd.Series) -> pd.Series:
+    return series.astype(str).str.strip().str.lower().isin(["true", "1", "oui", "yes"])
 
 
 @st.cache_data(show_spinner=False)
@@ -63,22 +42,33 @@ def load_users(search_root: Path | None = None) -> pd.DataFrame:
     for path in candidates:
         if path.exists():
             df = pd.read_csv(path, sep=";", encoding="utf-8-sig").dropna(how="all")
-            expected_cols = {"username", "display_name", "password_hash", "role", "enabled", "societes_autorisees"}
-            missing = expected_cols.difference(df.columns)
+            missing = REQUIRED_COLUMNS.difference(df.columns)
             if missing:
                 missing_text = ", ".join(sorted(missing))
-                raise ValueError(f"Le fichier users.csv est incomplet. Colonnes manquantes : {missing_text}")
+                raise ValueError(
+                    "Le fichier users.csv est incomplet. Colonnes obligatoires : "
+                    f"username;password;role;societes_autorisees;enabled. Manquantes : {missing_text}"
+                )
+
             df["username"] = df["username"].astype(str).str.strip().str.lower()
-            df["display_name"] = df["display_name"].astype(str).str.strip()
+            df["password"] = df["password"].fillna("").astype(str)
             df["role"] = df["role"].astype(str).str.strip().str.lower()
-            df["enabled"] = df["enabled"].astype(str).str.strip().str.lower().isin(["true", "1", "oui", "yes"])
+            df["enabled"] = _normalize_bool(df["enabled"])
             df["societes_autorisees"] = df["societes_autorisees"].fillna("").astype(str)
+
+            if "display_name" not in df.columns:
+                df["display_name"] = df["username"]
+            else:
+                df["display_name"] = df["display_name"].fillna(df["username"]).astype(str).str.strip()
+                df.loc[df["display_name"].eq(""), "display_name"] = df["username"]
             return df
+
     searched = "\n - ".join(str(p) for p in candidates)
     raise FileNotFoundError(
         "Impossible de trouver users.csv. Créez ce fichier à la racine du dépôt."
         f"\nEmplacements testés :\n - {searched}"
     )
+
 
 
 def parse_allowed_societies(raw_value: str) -> list[str]:
@@ -90,23 +80,32 @@ def parse_allowed_societies(raw_value: str) -> list[str]:
     return sorted({item.strip().upper() for item in raw.split(",") if item.strip()})
 
 
+
+def verify_password(password_entered: str, password_expected: str) -> bool:
+    return hmac.compare_digest(str(password_entered or ""), str(password_expected or ""))
+
+
+
 def authenticate_user(username: str, password: str, search_root: Path | None = None) -> AuthenticatedUser | None:
     users = load_users(search_root)
-    username_normalized = username.strip().lower()
+    username_normalized = str(username or "").strip().lower()
     row = users.loc[users["username"] == username_normalized]
     if row.empty:
         return None
+
     user = row.iloc[0]
     if not bool(user["enabled"]):
         return None
-    if not verify_password(password, str(user["password_hash"])):
+    if not verify_password(password, str(user["password"])):
         return None
+
     return AuthenticatedUser(
         username=str(user["username"]),
         display_name=str(user["display_name"]),
         role=str(user["role"]),
         societes_autorisees=parse_allowed_societies(str(user["societes_autorisees"])),
     )
+
 
 
 def login_form() -> AuthenticatedUser | None:
@@ -133,8 +132,11 @@ def login_form() -> AuthenticatedUser | None:
         }
         st.rerun()
 
-    st.info("Ajoutez un fichier users.csv à la racine du projet pour activer les comptes utilisateurs.")
+    st.info(
+        "Version simple : users.csv contient les mots de passe en clair. À utiliser pour un prototype sur dépôt privé."
+    )
     return None
+
 
 
 def get_current_user() -> AuthenticatedUser | None:
@@ -142,6 +144,7 @@ def get_current_user() -> AuthenticatedUser | None:
     if not payload:
         return None
     return AuthenticatedUser(**payload)
+
 
 
 def logout_button() -> None:
