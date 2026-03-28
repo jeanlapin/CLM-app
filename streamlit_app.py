@@ -9,6 +9,7 @@ import json
 import re
 import hmac
 import shutil
+from urllib.parse import quote_plus
 
 import numpy as np
 import pandas as pd
@@ -1659,6 +1660,77 @@ def display_value(value: object, kind: str | None = None) -> str:
     return text
 
 
+def build_client_href(societe_id: object, siren: object) -> str:
+    soc = quote_plus(str(societe_id or "").strip())
+    sir = quote_plus(str(siren or "").strip())
+    return f"?view=client&societe={soc}&siren={sir}"
+
+
+def sync_view_state_from_query_params() -> None:
+    query_params = st.query_params
+    view = str(query_params.get("view", "")).strip().lower()
+    societe_id = str(query_params.get("societe", "")).strip()
+    siren = str(query_params.get("siren", "")).strip()
+
+    if view == "client" and societe_id and siren:
+        st.session_state["cm_view"] = "client"
+        st.session_state["cm_client_societe"] = societe_id
+        st.session_state["cm_client_siren"] = siren
+
+
+def make_siren_clickable_df(df: pd.DataFrame) -> pd.DataFrame:
+    if df is None or df.empty or "SIREN" not in df.columns:
+        return df
+
+    society_col = None
+    if SOC_COL in df.columns:
+        society_col = SOC_COL
+    elif "Société" in df.columns:
+        society_col = "Société"
+
+    if society_col is None:
+        return df
+
+    out = df.copy()
+    out["SIREN"] = out.apply(lambda row: build_client_href(row.get(society_col), row.get("SIREN")), axis=1)
+    return out
+
+
+def siren_link_column_config() -> dict[str, object]:
+    return {
+        "SIREN": st.column_config.LinkColumn(
+            "SIREN",
+            help="Cliquez sur le SIREN pour ouvrir la fiche client.",
+            display_text=r".*[?&]siren=([^&]+).*",
+            width="small",
+            pinned=True,
+        )
+    }
+
+
+def render_clickable_dataframe(df: pd.DataFrame, *, use_container_width: bool = True, height: int | None = None, hide_index: bool = True) -> None:
+    clickable = make_siren_clickable_df(df)
+    st.dataframe(
+        clickable,
+        use_container_width=use_container_width,
+        height=height,
+        hide_index=hide_index,
+        column_config=siren_link_column_config() if "SIREN" in clickable.columns else None,
+    )
+
+
+def render_clickable_styled_dataframe(styler: pd.io.formats.style.Styler, source_df: pd.DataFrame, *, use_container_width: bool = True, height: int | None = None, hide_index: bool = True) -> None:
+    clickable_styler = style_dataframe(make_siren_clickable_df(source_df))
+    st.dataframe(
+        clickable_styler,
+        use_container_width=use_container_width,
+        height=height,
+        hide_index=hide_index,
+        column_config=siren_link_column_config() if "SIREN" in source_df.columns else None,
+    )
+
+
+
 def client_label(row: pd.Series) -> str:
     return f"{row.get('Dénomination', 'Client')} · {row.get('SIREN', '')} · {row.get(SOC_COL, '')}"
 
@@ -1667,12 +1739,16 @@ def open_client_detail(societe_id: str, siren: str) -> None:
     st.session_state["cm_view"] = "client"
     st.session_state["cm_client_societe"] = societe_id
     st.session_state["cm_client_siren"] = siren
+    st.query_params["view"] = "client"
+    st.query_params["societe"] = societe_id
+    st.query_params["siren"] = siren
 
 
 def return_to_portfolio() -> None:
     st.session_state["cm_view"] = "portfolio"
     st.session_state.pop("cm_client_societe", None)
     st.session_state.pop("cm_client_siren", None)
+    st.query_params.clear()
 
 
 def render_client_launcher(df: pd.DataFrame, key_prefix: str = "portfolio") -> None:
@@ -2077,6 +2153,7 @@ def main() -> None:
         return
 
     render_admin_data_manager(user)
+    sync_view_state_from_query_params()
 
     try:
         base, indicators, history = load_source_data()
@@ -2140,7 +2217,7 @@ def main() -> None:
     st.divider()
     st.markdown('<h3 class="cm-section-title">Dossiers prioritaires</h3>', unsafe_allow_html=True)
     priority_df = build_priority_table(filtered, top_n=10)
-    st.dataframe(style_dataframe(priority_df), use_container_width=True, height=420, hide_index=True)
+    render_clickable_styled_dataframe(style_dataframe(priority_df), priority_df, use_container_width=True, height=420, hide_index=True)
     if not priority_df.empty:
         launcher_df = priority_df.rename(columns={"Société": SOC_COL, "Client": "Dénomination"})
         launcher_cols = [c for c in [SOC_COL, "SIREN", "Dénomination"] if c in launcher_df.columns]
@@ -2160,7 +2237,7 @@ def main() -> None:
     )
 
     with st.expander("Aperçu des données sous-jacentes filtrées"):
-        st.dataframe(style_dataframe(filtered[export_columns]), use_container_width=True, height=420, hide_index=True)
+        render_clickable_styled_dataframe(style_dataframe(filtered[export_columns]), filtered[export_columns], use_container_width=True, height=420, hide_index=True)
 
 
 
