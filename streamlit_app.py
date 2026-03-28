@@ -1,6 +1,12 @@
+from __future__ import annotations
+
 from pathlib import Path
+from io import BytesIO
+from datetime import datetime, timezone
+import json
 import re
 import hmac
+import shutil
 
 import numpy as np
 import pandas as pd
@@ -15,6 +21,9 @@ DATA_FILES = {
     "history": "03_Indicateurs_historique.csv",
 }
 KEY_COLUMNS = [SOC_COL, "SIREN"]
+STORAGE_ROOT = ".app_storage"
+ACTIVE_DATASET_DIR = "active_dataset"
+MANIFEST_FILE = "manifest.json"
 
 VIGILANCE_ORDER = [
     "Vigilance Critique",
@@ -82,8 +91,30 @@ class DataValidationError(ValueError):
     pass
 
 
-def find_file(filename):
-    here = Path(__file__).resolve().parent
+class NoPublishedDatasetError(FileNotFoundError):
+    pass
+
+
+def app_root() -> Path:
+    return Path(__file__).resolve().parent
+
+
+def storage_root() -> Path:
+    root = app_root() / STORAGE_ROOT
+    root.mkdir(parents=True, exist_ok=True)
+    return root
+
+
+def active_dataset_path() -> Path:
+    return storage_root() / ACTIVE_DATASET_DIR
+
+
+def manifest_path() -> Path:
+    return active_dataset_path() / MANIFEST_FILE
+
+
+def find_file(filename: str) -> Path:
+    here = app_root()
     candidates = [
         here / filename,
         here / "data" / filename,
@@ -97,11 +128,11 @@ def find_file(filename):
     raise FileNotFoundError(f"Impossible de trouver {filename}. Emplacements testés :\n - {searched}")
 
 
-def read_csv_semicolon(path):
-    return pd.read_csv(path, sep=";", encoding="utf-8-sig").dropna(how="all")
+def read_csv_semicolon(source) -> pd.DataFrame:
+    return pd.read_csv(source, sep=";", encoding="utf-8-sig").dropna(how="all")
 
 
-def normalize_siren(series):
+def normalize_siren(series: pd.Series) -> pd.Series:
     return (
         series.astype(str)
         .str.strip()
@@ -110,7 +141,7 @@ def normalize_siren(series):
     )
 
 
-def normalize_societe_id(series):
+def normalize_societe_id(series: pd.Series) -> pd.Series:
     return (
         series.astype(str)
         .str.strip()
@@ -119,7 +150,7 @@ def normalize_societe_id(series):
     )
 
 
-def clean_text_column(series):
+def clean_text_column(series: pd.Series) -> pd.Series:
     return (
         series.astype("string")
         .str.strip()
@@ -142,7 +173,7 @@ def parse_percent(value):
         return np.nan
 
 
-def validate_required_columns(df, label):
+def validate_required_columns(df: pd.DataFrame, label: str) -> None:
     missing = [col for col in REQUIRED_COLUMNS[label] if col not in df.columns]
     if missing:
         raise DataValidationError(
@@ -152,7 +183,7 @@ def validate_required_columns(df, label):
 
 
 @st.cache_data(show_spinner=False)
-def load_users():
+def load_users() -> pd.DataFrame:
     users = read_csv_semicolon(find_file(USERS_FILE))
     validate_required_columns(users, "users")
     users["username"] = users["username"].astype(str).str.strip().str.lower()
@@ -168,7 +199,7 @@ def load_users():
     return users
 
 
-def parse_allowed_societies(raw_value):
+def parse_allowed_societies(raw_value: str) -> list[str]:
     raw = str(raw_value or "").strip()
     if not raw:
         return []
@@ -177,7 +208,7 @@ def parse_allowed_societies(raw_value):
     return sorted({item.strip().upper() for item in raw.split(",") if item.strip()})
 
 
-def authenticate_user(username, password):
+def authenticate_user(username: str, password: str):
     users = load_users()
     username = str(username or "").strip().lower()
     row = users.loc[users["username"] == username]
@@ -200,7 +231,7 @@ def get_current_user():
     return st.session_state.get("authenticated_user")
 
 
-def login_form():
+def login_form() -> None:
     st.subheader("Connexion")
     with st.form("login_form", clear_on_submit=False):
         username = st.text_input("Identifiant")
@@ -218,16 +249,116 @@ def login_form():
     st.info("Version simple : users.csv contient les mots de passe en clair. À utiliser sur un dépôt privé.")
 
 
-def logout_button():
+def logout_button() -> None:
     if st.button("Se déconnecter"):
         st.session_state.pop("authenticated_user", None)
         st.rerun()
 
 
-def load_source_data():
-    base = read_csv_semicolon(find_file(DATA_FILES["base"]))
-    indicators = read_csv_semicolon(find_file(DATA_FILES["indicators"]))
-    history = read_csv_semicolon(find_file(DATA_FILES["history"]))
+def parse_uploaded_dataset(uploaded_files: dict[str, object]) -> dict[str, pd.DataFrame]:
+    parsed: dict[str, pd.DataFrame] = {}
+    for label, expected_name in DATA_FILES.items():
+        uploaded = uploaded_files.get(label)
+        if uploaded is None:
+            raise DataValidationError(f"Chargez le fichier {expected_name}.")
+        df = read_csv_semicolon(BytesIO(uploaded.getvalue()))
+        validate_required_columns(df, label)
+        df[SOC_COL] = normalize_societe_id(df[SOC_COL])
+        df["SIREN"] = normalize_siren(df["SIREN"])
+        df = df.dropna(subset=KEY_COLUMNS).copy()
+        if df.empty:
+            raise DataValidationError(f"Le fichier {expected_name} ne contient aucune ligne exploitable après normalisation.")
+        parsed[label] = df
+    return parsed
+
+
+def write_manifest(parsed: dict[str, pd.DataFrame], user: dict) -> dict:
+    all_societies = sorted(
+        {
+            str(v).strip().upper()
+            for df in parsed.values()
+            for v in df[SOC_COL].dropna().astype(str)
+            if str(v).strip()
+        }
+    )
+    return {
+        "published_at_utc": datetime.now(timezone.utc).isoformat(),
+        "published_by": user["username"],
+        "published_by_name": user["display_name"],
+        "files": {label: DATA_FILES[label] for label in DATA_FILES},
+        "row_counts": {label: int(len(df)) for label, df in parsed.items()},
+        "societes": all_societies,
+        "societes_count": len(all_societies),
+    }
+
+
+def publish_uploaded_dataset(uploaded_files: dict[str, object], user: dict) -> None:
+    parsed = parse_uploaded_dataset(uploaded_files)
+
+    root = storage_root()
+    temp_dir = root / f"_tmp_{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S%f')}"
+    current_dir = active_dataset_path()
+    backup_dir = root / "_backup_active"
+
+    if backup_dir.exists():
+        shutil.rmtree(backup_dir)
+    temp_dir.mkdir(parents=True, exist_ok=False)
+
+    try:
+        for label, expected_name in DATA_FILES.items():
+            uploaded = uploaded_files[label]
+            (temp_dir / expected_name).write_bytes(uploaded.getvalue())
+
+        manifest = write_manifest(parsed, user)
+        (temp_dir / MANIFEST_FILE).write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
+
+        if current_dir.exists():
+            current_dir.replace(backup_dir)
+        temp_dir.replace(current_dir)
+        if backup_dir.exists():
+            shutil.rmtree(backup_dir)
+    except Exception:
+        if temp_dir.exists():
+            shutil.rmtree(temp_dir, ignore_errors=True)
+        if backup_dir.exists() and not current_dir.exists():
+            backup_dir.replace(current_dir)
+        raise
+
+
+def clear_published_dataset() -> None:
+    current_dir = active_dataset_path()
+    if current_dir.exists():
+        shutil.rmtree(current_dir)
+
+
+def load_manifest() -> dict | None:
+    path = manifest_path()
+    if not path.exists():
+        return None
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return None
+
+
+def load_source_data() -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+    current_dir = active_dataset_path()
+    if not current_dir.exists():
+        raise NoPublishedDatasetError(
+            "Aucun jeu de données publié. Connectez-vous avec un compte admin puis chargez les 3 fichiers CSV depuis la barre latérale."
+        )
+
+    def _read(label: str) -> pd.DataFrame:
+        path = current_dir / DATA_FILES[label]
+        if not path.exists():
+            raise NoPublishedDatasetError(
+                "Jeu de données incomplet côté serveur. Republiez les 3 fichiers 01, 02 et 03 depuis un compte admin."
+            )
+        return read_csv_semicolon(path)
+
+    base = _read("base")
+    indicators = _read("indicators")
+    history = _read("history")
 
     validate_required_columns(base, "base")
     validate_required_columns(indicators, "indicators")
@@ -283,13 +414,12 @@ def load_source_data():
     return base, indicators, history
 
 
-def status_columns(indicators_df):
+def status_columns(indicators_df: pd.DataFrame) -> list[str]:
     cols = [c for c in indicators_df.columns if re.search(r"(?i)\\bstatut\\b", c)]
     return [c for c in cols if c != "Vigilance statut"]
 
 
-@st.cache_data(show_spinner=False)
-def build_portfolio_dataset():
+def build_portfolio_dataset() -> pd.DataFrame:
     base, indicators, history = load_source_data()
 
     ind_status_cols = status_columns(indicators)
@@ -360,24 +490,24 @@ def build_portfolio_dataset():
     return portfolio
 
 
-def non_empty_sorted(values):
+def non_empty_sorted(values) -> list[str]:
     return sorted({str(v).strip() for v in values if pd.notna(v) and str(v).strip()})
 
 
-def available_societies(df):
+def available_societies(df: pd.DataFrame) -> list[str]:
     if SOC_COL not in df.columns:
         return []
     return non_empty_sorted(df[SOC_COL].unique())
 
 
-def restrict_to_societies(df, societies):
+def restrict_to_societies(df: pd.DataFrame, societies: list[str]) -> pd.DataFrame:
     normalized = {str(s).strip().upper() for s in societies if str(s).strip()}
     if not normalized:
         return df.iloc[0:0].copy()
     return df[df[SOC_COL].astype(str).str.upper().isin(normalized)].copy()
 
 
-def apply_filters(df, filters):
+def apply_filters(df: pd.DataFrame, filters: dict) -> pd.DataFrame:
     result = df.copy()
     for label, value in filters.items():
         if value == "Tous":
@@ -386,7 +516,7 @@ def apply_filters(df, filters):
     return result
 
 
-def build_distribution(df, column, order):
+def build_distribution(df: pd.DataFrame, column: str, order: list[str]) -> pd.DataFrame:
     counts = df[column].value_counts(dropna=False)
     total = len(df)
     rows = []
@@ -396,7 +526,7 @@ def build_distribution(df, column, order):
     return pd.DataFrame(rows)
 
 
-def build_alert_table(df):
+def build_alert_table(df: pd.DataFrame) -> pd.DataFrame:
     rows = [
         ("Justificatif incomplet", int(df["Alerte justificatif incomplet"].sum())),
         ("Vigilance critique", int(df["Alerte vigilance critique"].sum())),
@@ -408,7 +538,7 @@ def build_alert_table(df):
     return pd.DataFrame(rows, columns=["Alerte", "Nb"])
 
 
-def ranked_counts(df, column, top_n=5):
+def ranked_counts(df: pd.DataFrame, column: str, top_n: int = 5) -> pd.DataFrame:
     if column not in df.columns:
         return pd.DataFrame(columns=["Libellé", "Nb"])
     series = df[column].dropna().astype(str).str.strip()
@@ -425,7 +555,7 @@ def ranked_counts(df, column, top_n=5):
     )
 
 
-def build_priority_table(df, top_n=10):
+def build_priority_table(df: pd.DataFrame, top_n: int = 10) -> pd.DataFrame:
     priority = (
         df.sort_values(["Score priorité", SOC_COL, "SIREN"], ascending=[False, True, False], kind="stable")
         .head(top_n)
@@ -458,14 +588,14 @@ def build_priority_table(df, top_n=10):
     )
 
 
-def format_percent_column(df):
+def format_percent_column(df: pd.DataFrame) -> pd.DataFrame:
     output = df.copy()
     if "%" in output.columns:
         output["%"] = output["%"].map(lambda x: f"{x:.1%}")
     return output
 
 
-def dataframe_to_csv_bytes(df):
+def dataframe_to_csv_bytes(df: pd.DataFrame) -> bytes:
     export = df.copy()
     for col in export.columns:
         if pd.api.types.is_datetime64_any_dtype(export[col]):
@@ -473,13 +603,85 @@ def dataframe_to_csv_bytes(df):
     return export.to_csv(index=False, sep=";", encoding="utf-8-sig").encode("utf-8-sig")
 
 
-def reset_filters():
+def reset_filters() -> None:
     for key in list(st.session_state.keys()):
         if key.startswith("filter_"):
             st.session_state[key] = "Tous"
 
 
-def render_scope_selector(df, user):
+def format_manifest_date(value: str | None) -> str:
+    if not value:
+        return "inconnue"
+    try:
+        dt = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        return dt.astimezone().strftime("%d/%m/%Y %H:%M")
+    except Exception:
+        return str(value)
+
+
+def render_admin_data_manager(user: dict) -> None:
+    if user["role"] != "admin":
+        return
+
+    manifest = load_manifest()
+    with st.sidebar.expander("Administration des données", expanded=False):
+        if manifest:
+            st.success(
+                "Jeu actif : publié le {} par {}.".format(
+                    format_manifest_date(manifest.get("published_at_utc")),
+                    manifest.get("published_by_name") or manifest.get("published_by") or "inconnu",
+                )
+            )
+            st.caption(
+                "Sociétés : {} | Lignes 01/02/03 : {}/{}/{}".format(
+                    manifest.get("societes_count", 0),
+                    manifest.get("row_counts", {}).get("base", 0),
+                    manifest.get("row_counts", {}).get("indicators", 0),
+                    manifest.get("row_counts", {}).get("history", 0),
+                )
+            )
+        else:
+            st.warning("Aucun jeu de données publié pour le moment.")
+
+        st.markdown("**Publier un nouveau jeu de données**")
+        upload_base = st.file_uploader(
+            "01_Donnees_base_source.csv",
+            type=["csv"],
+            key="admin_upload_base",
+        )
+        upload_indicators = st.file_uploader(
+            "02_Indicateurs_source.csv",
+            type=["csv"],
+            key="admin_upload_indicators",
+        )
+        upload_history = st.file_uploader(
+            "03_Indicateurs_historique.csv",
+            type=["csv"],
+            key="admin_upload_history",
+        )
+
+        if st.button("Publier ces 3 fichiers", type="primary", key="publish_dataset"):
+            try:
+                publish_uploaded_dataset(
+                    {
+                        "base": upload_base,
+                        "indicators": upload_indicators,
+                        "history": upload_history,
+                    },
+                    user,
+                )
+                st.success("Le nouveau jeu de données est maintenant actif pour tous les utilisateurs.")
+                st.rerun()
+            except Exception as exc:
+                st.error(str(exc))
+
+        if manifest and st.button("Supprimer le jeu actif", type="secondary", key="clear_dataset"):
+            clear_published_dataset()
+            st.warning("Le jeu actif a été supprimé.")
+            st.rerun()
+
+
+def render_scope_selector(df: pd.DataFrame, user: dict):
     all_societies = available_societies(df)
     if user["role"] == "admin" or "ALL" in user["societes_autorisees"]:
         allowed = all_societies
@@ -507,7 +709,7 @@ def render_scope_selector(df, user):
     return selection, allowed
 
 
-def render_filters(df):
+def render_filters(df: pd.DataFrame) -> dict:
     st.subheader("Filtres")
     st.caption("Les filtres sont cumulatifs et recalculent tout le tableau.")
 
@@ -533,7 +735,7 @@ def render_filters(df):
     return selections
 
 
-def render_kpis(df):
+def render_kpis(df: pd.DataFrame) -> None:
     st.subheader("Bandeau de synthèse")
     total = len(df)
     vigilance_renforcee = int(df["Vigilance"].isin(CRITICAL_VIGILANCE).sum()) if "Vigilance" in df.columns else 0
@@ -556,31 +758,38 @@ def render_kpis(df):
             st.caption("Fraîcheur visible : dernière mise à jour vigilance = {}.".format(last_update.strftime("%d/%m/%Y")))
 
 
-def render_distribution_block(title, dist_df, index_col):
+def render_distribution_block(title: str, dist_df: pd.DataFrame, index_col: str) -> None:
     st.markdown("**{}**".format(title))
     st.bar_chart(dist_df.set_index(index_col)[["Nb"]], height=260)
     st.dataframe(format_percent_column(dist_df), hide_index=True, use_container_width=True)
 
 
-def render_top_block(title, df):
+def render_top_block(title: str, df: pd.DataFrame) -> None:
     st.markdown("**{}**".format(title))
     st.dataframe(df, hide_index=True, use_container_width=True)
 
 
-def render_user_header(user, selected_societies, total_societies):
+def render_user_header(user: dict, selected_societies: list[str], total_societies: int) -> None:
+    manifest = load_manifest()
     with st.sidebar:
         st.markdown("### Session")
         st.write("**Utilisateur :** {}".format(user["display_name"]))
         st.write("**Rôle :** {}".format(user["role"]))
         st.write("**Sociétés sélectionnées :** {} / {}".format(len(selected_societies), total_societies))
+        if manifest:
+            st.write(
+                "**Jeu actif :** {}".format(
+                    format_manifest_date(manifest.get("published_at_utc"))
+                )
+            )
         logout_button()
 
 
-def main():
+def main() -> None:
     st.set_page_config(page_title=PAGE_TITLE, layout="wide")
     st.title(PAGE_TITLE)
     st.caption(
-        "Version simple en un seul fichier. Les fichiers 01, 02 et 03 doivent contenir la colonne 'societe_id' en première position."
+        "L’admin publie un jeu de données 01/02/03 ; tous les utilisateurs lisent ensuite ce jeu actif."
     )
 
     user = get_current_user()
@@ -588,8 +797,13 @@ def main():
         login_form()
         return
 
+    render_admin_data_manager(user)
+
     try:
         portfolio = build_portfolio_dataset()
+    except NoPublishedDatasetError as exc:
+        st.info(str(exc))
+        return
     except (FileNotFoundError, DataValidationError, ValueError) as exc:
         st.error(str(exc))
         return
@@ -653,4 +867,5 @@ def main():
         st.dataframe(filtered[export_columns], hide_index=True, use_container_width=True, height=420)
 
 
-main()
+if __name__ == "__main__":
+    main()
