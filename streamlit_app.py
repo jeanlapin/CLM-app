@@ -734,6 +734,74 @@ def inject_brand_theme() -> None:
             color: var(--cm-muted);
         }}
 
+        .cm-click-table-wrap {{
+            overflow: auto;
+            border: 1px solid rgba(22, 58, 89, 0.12);
+            border-radius: 18px;
+            background: rgba(255,255,255,0.92);
+            box-shadow: 0 10px 24px rgba(22, 58, 89, 0.06);
+        }}
+
+        .cm-click-table {{
+            width: 100%;
+            border-collapse: separate;
+            border-spacing: 0;
+            min-width: 880px;
+        }}
+
+        .cm-click-table thead th {{
+            position: sticky;
+            top: 0;
+            z-index: 1;
+            background: var(--cm-primary);
+            color: white;
+            font-family: 'Sora', sans-serif;
+            font-size: 0.86rem;
+            font-weight: 700;
+            letter-spacing: 0.01em;
+            padding: 0.78rem 0.9rem;
+            text-align: left;
+            white-space: nowrap;
+        }}
+
+        .cm-click-table tbody td {{
+            padding: 0.72rem 0.9rem;
+            border-bottom: 1px solid rgba(22, 58, 89, 0.08);
+            vertical-align: middle;
+            background: rgba(255,255,255,0.98);
+            white-space: nowrap;
+        }}
+
+        .cm-click-table tbody tr:nth-child(even) td {{
+            background: rgba(244, 249, 255, 0.96);
+        }}
+
+        .cm-click-table tbody tr:hover td {{
+            background: rgba(231, 241, 252, 0.96);
+        }}
+
+        .cm-table-link {{
+            display: inline-flex;
+            align-items: center;
+            gap: 0.3rem;
+            color: var(--cm-primary) !important;
+            font-weight: 800;
+            text-decoration: none;
+            border-bottom: 1px solid rgba(22, 58, 89, 0.24);
+            padding-bottom: 1px;
+            cursor: pointer;
+        }}
+
+        .cm-table-link:hover {{
+            color: var(--cm-secondary) !important;
+            border-bottom-color: rgba(42, 108, 168, 0.42);
+        }}
+
+        .cm-table-link-icon {{
+            font-size: 0.78rem;
+            opacity: 0.8;
+        }}
+
         @media (max-width: 1200px) {{
             .cm-client-hero-grid, .cm-client-grid {{
                 grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1678,57 +1746,67 @@ def sync_view_state_from_query_params() -> None:
         st.session_state["cm_client_siren"] = siren
 
 
-def make_siren_clickable_df(df: pd.DataFrame) -> pd.DataFrame:
-    if df is None or df.empty or "SIREN" not in df.columns:
-        return df
-
-    society_col = None
+def siren_society_column(df: pd.DataFrame) -> str | None:
+    if df is None or df.empty:
+        return None
     if SOC_COL in df.columns:
-        society_col = SOC_COL
-    elif "Société" in df.columns:
-        society_col = "Société"
-
-    if society_col is None:
-        return df
-
-    out = df.copy()
-    out["SIREN"] = out.apply(lambda row: build_client_href(row.get(society_col), row.get("SIREN")), axis=1)
-    return out
+        return SOC_COL
+    if "Société" in df.columns:
+        return "Société"
+    return None
 
 
-def siren_link_column_config() -> dict[str, object]:
-    return {
-        "SIREN": st.column_config.LinkColumn(
-            "SIREN",
-            help="Cliquez sur le SIREN pour ouvrir la fiche client.",
-            display_text=r".*[?&]siren=([^&]+).*",
-            width="small",
-            pinned=True,
-        )
-    }
+def render_clickable_html_table(
+    df: pd.DataFrame,
+    *,
+    height: int | None = None,
+) -> None:
+    if df is None or df.empty:
+        st.info("Aucune donnée disponible.")
+        return
+
+    working = df.copy()
+    for col in working.columns:
+        if pd.api.types.is_datetime64_any_dtype(working[col]):
+            working[col] = pd.to_datetime(working[col], errors="coerce").dt.strftime("%d/%m/%Y")
+
+    society_col = siren_society_column(working)
+    style_attr = f" style=\"max-height:{int(height)}px;\"" if height else ""
+    html = [f"<div class='cm-click-table-wrap'{style_attr}><table class='cm-click-table'><thead><tr>"]
+    for col in working.columns:
+        html.append(f"<th>{escape(str(col))}</th>")
+    html.append("</tr></thead><tbody>")
+
+    for _, row in working.iterrows():
+        html.append("<tr>")
+        for col in working.columns:
+            value = row.get(col)
+            if col == "SIREN" and society_col is not None:
+                href = build_client_href(row.get(society_col), value)
+                label = escape(display_value(value))
+                rendered = (
+                    f"<a class='cm-table-link' href='{escape(href)}' title='Ouvrir la fiche client'>"
+                    f"{label}<span class='cm-table-link-icon'>↗</span></a>"
+                )
+            elif col == "Vigilance":
+                rendered = render_status_badge(display_value(value), "vigilance")
+            elif col in {"Risque", "Statut"}:
+                rendered = render_status_badge(display_value(value), "risk")
+            else:
+                rendered = escape(display_value(value))
+            html.append(f"<td>{rendered}</td>")
+        html.append("</tr>")
+
+    html.append("</tbody></table></div>")
+    st.markdown("".join(html), unsafe_allow_html=True)
 
 
 def render_clickable_dataframe(df: pd.DataFrame, *, use_container_width: bool = True, height: int | None = None, hide_index: bool = True) -> None:
-    clickable = make_siren_clickable_df(df)
-    st.dataframe(
-        clickable,
-        use_container_width=use_container_width,
-        height=height,
-        hide_index=hide_index,
-        column_config=siren_link_column_config() if "SIREN" in clickable.columns else None,
-    )
+    render_clickable_html_table(df, height=height)
 
 
 def render_clickable_styled_dataframe(styler: pd.io.formats.style.Styler, source_df: pd.DataFrame, *, use_container_width: bool = True, height: int | None = None, hide_index: bool = True) -> None:
-    clickable_styler = style_dataframe(make_siren_clickable_df(source_df))
-    st.dataframe(
-        clickable_styler,
-        use_container_width=use_container_width,
-        height=height,
-        hide_index=hide_index,
-        column_config=siren_link_column_config() if "SIREN" in source_df.columns else None,
-    )
-
+    render_clickable_html_table(source_df, height=height)
 
 
 def client_label(row: pd.Series) -> str:
