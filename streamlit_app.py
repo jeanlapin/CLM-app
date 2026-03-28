@@ -8,7 +8,6 @@ from tableau1_logic import (
     DISPLAY_COLUMNS,
     FILTER_MAPPING,
     RISK_ORDER,
-    SOC_COL,
     VIGILANCE_ORDER,
     DataValidationError,
     apply_filters,
@@ -32,10 +31,12 @@ def load_portfolio():
     return build_portfolio_dataset()
 
 
+
 def reset_filters() -> None:
     for key in list(st.session_state.keys()):
         if key.startswith("filter_"):
             st.session_state[key] = "Tous"
+
 
 
 def render_scope_selector(df, user):
@@ -67,6 +68,7 @@ def render_scope_selector(df, user):
     return selection, allowed
 
 
+
 def render_filters(df):
     st.subheader("Filtres")
     st.caption("Les filtres sont cumulatifs et recalculent tout le tableau.")
@@ -88,6 +90,7 @@ def render_filters(df):
         with container:
             selections[label] = st.selectbox(label, options=options, key=state_key)
     return selections
+
 
 
 def render_kpis(df):
@@ -113,15 +116,18 @@ def render_kpis(df):
             st.caption(f"Fraîcheur visible : dernière mise à jour vigilance = {last_update:%d/%m/%Y}.")
 
 
+
 def render_distribution_block(title, dist_df, index_col):
     st.markdown(f"**{title}**")
     st.bar_chart(dist_df.set_index(index_col)[["Nb"]], height=260)
     st.dataframe(format_percent_column(dist_df), hide_index=True, use_container_width=True)
 
 
+
 def render_top_block(title, df):
     st.markdown(f"**{title}**")
     st.dataframe(df, hide_index=True, use_container_width=True)
+
 
 
 def render_user_header(user, selected_societies, total_societies):
@@ -133,11 +139,12 @@ def render_user_header(user, selected_societies, total_societies):
         logout_button()
 
 
+
 def main() -> None:
     st.set_page_config(page_title=PAGE_TITLE, layout="wide")
     st.title(PAGE_TITLE)
     st.caption(
-        "Version avec authentification utilisateur et filtrage automatique par société autorisée. "
+        "Version simple avec connexion utilisateur basique et filtrage par société autorisée. "
         "Les fichiers 01, 02 et 03 doivent contenir la colonne 'societe_id' en première position."
     )
 
