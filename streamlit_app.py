@@ -605,6 +605,146 @@ def inject_brand_theme() -> None:
                 height: 52px;
             }}
         }}
+
+        .cm-client-toolbar {{
+            display: flex;
+            align-items: end;
+            gap: 0.8rem;
+            flex-wrap: wrap;
+            margin-bottom: 0.8rem;
+        }}
+
+        .cm-client-breadcrumb {{
+            font-size: 0.88rem;
+            color: var(--cm-muted);
+            margin-bottom: 0.4rem;
+        }}
+
+        .cm-client-hero {{
+            background: linear-gradient(145deg, rgba(22, 58, 89, 0.98), rgba(36, 87, 130, 0.93));
+            border-radius: 24px;
+            padding: 1.15rem 1.2rem 1rem 1.2rem;
+            color: #FFFFFF;
+            box-shadow: 0 16px 36px rgba(22, 58, 89, 0.16);
+            margin-bottom: 1rem;
+        }}
+
+        .cm-client-title-row {{
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 1rem;
+            flex-wrap: wrap;
+        }}
+
+        .cm-client-title {{
+            font-family: 'Sora', sans-serif;
+            font-size: 1.85rem;
+            font-weight: 800;
+            line-height: 1.1;
+            color: #FFFFFF;
+        }}
+
+        .cm-client-subtitle {{
+            margin-top: 0.35rem;
+            color: rgba(255,255,255,0.86);
+            font-size: 0.98rem;
+            font-weight: 600;
+        }}
+
+        .cm-client-badges {{
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.55rem;
+            margin-top: 0.95rem;
+        }}
+
+        .cm-client-hero-grid {{
+            display: grid;
+            grid-template-columns: repeat(4, minmax(0, 1fr));
+            gap: 0.8rem;
+            margin-top: 1rem;
+        }}
+
+        .cm-client-hero-card {{
+            background: rgba(255,255,255,0.10);
+            border: 1px solid rgba(255,255,255,0.14);
+            border-radius: 18px;
+            padding: 0.8rem 0.9rem;
+            min-height: 92px;
+        }}
+
+        .cm-client-hero-label {{
+            font-size: 0.76rem;
+            font-weight: 800;
+            letter-spacing: 0.04em;
+            text-transform: uppercase;
+            color: rgba(255,255,255,0.72);
+            margin-bottom: 0.4rem;
+        }}
+
+        .cm-client-hero-value {{
+            font-family: 'Sora', sans-serif;
+            font-size: 1rem;
+            font-weight: 700;
+            color: #FFFFFF;
+            line-height: 1.28;
+        }}
+
+        .cm-client-grid {{
+            display: grid;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: 0.8rem;
+            margin: 0.35rem 0 1rem 0;
+        }}
+
+        .cm-client-field {{
+            background: rgba(255,255,255,0.84);
+            border: 1px solid var(--cm-border);
+            border-radius: 18px;
+            padding: 0.9rem 0.95rem;
+            box-shadow: 0 10px 22px rgba(22, 58, 89, 0.05);
+            min-height: 98px;
+        }}
+
+        .cm-client-field-label {{
+            color: var(--cm-muted);
+            font-size: 0.78rem;
+            font-weight: 800;
+            letter-spacing: 0.04em;
+            text-transform: uppercase;
+            margin-bottom: 0.4rem;
+        }}
+
+        .cm-client-field-value {{
+            color: var(--cm-text);
+            font-size: 1rem;
+            font-weight: 700;
+            line-height: 1.35;
+            white-space: pre-wrap;
+            word-break: break-word;
+        }}
+
+        .cm-empty-note {{
+            background: rgba(255,255,255,0.84);
+            border: 1px dashed rgba(22, 58, 89, 0.22);
+            border-radius: 18px;
+            padding: 1rem 1rem;
+            color: var(--cm-muted);
+        }}
+
+        @media (max-width: 1200px) {{
+            .cm-client-hero-grid, .cm-client-grid {{
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+            }}
+        }}
+
+        @media (max-width: 780px) {{
+            .cm-premium-grid, .cm-client-hero-grid, .cm-client-grid {{
+                grid-template-columns: 1fr;
+            }}
+        }}
+
         </style>
         """,
         unsafe_allow_html=True,
@@ -1304,7 +1444,10 @@ def render_small_table(df: pd.DataFrame, color_columns: dict[str, str] | None = 
             if pd.isna(value):
                 rendered = ""
             elif col in color_columns:
-                rendered = render_status_badge(value, color_columns[col])
+                status_type = color_columns[col]
+                if status_type == "auto":
+                    status_type = "vigilance" if str(value).strip().startswith("Vigilance") else "risk"
+                rendered = render_status_badge(value, status_type)
             else:
                 rendered = escape(str(value))
             html.append(f"<td{class_attr}>{rendered}</td>")
@@ -1498,6 +1641,415 @@ def render_alert_block(title: str, df: pd.DataFrame) -> None:
     render_small_table(df)
 
 
+
+
+def display_value(value: object, kind: str | None = None) -> str:
+    if value is None or (isinstance(value, float) and np.isnan(value)) or pd.isna(value):
+        return "Non renseigné"
+    if isinstance(value, pd.Timestamp):
+        if pd.isna(value):
+            return "Non renseigné"
+        return value.strftime("%d/%m/%Y")
+    text = str(value).strip()
+    if not text or text.lower() == "nan":
+        return "Non renseigné"
+    if kind == "percent":
+        if isinstance(value, (int, float, np.number)):
+            return f"{float(value):.1%}".replace(".", ",")
+    return text
+
+
+def client_label(row: pd.Series) -> str:
+    return f"{row.get('Dénomination', 'Client')} · {row.get('SIREN', '')} · {row.get(SOC_COL, '')}"
+
+
+def open_client_detail(societe_id: str, siren: str) -> None:
+    st.session_state["cm_view"] = "client"
+    st.session_state["cm_client_societe"] = societe_id
+    st.session_state["cm_client_siren"] = siren
+
+
+def return_to_portfolio() -> None:
+    st.session_state["cm_view"] = "portfolio"
+    st.session_state.pop("cm_client_societe", None)
+    st.session_state.pop("cm_client_siren", None)
+
+
+def render_client_launcher(df: pd.DataFrame, key_prefix: str = "portfolio") -> None:
+    clients = (
+        df[[SOC_COL, "SIREN", "Dénomination"]]
+        .drop_duplicates()
+        .sort_values(["Dénomination", SOC_COL, "SIREN"], na_position="last")
+        .reset_index(drop=True)
+    )
+    if clients.empty:
+        return
+
+    labels = clients.apply(client_label, axis=1).tolist()
+    st.markdown('<h3 class="cm-section-title">Accès direct à la fiche client</h3>', unsafe_allow_html=True)
+    col_a, col_b = st.columns([5, 1])
+    with col_a:
+        selected_label = st.selectbox(
+            "Choisir un client",
+            options=labels,
+            key=f"{key_prefix}_client_selector",
+            help="Recherchez un client par dénomination, SIREN ou société puis ouvrez sa fiche détaillée.",
+        )
+    with col_b:
+        st.markdown("<div style='height:1.9rem'></div>", unsafe_allow_html=True)
+        if st.button("Ouvrir", type="primary", key=f"{key_prefix}_open_client_btn"):
+            row = clients.loc[labels.index(selected_label)]
+            open_client_detail(str(row[SOC_COL]), str(row["SIREN"]))
+            st.rerun()
+
+
+INDICATOR_SUFFIXES = [
+    ("Date de dernière mise à jour", "Date de mise à jour"),
+    ("Date de mise à jour", "Date de mise à jour"),
+    ("Date de création", "Date de création"),
+    ("Référence dossier source", "Référence du dossier source"),
+    ("Pièce associée", "Pièce associée"),
+    ("Justificatif", "Justificatif"),
+    ("Commentaire", "Commentaire"),
+    ("Analyste", "Analyste"),
+    ("Valideur", "Valideur"),
+    ("Valeur", "Valeur"),
+    ("valeur", "Valeur"),
+    ("Statut", "Statut"),
+    ("statut", "Statut"),
+]
+
+
+def indicator_group_map(columns: list[str]) -> dict[str, dict[str, str]]:
+    groups: dict[str, dict[str, str]] = {}
+    for raw_col in columns:
+        col = " ".join(str(raw_col).replace("\ufeff", "").split())
+        if col in {SOC_COL, "SIREN", "Dénomination"}:
+            continue
+        for suffix, field_name in INDICATOR_SUFFIXES:
+            if col.endswith(suffix):
+                indicator_name = col[: -len(suffix)].strip()
+                if indicator_name:
+                    groups.setdefault(indicator_name, {})[field_name] = raw_col
+                break
+    return groups
+
+
+def build_indicator_table_from_series(row: pd.Series) -> pd.DataFrame:
+    groups = indicator_group_map(list(row.index))
+    output_rows = []
+    for indicator_name, mapping in groups.items():
+        item = {
+            "Indicateur": indicator_name,
+            "Valeur": row.get(mapping.get("Valeur"), pd.NA),
+            "Statut": row.get(mapping.get("Statut"), pd.NA),
+            "Date de création": row.get(mapping.get("Date de création"), pd.NA),
+            "Date de mise à jour": row.get(mapping.get("Date de mise à jour"), pd.NA),
+            "Commentaire": row.get(mapping.get("Commentaire"), pd.NA),
+            "Justificatif": row.get(mapping.get("Justificatif"), pd.NA),
+            "Analyste": row.get(mapping.get("Analyste"), pd.NA),
+            "Valideur": row.get(mapping.get("Valideur"), pd.NA),
+            "Pièce associée": row.get(mapping.get("Pièce associée"), pd.NA),
+            "Référence du dossier source": row.get(mapping.get("Référence du dossier source"), pd.NA),
+        }
+        non_key_values = [item[k] for k in item if k != "Indicateur"]
+        if all(pd.isna(v) or not str(v).strip() for v in non_key_values):
+            continue
+        output_rows.append(item)
+
+    table = pd.DataFrame(output_rows)
+    if table.empty:
+        return table
+
+    for date_col in ["Date de création", "Date de mise à jour"]:
+        table[date_col] = pd.to_datetime(table[date_col], errors="coerce")
+
+    table = table.sort_values(["Date de mise à jour", "Indicateur"], ascending=[False, True], na_position="last")
+    return table.reset_index(drop=True)
+
+
+def render_info_cards(items: list[tuple[str, object, str | None]]) -> None:
+    html = ["<div class='cm-client-grid'>"]
+    for label, value, kind in items:
+        html.append(
+            "<div class='cm-client-field'>"
+            f"<div class='cm-client-field-label'>{escape(str(label))}</div>"
+            f"<div class='cm-client-field-value'>{escape(display_value(value, kind))}</div>"
+            "</div>"
+        )
+    html.append("</div>")
+    st.markdown("".join(html), unsafe_allow_html=True)
+
+
+def render_indicator_table(df: pd.DataFrame) -> None:
+    if df.empty:
+        st.info("Aucun indicateur disponible pour ce client.")
+        return
+
+    formatted = df.copy()
+    for date_col in ["Date de création", "Date de mise à jour"]:
+        if date_col in formatted.columns:
+            formatted[date_col] = formatted[date_col].apply(display_value)
+    for col in formatted.columns:
+        if col not in {"Indicateur", "Valeur", "Statut"}:
+            formatted[col] = formatted[col].apply(lambda v: display_value(v))
+    render_small_table(formatted, color_columns={"Statut": "auto"})
+
+
+def render_client_header(client_row: pd.Series) -> None:
+    st.markdown('<div class="cm-client-breadcrumb">Portefeuille &gt; Client &gt; Fiche client</div>', unsafe_allow_html=True)
+    header_cards = [
+        ("Date calcul du risque", client_row.get("Date calcul du risque"), None),
+        ("Dernière mise à jour vigilance", client_row.get("Vigilance Date de mise à jour"), None),
+        ("Dernière revue", client_row.get("Date dernière revue"), None),
+        ("Prochaine revue", client_row.get("Date prochaine revue"), None),
+    ]
+    badges = [
+        render_status_badge(display_value(client_row.get("Vigilance")), "vigilance"),
+        render_status_badge(display_value(client_row.get("Risque")), "risk"),
+        render_status_badge(display_value(client_row.get("Statut EDD")), "edd"),
+    ]
+    cards_html = []
+    for label, value, kind in header_cards:
+        cards_html.append(
+            "<div class='cm-client-hero-card'>"
+            f"<div class='cm-client-hero-label'>{escape(label)}</div>"
+            f"<div class='cm-client-hero-value'>{escape(display_value(value, kind))}</div>"
+            "</div>"
+        )
+    st.markdown(
+        "<div class='cm-client-hero'>"
+        "<div class='cm-client-title-row'>"
+        "<div>"
+        f"<div class='cm-client-title'>{escape(display_value(client_row.get('Dénomination')))}</div>"
+        f"<div class='cm-client-subtitle'>SIREN : {escape(display_value(client_row.get('SIREN')))} · Société : {escape(display_value(client_row.get(SOC_COL)))}</div>"
+        "</div>"
+        "</div>"
+        f"<div class='cm-client-badges'>{''.join(badges)}</div>"
+        f"<div class='cm-client-hero-grid'>{''.join(cards_html)}</div>"
+        "</div>",
+        unsafe_allow_html=True,
+    )
+
+
+def render_client_base_tab(client_row: pd.Series) -> None:
+    base_items = [
+        ("Identifiant client / SIREN", client_row.get("SIREN"), None),
+        ("Dénomination", client_row.get("Dénomination"), None),
+        ("Segment", client_row.get("Segment"), None),
+        ("Pays de résidence", client_row.get("Pays de résidence"), None),
+        ("Produit principal", client_row.get("Produit(service) principal"), None),
+        ("Canal principal", client_row.get("Canal d’opérations principal 12 mois"), None),
+        ("Score importé", client_row.get("Vigilance valeur"), "percent"),
+        ("Niveau de vigilance", client_row.get("Vigilance"), None),
+        ("Statut de risque", client_row.get("Risque"), None),
+        ("Date calcul du risque", client_row.get("Date calcul du risque"), None),
+        ("Date et heure de synchronisation", client_row.get("Vigilance Date de mise à jour"), None),
+        ("Identifiant / référence source", client_row.get("Référence du dossier source"), None),
+        ("Code NAF", client_row.get("Code NAF (nomenclature INSEE)"), None),
+        ("Catégorie juridique", client_row.get("Catégorie Juridique"), None),
+        ("Nationalité", client_row.get("Nationalité"), None),
+        ("Canal onboarding", client_row.get("Canal distribution On boarding"), None),
+        ("Cross border", client_row.get("Cross border"), "percent"),
+        ("Cash intensité", client_row.get("Cash intensité"), "percent"),
+        ("Analyste", client_row.get("Analyste"), None),
+        ("Valideur", client_row.get("Valideur"), None),
+        ("Date dernière revue", client_row.get("Date dernière revue"), None),
+        ("Date prochaine revue", client_row.get("Date prochaine revue"), None),
+        ("Justificatif complet", client_row.get("Flag justificatif complet"), None),
+    ]
+    render_info_cards(base_items)
+
+
+def apply_indicator_local_filters(df: pd.DataFrame, key_prefix: str) -> pd.DataFrame:
+    if df.empty:
+        return df
+    c1, c2, c3 = st.columns(3)
+    statuses = ["Tous"] + non_empty_sorted(df["Statut"].dropna().unique()) if "Statut" in df.columns else ["Tous"]
+    with c1:
+        selected_status = st.selectbox("Statut", statuses, key=f"{key_prefix}_status")
+    with c2:
+        comment_filter = st.selectbox(
+            "Commentaire",
+            ["Tous", "Avec commentaire", "Sans commentaire"],
+            key=f"{key_prefix}_comment",
+        )
+    with c3:
+        evidence_filter = st.selectbox(
+            "Justificatif",
+            ["Tous", "Avec justificatif", "Sans justificatif"],
+            key=f"{key_prefix}_evidence",
+        )
+
+    filtered = df.copy()
+    if selected_status != "Tous":
+        filtered = filtered[filtered["Statut"] == selected_status]
+    if comment_filter == "Avec commentaire":
+        filtered = filtered[filtered["Commentaire"].astype(str).str.strip().ne("") & filtered["Commentaire"].notna()]
+    elif comment_filter == "Sans commentaire":
+        filtered = filtered[filtered["Commentaire"].isna() | filtered["Commentaire"].astype(str).str.strip().eq("")]
+    if evidence_filter == "Avec justificatif":
+        filtered = filtered[filtered["Justificatif"].astype(str).str.strip().ne("") & filtered["Justificatif"].notna()]
+    elif evidence_filter == "Sans justificatif":
+        filtered = filtered[filtered["Justificatif"].isna() | filtered["Justificatif"].astype(str).str.strip().eq("")]
+    return filtered.reset_index(drop=True)
+
+
+def render_client_indicators_tab(indicators_row: pd.Series) -> None:
+    indicator_table = build_indicator_table_from_series(indicators_row)
+    indicator_table = apply_indicator_local_filters(indicator_table, "client_current_indicators")
+    render_indicator_table(indicator_table)
+    if not indicator_table.empty:
+        st.download_button(
+            label="Exporter les indicateurs courants (.csv)",
+            data=dataframe_to_csv_bytes(indicator_table),
+            file_name="fiche_client_indicateurs.csv",
+            mime="text/csv",
+            type="secondary",
+            key="export_current_indicators",
+        )
+
+
+def render_client_history_tab(history_rows: pd.DataFrame) -> None:
+    if history_rows.empty:
+        st.info("Aucun état historique n'est disponible pour ce client.")
+        return
+
+    rows = history_rows.copy()
+    date_cols = [c for c in rows.columns if "Date de mise à jour" in c]
+    if date_cols:
+        for col in date_cols:
+            rows[col] = pd.to_datetime(rows[col], errors="coerce")
+        rows["_latest_history_date"] = rows[date_cols].max(axis=1)
+        rows = rows.sort_values("_latest_history_date", ascending=False, na_position="last").drop(columns=["_latest_history_date"])
+    else:
+        rows = rows.copy()
+
+    st.caption("Les états antérieurs sont présentés séparément, du plus récent au plus ancien, avec la même structure que l'état courant.")
+    for idx, (_, hist_row) in enumerate(rows.iterrows(), start=1):
+        hist_table = build_indicator_table_from_series(hist_row)
+        if hist_table.empty:
+            continue
+        latest = hist_table["Date de mise à jour"].max() if "Date de mise à jour" in hist_table.columns else pd.NaT
+        suffix = f" · dernière mise à jour max {display_value(latest)}" if pd.notna(latest) else ""
+        with st.expander(f"État historique {idx}{suffix}", expanded=(idx == 1)):
+            render_indicator_table(hist_table)
+
+
+def render_client_edd_tab(client_row: pd.Series, history_rows: pd.DataFrame) -> None:
+    left, right = st.columns([1.3, 1.0])
+    with left:
+        st.markdown('<h3 class="cm-section-title">EDD courant</h3>', unsafe_allow_html=True)
+        edd_items = [
+            ("Statut EDD", client_row.get("Statut EDD"), None),
+            ("Analyste", client_row.get("Analyste"), None),
+            ("Valideur", client_row.get("Valideur"), None),
+            ("Date dernière revue", client_row.get("Date dernière revue"), None),
+            ("Date prochaine revue", client_row.get("Date prochaine revue"), None),
+            ("Justificatif complet", client_row.get("Flag justificatif complet"), None),
+            ("Conclusion synthétique", client_row.get("Motifs"), None),
+            ("Référence justificatif principal", client_row.get("Référence justificatif principal"), None),
+        ]
+        render_info_cards(edd_items)
+    with right:
+        st.markdown('<h3 class="cm-section-title">Pilotage synthétique</h3>', unsafe_allow_html=True)
+        pilotage = pd.DataFrame(
+            [
+                ["Score priorité", display_value(client_row.get("Score priorité"))],
+                ["Nb historique", display_value(client_row.get("Nb historique"))],
+                ["Nb risque avéré", display_value(client_row.get("Nb Risque avéré"))],
+                ["Nb risque potentiel", display_value(client_row.get("Nb Risque potentiel"))],
+                ["Nb risque mitigé", display_value(client_row.get("Nb Risque mitigé"))],
+                ["Nb risque levé", display_value(client_row.get("Nb Risque levé"))],
+                ["Nb non calculable", display_value(client_row.get("Nb Non calculable"))],
+                ["Motifs / alertes", display_value(client_row.get("Motifs"))],
+            ],
+            columns=["Indicateur", "Valeur"],
+        )
+        render_small_table(pilotage)
+
+    st.markdown('<h3 class="cm-section-title">Historique des validations et audit trail</h3>', unsafe_allow_html=True)
+    if history_rows.empty:
+        st.markdown(
+            "<div class='cm-empty-note'>Le jeu 01 / 02 / 03 publié ne contient pas de journal d'événements de gouvernance distinct. "
+            "Cette zone affichera l'audit trail consolidé dès qu'un flux dédié sera disponible.</div>",
+            unsafe_allow_html=True,
+        )
+    else:
+        latest_dates = []
+        date_cols = [c for c in history_rows.columns if "Date de mise à jour" in c]
+        if date_cols:
+            tmp = history_rows.copy()
+            for col in date_cols:
+                tmp[col] = pd.to_datetime(tmp[col], errors="coerce")
+            latest_dates = tmp[date_cols].max(axis=1).sort_values(ascending=False).tolist()
+        audit_rows = pd.DataFrame(
+            [
+                ["Historique indicateurs disponible", len(history_rows)],
+                ["Dernier état historique le plus récent", display_value(latest_dates[0]) if latest_dates else "Non renseigné"],
+                ["Observation", "Le flux publié ne fournit pas encore le détail des validations, actions, motifs et justificatifs de gouvernance."],
+            ],
+            columns=["Élément", "Valeur"],
+        )
+        render_small_table(audit_rows)
+
+
+def render_client_screen(
+    portfolio: pd.DataFrame,
+    indicators: pd.DataFrame,
+    history: pd.DataFrame,
+    selected_societies: list[str],
+    allowed_societies: list[str],
+) -> None:
+    societe_id = st.session_state.get("cm_client_societe")
+    siren = st.session_state.get("cm_client_siren")
+    if not societe_id or not siren:
+        return_to_portfolio()
+        st.rerun()
+
+    allowed_set = {str(s).strip().upper() for s in allowed_societies}
+    if str(societe_id).strip().upper() not in allowed_set:
+        st.error("Cette fiche client n'appartient pas à votre périmètre autorisé.")
+        if st.button("Retour au portefeuille", key="btn_back_unauthorized"):
+            return_to_portfolio()
+            st.rerun()
+        return
+
+    client_rows = portfolio[(portfolio[SOC_COL] == societe_id) & (portfolio["SIREN"] == siren)]
+    if client_rows.empty:
+        st.warning("Le client demandé n'est plus disponible dans le jeu actif.")
+        if st.button("Retour au portefeuille", key="btn_back_missing"):
+            return_to_portfolio()
+            st.rerun()
+        return
+
+    client_row = client_rows.iloc[0]
+    indicator_rows = indicators[(indicators[SOC_COL] == societe_id) & (indicators["SIREN"] == siren)]
+    history_rows = history[(history[SOC_COL] == societe_id) & (history["SIREN"] == siren)]
+
+    top_left, top_right = st.columns([6, 1])
+    with top_left:
+        render_client_header(client_row)
+    with top_right:
+        st.markdown("<div style='height: 0.3rem'></div>", unsafe_allow_html=True)
+        if st.button("← Retour", type="secondary", key="back_to_portfolio_top"):
+            return_to_portfolio()
+            st.rerun()
+
+    tabs = st.tabs(["Données de base", "Indicateurs", "Historique des indicateurs", "EDD et historique"])
+    with tabs[0]:
+        render_client_base_tab(client_row)
+    with tabs[1]:
+        if indicator_rows.empty:
+            st.info("Aucun indicateur courant n'est disponible pour ce client.")
+        else:
+            render_client_indicators_tab(indicator_rows.iloc[0])
+    with tabs[2]:
+        render_client_history_tab(history_rows)
+    with tabs[3]:
+        render_client_edd_tab(client_row, history_rows)
+
+
 def render_user_header(user: dict, selected_societies: list[str], total_societies: int) -> None:
     manifest = load_manifest()
     with st.sidebar:
@@ -1524,10 +2076,10 @@ def main() -> None:
         login_form()
         return
 
-    render_home_hero("Portefeuille 360°")
     render_admin_data_manager(user)
 
     try:
+        base, indicators, history = load_source_data()
         portfolio = build_portfolio_dataset()
     except NoPublishedDatasetError as exc:
         st.info(str(exc))
@@ -1542,6 +2094,14 @@ def main() -> None:
     selected_societies, allowed_societies = render_scope_selector(portfolio, user)
     scoped = restrict_to_societies(portfolio, selected_societies)
     render_user_header(user, selected_societies, len(allowed_societies))
+
+    current_view = st.session_state.get("cm_view", "portfolio")
+    if current_view == "client":
+        render_client_screen(scoped, restrict_to_societies(indicators, selected_societies), restrict_to_societies(history, selected_societies), selected_societies, allowed_societies)
+        return
+
+    render_home_hero("Portefeuille 360°")
+    render_client_launcher(scoped, key_prefix="header")
 
     filters = render_filters(scoped)
     filtered = apply_filters(scoped, filters)
@@ -1579,7 +2139,13 @@ def main() -> None:
 
     st.divider()
     st.markdown('<h3 class="cm-section-title">Dossiers prioritaires</h3>', unsafe_allow_html=True)
-    st.dataframe(style_dataframe(build_priority_table(filtered, top_n=10)), use_container_width=True, height=420, hide_index=True)
+    priority_df = build_priority_table(filtered, top_n=10)
+    st.dataframe(style_dataframe(priority_df), use_container_width=True, height=420, hide_index=True)
+    if not priority_df.empty:
+        render_client_launcher(
+            priority_df[[SOC_COL, "SIREN", "Dénomination"]].drop_duplicates(),
+            key_prefix="priority",
+        )
 
     export_columns = [c for c in DISPLAY_COLUMNS if c in filtered.columns]
     st.download_button(
@@ -1592,6 +2158,8 @@ def main() -> None:
 
     with st.expander("Aperçu des données sous-jacentes filtrées"):
         st.dataframe(style_dataframe(filtered[export_columns]), use_container_width=True, height=420, hide_index=True)
+
+
 
 
 if __name__ == "__main__":
