@@ -694,17 +694,17 @@ def render_home_showcase(user: dict | None = None) -> None:
             },
         ]
 
-    html = ["<div class="cm-premium-grid">"]
+    html = ['<div class="cm-premium-grid">']
     for card in cards:
         html.append(
             (
-                f"<div class="cm-premium-card">"
-                f"<div class="cm-premium-kicker">{escape(card['kicker'])}</div>"
-                f"<div class="cm-premium-title">{escape(card['title'])}</div>"
-                f"<div class="cm-premium-value">{escape(card['value'])}</div>"
-                f"<div class="cm-premium-text">{escape(card['text'])}</div>"
-                f"<div class="cm-premium-foot">{escape(card['foot'])}</div>"
-                f"</div>"
+                f'<div class="cm-premium-card">'
+                f'<div class="cm-premium-kicker">{escape(card["kicker"])}</div>'
+                f'<div class="cm-premium-title">{escape(card["title"])}</div>'
+                f'<div class="cm-premium-value">{escape(card["value"])}</div>'
+                f'<div class="cm-premium-text">{escape(card["text"])}</div>'
+                f'<div class="cm-premium-foot">{escape(card["foot"])}</div>'
+                f'</div>'
             )
         )
     html.append("</div>")
