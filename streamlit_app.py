@@ -255,6 +255,16 @@ def inject_brand_theme() -> None:
             color: rgba(255,255,255,0.82) !important;
         }}
 
+        .cm-home-link {{
+            margin-top: 0.55rem;
+            text-align: center;
+            font-family: 'Sora', sans-serif;
+            font-size: 1rem;
+            font-weight: 700;
+            letter-spacing: 0.08em;
+            color: var(--cm-primary);
+        }}
+
         .cm-hero-logo-card {{
             display: flex;
             align-items: center;
@@ -291,22 +301,46 @@ def inject_brand_theme() -> None:
             color: var(--cm-primary);
         }}
 
-        .stButton > button, .stDownloadButton > button {{
+        .stButton > button, .stDownloadButton > button, .stFileUploader button {{
             border-radius: 14px;
             border: 1px solid rgba(22, 58, 89, 0.10);
             font-weight: 700;
             padding: 0.55rem 1rem;
             box-shadow: 0 8px 20px rgba(22, 58, 89, 0.08);
+            background: #FFFFFF;
+            color: var(--cm-primary) !important;
         }}
 
         .stButton > button[kind="primary"], .stDownloadButton > button[kind="primary"] {{
-            background: linear-gradient(135deg, var(--cm-primary), #245782);
-            color: white;
+            background: linear-gradient(135deg, var(--cm-primary), #245782) !important;
+            color: white !important;
             border: none;
         }}
 
-        .stButton > button:hover, .stDownloadButton > button:hover {{
+        .stButton > button:hover, .stDownloadButton > button:hover, .stFileUploader button:hover {{
             border-color: rgba(22, 58, 89, 0.22);
+            color: var(--cm-primary) !important;
+        }}
+
+        [data-testid="stSidebar"] .stButton > button,
+        [data-testid="stSidebar"] .stDownloadButton > button,
+        [data-testid="stSidebar"] .stFileUploader button {{
+            background: #FFFFFF !important;
+            color: var(--cm-primary) !important;
+            border: 1px solid rgba(22, 58, 89, 0.12) !important;
+        }}
+
+        [data-testid="stSidebar"] .stButton > button[kind="primary"],
+        [data-testid="stSidebar"] .stDownloadButton > button[kind="primary"] {{
+            background: linear-gradient(135deg, var(--cm-primary), #245782) !important;
+            color: #FFFFFF !important;
+            border: none !important;
+        }}
+
+        [data-testid="stSidebar"] .stFileUploader button:hover,
+        [data-testid="stSidebar"] .stButton > button:hover,
+        [data-testid="stSidebar"] .stDownloadButton > button:hover {{
+            color: var(--cm-primary) !important;
         }}
 
         [data-testid="stDataFrame"], .stAlert, div[data-baseweb="select"], .stTextInput > div > div,
@@ -592,7 +626,7 @@ def login_form() -> None:
             st.session_state["authenticated_user"] = user
             st.rerun()
 
-    st.info("Version simple : users.csv contient les mots de passe en clair. À utiliser sur un dépôt privé.")
+    st.markdown('<div class="cm-home-link">www.beclm.com</div>', unsafe_allow_html=True)
 
 
 def logout_button() -> None:
