@@ -1,51 +1,490 @@
-from __future__ import annotations
+from pathlib import Path
+import re
+import hmac
 
+import numpy as np
+import pandas as pd
 import streamlit as st
 
-from auth import get_current_user, login_form, logout_button
-from tableau1_logic import (
-    CRITICAL_VIGILANCE,
-    DISPLAY_COLUMNS,
-    FILTER_MAPPING,
-    RISK_ORDER,
-    VIGILANCE_ORDER,
-    DataValidationError,
-    apply_filters,
-    available_societies,
-    build_alert_table,
-    build_distribution,
-    build_portfolio_dataset,
-    build_priority_table,
-    dataframe_to_csv_bytes,
-    format_percent_column,
-    non_empty_sorted,
-    ranked_counts,
-    restrict_to_societies,
-)
-
 PAGE_TITLE = "Tableau 1 – Portefeuille multi-société"
+SOC_COL = "societe_id"
+USERS_FILE = "users.csv"
+DATA_FILES = {
+    "base": "01_Donnees_base_source.csv",
+    "indicators": "02_Indicateurs_source.csv",
+    "history": "03_Indicateurs_historique.csv",
+}
+KEY_COLUMNS = [SOC_COL, "SIREN"]
+
+VIGILANCE_ORDER = [
+    "Vigilance Critique",
+    "Vigilance Élevée",
+    "Vigilance Modérée",
+    "Vigilance Allégée",
+    "Vigilance Aucune",
+]
+
+RISK_ORDER = [
+    "Risque avéré",
+    "Risque potentiel",
+    "Risque mitigé",
+    "Risque levé",
+    "Non calculable",
+    "Aucun risque détecté",
+]
+
+CRITICAL_VIGILANCE = {"Vigilance Élevée", "Vigilance Critique"}
+PRIORITY_RISK = {"Risque potentiel", "Risque avéré"}
+
+FILTER_MAPPING = {
+    "Segment": "Segment",
+    "Pays": "Pays de résidence",
+    "Produit": "Produit(service) principal",
+    "Canal": "Canal d’opérations principal 12 mois",
+    "Vigilance": "Vigilance",
+    "Risque": "Risque",
+    "EDD": "Statut EDD",
+    "Analyste": "Analyste",
+    "Valideur": "Valideur",
+}
+
+DISPLAY_COLUMNS = [
+    SOC_COL,
+    "SIREN",
+    "Dénomination",
+    "Pays de résidence",
+    "Segment",
+    "Produit(service) principal",
+    "Canal d’opérations principal 12 mois",
+    "Vigilance",
+    "Risque",
+    "Statut EDD",
+    "Flag justificatif complet",
+    "Analyste",
+    "Valideur",
+    "Date dernière revue",
+    "Date prochaine revue",
+    "Vigilance Date de mise à jour",
+    "Nb historique",
+    "Score priorité",
+    "Motifs",
+]
+
+REQUIRED_COLUMNS = {
+    "base": [SOC_COL, "SIREN", "Dénomination"],
+    "indicators": [SOC_COL, "SIREN", "Vigilance statut", "Vigilance Date de mise à jour"],
+    "history": [SOC_COL, "SIREN"],
+    "users": ["username", "password", "role", "societes_autorisees", "enabled"],
+}
+
+
+class DataValidationError(ValueError):
+    pass
+
+
+def find_file(filename):
+    here = Path(__file__).resolve().parent
+    candidates = [
+        here / filename,
+        here / "data" / filename,
+        Path.cwd() / filename,
+        Path.cwd() / "data" / filename,
+    ]
+    for path in candidates:
+        if path.exists():
+            return path
+    searched = "\n - ".join(str(p) for p in candidates)
+    raise FileNotFoundError(f"Impossible de trouver {filename}. Emplacements testés :\n - {searched}")
+
+
+def read_csv_semicolon(path):
+    return pd.read_csv(path, sep=";", encoding="utf-8-sig").dropna(how="all")
+
+
+def normalize_siren(series):
+    return (
+        series.astype(str)
+        .str.strip()
+        .str.replace(r"\\.0$", "", regex=True)
+        .replace({"nan": np.nan, "None": np.nan, "": np.nan})
+    )
+
+
+def normalize_societe_id(series):
+    return (
+        series.astype(str)
+        .str.strip()
+        .str.upper()
+        .replace({"nan": np.nan, "None": np.nan, "": np.nan})
+    )
+
+
+def clean_text_column(series):
+    return (
+        series.astype("string")
+        .str.strip()
+        .replace({"": pd.NA, "nan": pd.NA, "None": pd.NA})
+        .astype("string")
+    )
+
+
+def parse_percent(value):
+    if pd.isna(value):
+        return np.nan
+    if isinstance(value, (int, float)):
+        return float(value)
+    text = str(value).strip().replace("%", "").replace(",", ".")
+    if text == "":
+        return np.nan
+    try:
+        return float(text) / 100.0
+    except ValueError:
+        return np.nan
+
+
+def validate_required_columns(df, label):
+    missing = [col for col in REQUIRED_COLUMNS[label] if col not in df.columns]
+    if missing:
+        raise DataValidationError(
+            f"Le fichier '{DATA_FILES.get(label, USERS_FILE)}' ne contient pas les colonnes obligatoires : {', '.join(missing)}. "
+            f"Ajoutez notamment '{SOC_COL}' en première colonne dans 01, 02 et 03."
+        )
 
 
 @st.cache_data(show_spinner=False)
-def load_portfolio():
-    return build_portfolio_dataset()
+def load_users():
+    users = read_csv_semicolon(find_file(USERS_FILE))
+    validate_required_columns(users, "users")
+    users["username"] = users["username"].astype(str).str.strip().str.lower()
+    users["password"] = users["password"].fillna("").astype(str)
+    users["role"] = users["role"].astype(str).str.strip().str.lower()
+    users["enabled"] = users["enabled"].astype(str).str.strip().str.lower().isin(["true", "1", "oui", "yes"])
+    users["societes_autorisees"] = users["societes_autorisees"].fillna("").astype(str)
+    if "display_name" not in users.columns:
+        users["display_name"] = users["username"]
+    else:
+        users["display_name"] = users["display_name"].fillna(users["username"]).astype(str).str.strip()
+        users.loc[users["display_name"].eq(""), "display_name"] = users["username"]
+    return users
 
 
+def parse_allowed_societies(raw_value):
+    raw = str(raw_value or "").strip()
+    if not raw:
+        return []
+    if raw.upper() == "ALL":
+        return ["ALL"]
+    return sorted({item.strip().upper() for item in raw.split(",") if item.strip()})
 
-def reset_filters() -> None:
+
+def authenticate_user(username, password):
+    users = load_users()
+    username = str(username or "").strip().lower()
+    row = users.loc[users["username"] == username]
+    if row.empty:
+        return None
+    user = row.iloc[0]
+    if not bool(user["enabled"]):
+        return None
+    if not hmac.compare_digest(str(password or ""), str(user["password"] or "")):
+        return None
+    return {
+        "username": str(user["username"]),
+        "display_name": str(user["display_name"]),
+        "role": str(user["role"]),
+        "societes_autorisees": parse_allowed_societies(user["societes_autorisees"]),
+    }
+
+
+def get_current_user():
+    return st.session_state.get("authenticated_user")
+
+
+def login_form():
+    st.subheader("Connexion")
+    with st.form("login_form", clear_on_submit=False):
+        username = st.text_input("Identifiant")
+        password = st.text_input("Mot de passe", type="password")
+        submitted = st.form_submit_button("Se connecter", type="primary")
+
+    if submitted:
+        user = authenticate_user(username, password)
+        if user is None:
+            st.error("Identifiants invalides ou compte désactivé.")
+        else:
+            st.session_state["authenticated_user"] = user
+            st.rerun()
+
+    st.info("Version simple : users.csv contient les mots de passe en clair. À utiliser sur un dépôt privé.")
+
+
+def logout_button():
+    if st.button("Se déconnecter"):
+        st.session_state.pop("authenticated_user", None)
+        st.rerun()
+
+
+def load_source_data():
+    base = read_csv_semicolon(find_file(DATA_FILES["base"]))
+    indicators = read_csv_semicolon(find_file(DATA_FILES["indicators"]))
+    history = read_csv_semicolon(find_file(DATA_FILES["history"]))
+
+    validate_required_columns(base, "base")
+    validate_required_columns(indicators, "indicators")
+    validate_required_columns(history, "history")
+
+    for df in (base, indicators, history):
+        df[SOC_COL] = normalize_societe_id(df[SOC_COL])
+        df["SIREN"] = normalize_siren(df["SIREN"])
+        df.dropna(subset=KEY_COLUMNS, inplace=True)
+
+    base = base.drop_duplicates(subset=KEY_COLUMNS, keep="first").copy()
+    indicators = indicators.drop_duplicates(subset=KEY_COLUMNS, keep="first").copy()
+
+    for col in [
+        "Cross border",
+        "Cash intensité",
+        "Part des opérations à distance 12 mois",
+        "Part des opérations avec produits(services) hauts risques 12 mois",
+    ]:
+        if col in base.columns:
+            base[col] = base[col].apply(parse_percent)
+
+    for col in ["Date dernière revue", "Date prochaine revue"]:
+        if col in base.columns:
+            base[col] = pd.to_datetime(base[col], errors="coerce")
+
+    for col in indicators.columns:
+        if "Date de mise à jour" in col:
+            indicators[col] = pd.to_datetime(indicators[col], errors="coerce")
+
+    for frame, columns in [
+        (
+            base,
+            [
+                "Dénomination",
+                "Pays de résidence",
+                "Segment",
+                "Produit(service) principal",
+                "Canal d’opérations principal 12 mois",
+                "Statut EDD",
+                "Flag justificatif complet",
+                "Analyste",
+                "Valideur",
+                "Statut de risque (import SaaS source)",
+            ],
+        ),
+        (indicators, ["Vigilance statut", "Cash intensité Statut"]),
+    ]:
+        for col in columns:
+            if col in frame.columns:
+                frame[col] = clean_text_column(frame[col])
+
+    return base, indicators, history
+
+
+def status_columns(indicators_df):
+    cols = [c for c in indicators_df.columns if re.search(r"(?i)\\bstatut\\b", c)]
+    return [c for c in cols if c != "Vigilance statut"]
+
+
+@st.cache_data(show_spinner=False)
+def build_portfolio_dataset():
+    base, indicators, history = load_source_data()
+
+    ind_status_cols = status_columns(indicators)
+    indicator_cols = [
+        SOC_COL,
+        "SIREN",
+        "Vigilance statut",
+        "Vigilance valeur",
+        "Vigilance Date de mise à jour",
+        "Cash intensité Statut",
+    ] + ind_status_cols
+    indicator_cols = list(dict.fromkeys([c for c in indicator_cols if c in indicators.columns]))
+
+    portfolio = base.merge(indicators[indicator_cols], how="left", on=KEY_COLUMNS)
+    history_count = history.groupby(KEY_COLUMNS).size().rename("Nb historique").reset_index()
+    portfolio = portfolio.merge(history_count, how="left", on=KEY_COLUMNS)
+    portfolio["Nb historique"] = portfolio["Nb historique"].fillna(0).astype(int)
+
+    portfolio["Vigilance"] = portfolio.get("Vigilance statut")
+    portfolio["Risque"] = portfolio.get("Statut de risque (import SaaS source)")
+
+    for label in ["Risque avéré", "Risque potentiel", "Risque mitigé", "Risque levé", "Non calculable"]:
+        portfolio[f"Nb {label}"] = portfolio[ind_status_cols].eq(label).sum(axis=1) if ind_status_cols else 0
+
+    today = pd.Timestamp.today().normalize()
+    portfolio["Alerte justificatif incomplet"] = (
+        (portfolio.get("Flag justificatif complet") != "Oui")
+        & (portfolio["Vigilance"].isin(CRITICAL_VIGILANCE))
+    ).astype(int)
+    portfolio["Alerte vigilance critique"] = (portfolio["Vigilance"] == "Vigilance Critique").astype(int)
+    portfolio["Alerte revue trop ancienne"] = (
+        portfolio["Vigilance"].isin(CRITICAL_VIGILANCE)
+        & portfolio.get("Date dernière revue", pd.Series(index=portfolio.index, dtype="datetime64[ns]")).notna()
+        & ((today - portfolio["Date dernière revue"]).dt.days > 90)
+    ).astype(int)
+    portfolio["Alerte sans prochaine revue"] = portfolio.get(
+        "Date prochaine revue", pd.Series(index=portfolio.index, dtype="datetime64[ns]")
+    ).isna().astype(int)
+    portfolio["Alerte cross-border élevé"] = portfolio.get(
+        "Cross border", pd.Series(index=portfolio.index, dtype="float64")
+    ).ge(0.25).fillna(False).astype(int)
+    portfolio["Alerte cash intensité élevée"] = (
+        portfolio.get("Cash intensité Statut", pd.Series(index=portfolio.index, dtype="string"))
+        .isin(PRIORITY_RISK)
+        .astype(int)
+    )
+
+    portfolio["Score priorité"] = (
+        25 * (portfolio["Vigilance"] == "Vigilance Critique").astype(int)
+        + 15 * (portfolio["Vigilance"] == "Vigilance Élevée").astype(int)
+        + 20 * (portfolio["Risque"] == "Risque avéré").astype(int)
+        + 10 * (portfolio["Risque"] == "Risque potentiel").astype(int)
+        + 12 * portfolio["Alerte justificatif incomplet"]
+        + 8 * portfolio["Alerte vigilance critique"]
+        + 6 * portfolio["Alerte revue trop ancienne"]
+        + 8 * portfolio["Alerte sans prochaine revue"]
+        + 5 * portfolio["Alerte cross-border élevé"]
+    )
+
+    motifs = (
+        np.where(portfolio["Alerte justificatif incomplet"].eq(1), "Justificatif incomplet ", "")
+        + np.where(portfolio["Alerte vigilance critique"].eq(1), "Vigilance critique ", "")
+        + np.where(portfolio["Alerte revue trop ancienne"].eq(1), "Revue trop ancienne ", "")
+        + np.where(portfolio["Alerte sans prochaine revue"].eq(1), "Sans prochaine revue ", "")
+        + np.where(portfolio["Alerte cross-border élevé"].eq(1), "Cross-border élevé ", "")
+    )
+    portfolio["Motifs"] = pd.Series(motifs, index=portfolio.index, dtype="string").str.strip()
+    return portfolio
+
+
+def non_empty_sorted(values):
+    return sorted({str(v).strip() for v in values if pd.notna(v) and str(v).strip()})
+
+
+def available_societies(df):
+    if SOC_COL not in df.columns:
+        return []
+    return non_empty_sorted(df[SOC_COL].unique())
+
+
+def restrict_to_societies(df, societies):
+    normalized = {str(s).strip().upper() for s in societies if str(s).strip()}
+    if not normalized:
+        return df.iloc[0:0].copy()
+    return df[df[SOC_COL].astype(str).str.upper().isin(normalized)].copy()
+
+
+def apply_filters(df, filters):
+    result = df.copy()
+    for label, value in filters.items():
+        if value == "Tous":
+            continue
+        result = result[result[FILTER_MAPPING[label]] == value]
+    return result
+
+
+def build_distribution(df, column, order):
+    counts = df[column].value_counts(dropna=False)
+    total = len(df)
+    rows = []
+    for item in order:
+        nb = int(counts.get(item, 0))
+        rows.append({"Libellé": item, "Nb": nb, "%": (nb / total if total else 0.0)})
+    return pd.DataFrame(rows)
+
+
+def build_alert_table(df):
+    rows = [
+        ("Justificatif incomplet", int(df["Alerte justificatif incomplet"].sum())),
+        ("Vigilance critique", int(df["Alerte vigilance critique"].sum())),
+        ("Revue trop ancienne", int(df["Alerte revue trop ancienne"].sum())),
+        ("Sans prochaine revue", int(df["Alerte sans prochaine revue"].sum())),
+        ("Cross-border élevé", int(df["Alerte cross-border élevé"].sum())),
+        ("Cash intensité élevée", int(df["Alerte cash intensité élevée"].sum())),
+    ]
+    return pd.DataFrame(rows, columns=["Alerte", "Nb"])
+
+
+def ranked_counts(df, column, top_n=5):
+    if column not in df.columns:
+        return pd.DataFrame(columns=["Libellé", "Nb"])
+    series = df[column].dropna().astype(str).str.strip()
+    series = series[series.ne("")]
+    if series.empty:
+        return pd.DataFrame(columns=["Libellé", "Nb"])
+    return (
+        series.value_counts()
+        .rename_axis("Libellé")
+        .reset_index(name="Nb")
+        .sort_values(["Nb", "Libellé"], ascending=[False, True], kind="stable")
+        .head(top_n)
+        .reset_index(drop=True)
+    )
+
+
+def build_priority_table(df, top_n=10):
+    priority = (
+        df.sort_values(["Score priorité", SOC_COL, "SIREN"], ascending=[False, True, False], kind="stable")
+        .head(top_n)
+        .copy()
+    )
+    priority.insert(0, "#", range(1, len(priority) + 1))
+    columns = [
+        "#",
+        SOC_COL,
+        "Dénomination",
+        "SIREN",
+        "Pays de résidence",
+        "Segment",
+        "Vigilance",
+        "Risque",
+        "Statut EDD",
+        "Analyste",
+        "Motifs",
+        "Score priorité",
+    ]
+    columns = [c for c in columns if c in priority.columns]
+    return priority[columns].rename(
+        columns={
+            SOC_COL: "Société",
+            "Dénomination": "Client",
+            "Pays de résidence": "Pays",
+            "Statut EDD": "EDD",
+            "Score priorité": "Score",
+        }
+    )
+
+
+def format_percent_column(df):
+    output = df.copy()
+    if "%" in output.columns:
+        output["%"] = output["%"].map(lambda x: f"{x:.1%}")
+    return output
+
+
+def dataframe_to_csv_bytes(df):
+    export = df.copy()
+    for col in export.columns:
+        if pd.api.types.is_datetime64_any_dtype(export[col]):
+            export[col] = export[col].dt.strftime("%Y-%m-%d")
+    return export.to_csv(index=False, sep=";", encoding="utf-8-sig").encode("utf-8-sig")
+
+
+def reset_filters():
     for key in list(st.session_state.keys()):
         if key.startswith("filter_"):
             st.session_state[key] = "Tous"
 
 
-
 def render_scope_selector(df, user):
     all_societies = available_societies(df)
-
-    if user.is_admin or "ALL" in user.societes_autorisees:
+    if user["role"] == "admin" or "ALL" in user["societes_autorisees"]:
         allowed = all_societies
     else:
-        allowed = [s for s in all_societies if s in set(user.societes_autorisees)]
+        allowed = [s for s in all_societies if s in set(user["societes_autorisees"])]
 
     if not allowed:
         st.error("Votre compte ne possède aucun accès société correspondant aux données chargées.")
@@ -68,7 +507,6 @@ def render_scope_selector(df, user):
     return selection, allowed
 
 
-
 def render_filters(df):
     st.subheader("Filtres")
     st.caption("Les filtres sont cumulatifs et recalculent tout le tableau.")
@@ -81,10 +519,13 @@ def render_filters(df):
     labels = list(FILTER_MAPPING.keys())
     selections = {}
 
-    for container, label in zip(row1 + row2, labels, strict=False):
+    for container, label in zip(row1 + row2, labels):
         column = FILTER_MAPPING[label]
-        options = ["Tous", *non_empty_sorted(df[column].unique())]
-        state_key = f"filter_{label}"
+        if column not in df.columns:
+            options = ["Tous"]
+        else:
+            options = ["Tous"] + non_empty_sorted(df[column].unique())
+        state_key = "filter_" + label
         if st.session_state.get(state_key) not in options:
             st.session_state[state_key] = "Tous"
         with container:
@@ -92,12 +533,11 @@ def render_filters(df):
     return selections
 
 
-
 def render_kpis(df):
     st.subheader("Bandeau de synthèse")
     total = len(df)
-    vigilance_renforcee = int(df["Vigilance"].isin(CRITICAL_VIGILANCE).sum())
-    risque_avere = int((df["Risque"] == "Risque avéré").sum())
+    vigilance_renforcee = int(df["Vigilance"].isin(CRITICAL_VIGILANCE).sum()) if "Vigilance" in df.columns else 0
+    risque_avere = int((df["Risque"] == "Risque avéré").sum()) if "Risque" in df.columns else 0
     justificatifs_incomplets = int(df["Alerte justificatif incomplet"].sum())
     sans_revue = int(df["Alerte sans prochaine revue"].sum())
     historique_disponible = int((df["Nb historique"] > 0).sum())
@@ -110,55 +550,51 @@ def render_kpis(df):
     c5.metric("Sans prochaine revue", sans_revue)
     c6.metric("Historique disponible", historique_disponible)
 
-    if total:
+    if total and "Vigilance Date de mise à jour" in df.columns:
         last_update = df["Vigilance Date de mise à jour"].max()
-        if last_update == last_update:
-            st.caption(f"Fraîcheur visible : dernière mise à jour vigilance = {last_update:%d/%m/%Y}.")
-
+        if pd.notna(last_update):
+            st.caption("Fraîcheur visible : dernière mise à jour vigilance = {}.".format(last_update.strftime("%d/%m/%Y")))
 
 
 def render_distribution_block(title, dist_df, index_col):
-    st.markdown(f"**{title}**")
+    st.markdown("**{}**".format(title))
     st.bar_chart(dist_df.set_index(index_col)[["Nb"]], height=260)
     st.dataframe(format_percent_column(dist_df), hide_index=True, use_container_width=True)
 
 
-
 def render_top_block(title, df):
-    st.markdown(f"**{title}**")
+    st.markdown("**{}**".format(title))
     st.dataframe(df, hide_index=True, use_container_width=True)
-
 
 
 def render_user_header(user, selected_societies, total_societies):
     with st.sidebar:
         st.markdown("### Session")
-        st.write(f"**Utilisateur :** {user.display_name}")
-        st.write(f"**Rôle :** {user.role}")
-        st.write(f"**Sociétés sélectionnées :** {len(selected_societies)} / {total_societies}")
+        st.write("**Utilisateur :** {}".format(user["display_name"]))
+        st.write("**Rôle :** {}".format(user["role"]))
+        st.write("**Sociétés sélectionnées :** {} / {}".format(len(selected_societies), total_societies))
         logout_button()
 
 
-
-def main() -> None:
+def main():
     st.set_page_config(page_title=PAGE_TITLE, layout="wide")
     st.title(PAGE_TITLE)
     st.caption(
-        "Version simple avec connexion utilisateur basique et filtrage par société autorisée. "
-        "Les fichiers 01, 02 et 03 doivent contenir la colonne 'societe_id' en première position."
+        "Version simple en un seul fichier. Les fichiers 01, 02 et 03 doivent contenir la colonne 'societe_id' en première position."
     )
 
-    user = get_current_user() or login_form()
+    user = get_current_user()
     if user is None:
+        login_form()
         return
 
     try:
-        portfolio = load_portfolio()
-    except FileNotFoundError as exc:
+        portfolio = build_portfolio_dataset()
+    except (FileNotFoundError, DataValidationError, ValueError) as exc:
         st.error(str(exc))
         return
-    except DataValidationError as exc:
-        st.error(str(exc))
+    except Exception as exc:
+        st.error("Erreur inattendue au chargement des données : {}".format(exc))
         return
 
     selected_societies, allowed_societies = render_scope_selector(portfolio, user)
@@ -217,5 +653,4 @@ def main() -> None:
         st.dataframe(filtered[export_columns], hide_index=True, use_container_width=True, height=420)
 
 
-if __name__ == "__main__":
-    main()
+main()
