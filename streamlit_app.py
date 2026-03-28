@@ -455,6 +455,75 @@ def inject_brand_theme() -> None:
             font-weight: 700;
         }}
 
+        .cm-analysis-main-wrap {{
+            background: rgba(255,255,255,0.86);
+            border: 1px solid var(--cm-border);
+            border-radius: 20px;
+            overflow: auto;
+            box-shadow: 0 12px 28px rgba(22, 58, 89, 0.07);
+        }}
+
+        .cm-analysis-main-table {{
+            width: max-content;
+            min-width: 100%;
+            border-collapse: separate;
+            border-spacing: 0;
+            font-size: 0.95rem;
+        }}
+
+        .cm-analysis-main-table thead th {{
+            position: sticky;
+            top: 0;
+            z-index: 1;
+            background: linear-gradient(135deg, var(--cm-primary), #245782);
+            color: #FFFFFF;
+            text-align: left;
+            padding: 0.86rem 0.95rem;
+            font-family: 'Sora', sans-serif;
+            font-size: 0.82rem;
+            font-weight: 800;
+            letter-spacing: 0.03em;
+            text-transform: uppercase;
+            white-space: nowrap;
+        }}
+
+        .cm-analysis-main-table tbody td {{
+            padding: 0.82rem 0.95rem;
+            border-top: 1px solid rgba(22, 58, 89, 0.08);
+            vertical-align: middle;
+            color: var(--cm-text);
+            white-space: nowrap;
+            background: rgba(255,255,255,0.98);
+        }}
+
+        .cm-analysis-main-table tbody tr:nth-child(even) td {{
+            background: rgba(237, 244, 252, 0.92);
+        }}
+
+        .cm-analysis-main-table tbody tr:hover td {{
+            background: rgba(226, 237, 249, 0.96);
+        }}
+
+        .cm-analysis-main-table tbody td.cm-number {{
+            text-align: right;
+            font-variant-numeric: tabular-nums;
+            font-weight: 700;
+        }}
+
+        .cm-analysis-main-table tbody td.cm-first-col {{
+            font-weight: 800;
+            color: var(--cm-primary);
+        }}
+
+        .cm-analysis-params {{
+            background: rgba(255,255,255,0.72);
+            border: 1px solid var(--cm-border);
+            border-radius: 18px;
+            padding: 0.65rem 0.8rem 0.2rem 0.8rem;
+            box-shadow: 0 10px 24px rgba(22, 58, 89, 0.04);
+            margin-bottom: 0.9rem;
+        }}
+
         .cm-badge {{
             display: inline-flex;
             align-items: center;
@@ -1328,6 +1397,33 @@ def load_manifest() -> dict | None:
         return json.loads(path.read_text(encoding="utf-8"))
     except Exception:
         return None
+
+
+def build_dataset_cache_signature() -> str:
+    manifest = load_manifest() or {}
+    current_dir = active_dataset_path()
+    parts = [str(manifest.get("published_at_utc", ""))]
+    for filename in DATA_FILES.values():
+        path = current_dir / filename
+        if path.exists():
+            stat = path.stat()
+            parts.append(f"{filename}:{stat.st_mtime_ns}:{stat.st_size}")
+        else:
+            parts.append(f"{filename}:missing")
+    return "|".join(parts)
+
+
+@st.cache_data(show_spinner=False)
+def get_app_datasets_cached(signature: str) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+    base = load_source_data()
+    portfolio = build_portfolio_dataset()
+    return base[0], base[1], base[2], portfolio
+
+
+def load_app_datasets() -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+    signature = build_dataset_cache_signature()
+    base, indicators, history, portfolio = get_app_datasets_cached(signature)
+    return base.copy(), indicators.copy(), history.copy(), portfolio.copy()
 
 
 def load_source_data() -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
@@ -2748,29 +2844,82 @@ def build_analysis_detail_dataset(
 
 
 def render_analysis_kpis(df: pd.DataFrame) -> None:
+    st.subheader("Bandeau de synthèse")
     total = len(df)
-    critical_share = df.get("Vigilance", pd.Series(index=df.index, dtype="string")).isin(CRITICAL_VIGILANCE).mean() if total else 0
-    risk_count = int(df.get("Risque", pd.Series(index=df.index, dtype="string")).eq("Risque avéré").sum())
-    edd_open = int(df.get("Statut EDD", pd.Series(index=df.index, dtype="string")).astype("string").str.lower().str.contains("ouvrir|ouverte|ouvert|cours", regex=True).sum())
-    governance_gap = int(
+    vigilance_renforcee = int(df.get("Vigilance", pd.Series(index=df.index, dtype="string")).isin(CRITICAL_VIGILANCE).sum()) if total else 0
+    risque_avere = int(df.get("Risque", pd.Series(index=df.index, dtype="string")).eq("Risque avéré").sum()) if total else 0
+    edd_concernees = int(df.get("Statut EDD", pd.Series(index=df.index, dtype="string")).astype("string").str.lower().str.contains("ouvrir|ouverte|ouvert|cours", regex=True).sum())
+    ecarts_gouvernance = int(
         df.get("Alerte justificatif incomplet", pd.Series(index=df.index, dtype="int64")).sum()
         + df.get("Alerte revue trop ancienne", pd.Series(index=df.index, dtype="int64")).sum()
         + df.get("Alerte sans prochaine revue", pd.Series(index=df.index, dtype="int64")).sum()
     )
-    cols = st.columns(5)
-    kpis = [
-        ("Clients visibles", total, "Périmètre filtré"),
-        ("Vigilance renforcée", f"{critical_share:.1%}", "Élevée + critique"),
-        ("Risques avérés", risk_count, "Statut importé"),
-        ("EDD concernées", edd_open, "À ouvrir / ouvertes / en cours"),
-        ("Écarts gouvernance", governance_gap, "Justificatifs / revues / planning"),
-    ]
-    for col, (title, value, subtitle) in zip(cols, kpis):
-        with col:
-            st.markdown(
-                f"<div class='cm-kpi-card'><div class='cm-kpi-title'>{escape(str(title))}</div><div class='cm-kpi-value'>{escape(str(value))}</div><div class='cm-kpi-subtitle'>{escape(str(subtitle))}</div></div>",
-                unsafe_allow_html=True,
-            )
+    historique_disponible = int(df.get("Nb historique", pd.Series(index=df.index, dtype="float64")).fillna(0).gt(0).sum())
+
+    c1, c2, c3, c4, c5, c6 = st.columns(6)
+    c1.metric("Clients visibles", total)
+    c2.metric("Vigilance renforcée", vigilance_renforcee)
+    c3.metric("Risque avéré", risque_avere)
+    c4.metric("EDD concernées", edd_concernees)
+    c5.metric("Écarts gouvernance", ecarts_gouvernance)
+    c6.metric("Historique disponible", historique_disponible)
+
+    if total and "Vigilance Date de mise à jour" in df.columns:
+        last_update = pd.to_datetime(df["Vigilance Date de mise à jour"], errors="coerce").max()
+        if pd.notna(last_update):
+            st.caption(f"Fraîcheur visible : dernière mise à jour vigilance = {last_update.strftime('%d/%m/%Y')}.")
+
+
+def format_table_for_display(df: pd.DataFrame) -> pd.DataFrame:
+    output = df.copy()
+    for col in output.columns:
+        if pd.api.types.is_datetime64_any_dtype(output[col]):
+            output[col] = output[col].dt.strftime("%d/%m/%Y")
+            continue
+        if col.startswith("%"):
+            output[col] = output[col].map(lambda x: "" if pd.isna(x) else f"{float(x):.1%}")
+            continue
+        if pd.api.types.is_float_dtype(output[col]):
+            non_null = output[col].dropna()
+            if non_null.empty:
+                continue
+            if np.allclose(non_null % 1, 0):
+                output[col] = output[col].map(lambda x: "" if pd.isna(x) else f"{int(round(float(x))):,}".replace(",", " "))
+            else:
+                output[col] = output[col].map(lambda x: "" if pd.isna(x) else f"{float(x):,.1f}".replace(",", " ").replace(".", ","))
+        elif pd.api.types.is_integer_dtype(output[col]):
+            output[col] = output[col].map(lambda x: "" if pd.isna(x) else f"{int(x):,}".replace(",", " "))
+    return output
+
+
+def render_analysis_main_table(df: pd.DataFrame) -> None:
+    if df is None or df.empty:
+        st.info("Aucune donnée à afficher.")
+        return
+
+    display_df = format_table_for_display(df)
+    html = ["<div class='cm-analysis-main-wrap'><table class='cm-analysis-main-table'><thead><tr>"]
+    for col in display_df.columns:
+        html.append(f"<th>{escape(str(col))}</th>")
+    html.append("</tr></thead><tbody>")
+
+    for row_idx, row in display_df.iterrows():
+        html.append("<tr>")
+        for idx, col in enumerate(display_df.columns):
+            value = row[col]
+            classes = []
+            original_value = df.iloc[row_idx][col] if col in df.columns else value
+            if idx == 0:
+                classes.append("cm-first-col")
+            if isinstance(original_value, (int, float, np.integer, np.floating)) and not isinstance(original_value, bool):
+                classes.append("cm-number")
+            class_attr = f" class='{' '.join(classes)}'" if classes else ""
+            rendered = "" if pd.isna(value) else escape(str(value))
+            html.append(f"<td{class_attr}>{rendered}</td>")
+        html.append("</tr>")
+
+    html.append("</tbody></table></div>")
+    st.markdown("".join(html), unsafe_allow_html=True)
 
 
 def render_analysis_screen(portfolio: pd.DataFrame, indicators: pd.DataFrame) -> None:
@@ -2791,6 +2940,7 @@ def render_analysis_screen(portfolio: pd.DataFrame, indicators: pd.DataFrame) ->
 
     dimension_map = analysis_dimension_mapping(filtered)
     measure_map = analysis_measure_mapping(filtered)
+    st.markdown("<div class='cm-analysis-params'>", unsafe_allow_html=True)
     row_a, row_b, row_c, row_d = st.columns([1.25, 1.1, 1.1, 1.0])
     row_options = list(dimension_map.keys())
     default_row = "Segment" if "Segment" in row_options else row_options[0]
@@ -2804,6 +2954,7 @@ def render_analysis_screen(portfolio: pd.DataFrame, indicators: pd.DataFrame) ->
         measure_label = st.selectbox("Mesure", options=measure_options, key="analysis_measure")
     with row_d:
         sort_choice = st.selectbox("Tri", options=["Mesure décroissante", "Libellé A → Z"], key="analysis_sort")
+    st.markdown("</div>", unsafe_allow_html=True)
 
     row_col = dimension_map[row_dimension_label]
     col_col = None if column_dimension_label == "Aucun" else dimension_map[column_dimension_label]
@@ -2819,10 +2970,7 @@ def render_analysis_screen(portfolio: pd.DataFrame, indicators: pd.DataFrame) ->
 
     st.markdown('<h3 class="cm-section-title">Analyse principale</h3>', unsafe_allow_html=True)
     st.caption(granularity_caption)
-    render_small_table(
-        format_percent_column(main_table) if {"% portf.", "% mesure"} & set(main_table.columns) else main_table,
-        color_columns={"Vigilance": "vigilance", "Risque": "risk", "Statut": "risk"} if any(c in main_table.columns for c in ["Vigilance", "Risque", "Statut"]) else None,
-    )
+    render_analysis_main_table(main_table)
 
     if main_table.empty:
         st.info("Aucun résultat à afficher pour les paramètres sélectionnés.")
@@ -2924,8 +3072,7 @@ def main() -> None:
     sync_view_state_from_query_params()
 
     try:
-        base, indicators, history = load_source_data()
-        portfolio = build_portfolio_dataset()
+        base, indicators, history, portfolio = load_app_datasets()
     except NoPublishedDatasetError as exc:
         st.info(str(exc))
         return
