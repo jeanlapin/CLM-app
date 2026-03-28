@@ -2936,11 +2936,9 @@ def render_analysis_screen(portfolio: pd.DataFrame, indicators: pd.DataFrame) ->
         return
 
     render_analysis_kpis(filtered)
-    st.divider()
 
     dimension_map = analysis_dimension_mapping(filtered)
     measure_map = analysis_measure_mapping(filtered)
-    st.markdown("<div class='cm-analysis-params'>", unsafe_allow_html=True)
     row_a, row_b, row_c, row_d = st.columns([1.25, 1.1, 1.1, 1.0])
     row_options = list(dimension_map.keys())
     default_row = "Segment" if "Segment" in row_options else row_options[0]
