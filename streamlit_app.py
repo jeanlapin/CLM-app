@@ -1879,6 +1879,9 @@ def sync_view_state_from_query_params() -> None:
     societe_id = str(query_params.get("societe", "")).strip()
     siren = str(query_params.get("siren", "")).strip()
 
+    if view == "analyse":
+        st.session_state["cm_view"] = "analysis"
+
     if view == "client" and societe_id and siren:
         st.session_state["cm_view"] = "client"
         st.session_state["cm_client_societe"] = societe_id
@@ -2096,13 +2099,17 @@ def client_label(row: pd.Series) -> str:
 
 
 def open_client_detail(societe_id: str, siren: str) -> None:
+    current_view = st.session_state.get("cm_view", "portfolio")
+    if current_view == "client":
+        current_view = st.session_state.get("cm_previous_view", "portfolio")
+    st.session_state["cm_previous_view"] = current_view or "portfolio"
     st.session_state["cm_view"] = "client"
     st.session_state["cm_client_societe"] = societe_id
     st.session_state["cm_client_siren"] = siren
 
 
-def return_to_portfolio() -> None:
-    st.session_state["cm_view"] = "portfolio"
+def return_from_client() -> None:
+    st.session_state["cm_view"] = st.session_state.get("cm_previous_view", "portfolio") or "portfolio"
     st.session_state.pop("cm_client_societe", None)
     st.session_state.pop("cm_client_siren", None)
     st.query_params.clear()
@@ -2437,22 +2444,22 @@ def render_client_screen(
     societe_id = st.session_state.get("cm_client_societe")
     siren = st.session_state.get("cm_client_siren")
     if not societe_id or not siren:
-        return_to_portfolio()
+        return_from_client()
         st.rerun()
 
     allowed_set = {str(s).strip().upper() for s in allowed_societies}
     if str(societe_id).strip().upper() not in allowed_set:
         st.error("Cette fiche client n'appartient pas à votre périmètre autorisé.")
-        if st.button("Retour au portefeuille", key="btn_back_unauthorized"):
-            return_to_portfolio()
+        if st.button("Retour", key="btn_back_unauthorized"):
+            return_from_client()
             st.rerun()
         return
 
     client_rows = portfolio[(portfolio[SOC_COL] == societe_id) & (portfolio["SIREN"] == siren)]
     if client_rows.empty:
         st.warning("Le client demandé n'est plus disponible dans le jeu actif.")
-        if st.button("Retour au portefeuille", key="btn_back_missing"):
-            return_to_portfolio()
+        if st.button("Retour", key="btn_back_missing"):
+            return_from_client()
             st.rerun()
         return
 
@@ -2466,7 +2473,7 @@ def render_client_screen(
     with top_right:
         st.markdown("<div style='height: 0.3rem'></div>", unsafe_allow_html=True)
         if st.button("← Retour", type="secondary", key="back_to_portfolio_top"):
-            return_to_portfolio()
+            return_from_client()
             st.rerun()
 
     tabs = st.tabs(["Données de base", "Indicateurs", "Historique des indicateurs", "EDD et historique"])
@@ -2481,6 +2488,410 @@ def render_client_screen(
         render_client_history_tab(history_rows)
     with tabs[3]:
         render_client_edd_tab(client_row, history_rows)
+
+
+
+def render_primary_navigation(current_view: str) -> str:
+    label_map = {"portfolio": "Portefeuille", "analysis": "Analyse"}
+    current_label = label_map.get(current_view, "Portefeuille")
+    selection = st.radio(
+        "Navigation principale",
+        options=["Portefeuille", "Analyse"],
+        horizontal=True,
+        label_visibility="collapsed",
+        index=["Portefeuille", "Analyse"].index(current_label),
+        key="cm_main_nav_radio",
+    )
+    return "analysis" if selection == "Analyse" else "portfolio"
+
+
+def open_analysis_view() -> None:
+    st.session_state["cm_view"] = "analysis"
+    st.query_params.clear()
+
+
+def open_portfolio_view() -> None:
+    st.session_state["cm_view"] = "portfolio"
+    st.query_params.clear()
+
+
+def analysis_dimension_mapping(df: pd.DataFrame) -> dict[str, str]:
+    candidates = {
+        "Société": SOC_COL,
+        "Segment": "Segment",
+        "Pays": "Pays de résidence",
+        "Produit": "Produit(service) principal",
+        "Canal": "Canal d’opérations principal 12 mois",
+        "Vigilance": "Vigilance",
+        "Risque": "Risque",
+        "Statut EDD": "Statut EDD",
+        "Analyste": "Analyste",
+        "Valideur": "Valideur",
+        "Nationalité": "Nationalité",
+        "Catégorie juridique": "Catégorie Juridique",
+        "Cash intensité": "Cash intensité Statut",
+        "Cross-border": "Cross border",
+    }
+    return {label: column for label, column in candidates.items() if column in df.columns}
+
+
+def analysis_measure_mapping(df: pd.DataFrame) -> dict[str, str]:
+    return {
+        "Clients": "clients",
+        "Part du portefeuille": "share",
+        "Vigilance renforcée": "critical_vigilance",
+        "Risques avérés": "confirmed_risk",
+        "EDD concernées": "edd_open",
+        "Justificatifs incomplets": "missing_docs",
+        "Sans prochaine revue": "without_next_review",
+        "Cross-border élevé": "cross_border",
+        "Historique indicateurs": "history_cases",
+    }
+
+
+def compute_measure_series(df: pd.DataFrame, measure_key: str) -> pd.Series:
+    if df.empty:
+        return pd.Series(dtype="float64")
+    if measure_key == "clients":
+        return pd.Series(1, index=df.index, dtype="int64")
+    if measure_key == "critical_vigilance":
+        return df.get("Vigilance", pd.Series(index=df.index, dtype="string")).isin(CRITICAL_VIGILANCE).astype(int)
+    if measure_key == "confirmed_risk":
+        return df.get("Risque", pd.Series(index=df.index, dtype="string")).eq("Risque avéré").astype(int)
+    if measure_key == "edd_open":
+        edd = df.get("Statut EDD", pd.Series(index=df.index, dtype="string")).astype("string").fillna("")
+        return edd.str.lower().str.contains("ouvrir|ouverte|ouvert|cours", regex=True).astype(int)
+    if measure_key == "missing_docs":
+        return df.get("Flag justificatif complet", pd.Series(index=df.index, dtype="string")).ne("Oui").astype(int)
+    if measure_key == "without_next_review":
+        return df.get("Date prochaine revue", pd.Series(index=df.index, dtype="datetime64[ns]")).isna().astype(int)
+    if measure_key == "cross_border":
+        return df.get("Cross border", pd.Series(index=df.index, dtype="float64")).ge(0.25).fillna(False).astype(int)
+    if measure_key == "history_cases":
+        return df.get("Nb historique", pd.Series(index=df.index, dtype="float64")).fillna(0).gt(0).astype(int)
+    return pd.Series(1, index=df.index, dtype="int64")
+
+
+def build_analysis_main_table(
+    df: pd.DataFrame,
+    line_col: str,
+    line_label: str,
+    measure_key: str,
+    column_col: str | None = None,
+    sort_desc: bool = True,
+) -> tuple[pd.DataFrame, str]:
+    work = df.copy()
+    work[line_col] = work.get(line_col).fillna("Non renseigné").astype(str).replace({"": "Non renseigné"})
+    if column_col:
+        work[column_col] = work.get(column_col).fillna("Non renseigné").astype(str).replace({"": "Non renseigné"})
+    work["cm_client_key"] = work[SOC_COL].astype(str) + "|" + work["SIREN"].astype(str)
+    measure_series = compute_measure_series(work, measure_key)
+    work["cm_measure"] = measure_series.astype(float)
+    total_clients = int(work["cm_client_key"].nunique())
+    total_measure = float(work["cm_measure"].sum())
+
+    if column_col:
+        pivot = pd.pivot_table(
+            work,
+            index=line_col,
+            columns=column_col,
+            values="cm_measure",
+            aggfunc="sum",
+            fill_value=0,
+        ).reset_index()
+        pivot.columns = [line_label] + [display_value(c) for c in pivot.columns[1:]]
+        numeric_cols = [c for c in pivot.columns if c != line_label]
+        if numeric_cols:
+            pivot["Total"] = pivot[numeric_cols].sum(axis=1)
+            pivot = pivot.sort_values("Total", ascending=not sort_desc, kind="stable")
+        return pivot.reset_index(drop=True), "Base client distincte filtrée ; la mesure affichée est agrégée par croisement de dimensions."
+
+    grouped = (
+        work.groupby(line_col, dropna=False)
+        .agg(
+            Clients=("cm_client_key", "nunique"),
+            Mesure=("cm_measure", "sum"),
+            Vigilance_renforcee=("Vigilance", lambda s: s.isin(CRITICAL_VIGILANCE).sum()),
+            Risques_averes=("Risque", lambda s: s.eq("Risque avéré").sum()),
+            EDD_ouvertes=("Statut EDD", lambda s: s.astype("string").str.lower().str.contains("ouvrir|ouverte|ouvert|cours", regex=True).sum()),
+            Sans_revue=("Date prochaine revue", lambda s: s.isna().sum()),
+            Justif_incomplets=("Flag justificatif complet", lambda s: s.ne("Oui").sum()),
+            Historique=("Nb historique", lambda s: s.fillna(0).gt(0).sum()),
+        )
+        .reset_index()
+        .rename(columns={line_col: line_label})
+    )
+    grouped["% portf."] = grouped["Clients"].div(total_clients).fillna(0)
+    grouped["% mesure"] = grouped["Mesure"].div(total_measure).fillna(0) if total_measure else 0.0
+    grouped["Rang"] = grouped["Mesure"].rank(method="dense", ascending=False).astype(int)
+    sort_col = "Mesure" if sort_desc else line_label
+    ascending = False if sort_desc else True
+    grouped = grouped.sort_values(sort_col, ascending=ascending, kind="stable")
+    grouped = grouped.rename(columns={
+        "Vigilance_renforcee": "Vigil. renf.",
+        "Risques_averes": "Risques avérés",
+        "EDD_ouvertes": "EDD ouvertes",
+        "Sans_revue": "Sans revue",
+        "Justif_incomplets": "Justif. inc.",
+        "Historique": "Hist. indics",
+    })
+    return grouped.reset_index(drop=True), "Base client distincte filtrée ; les pourcentages sont calculés sur le périmètre courant."
+
+
+def build_analysis_trend_table(df: pd.DataFrame) -> pd.DataFrame:
+    def monthly_count(series: pd.Series, label: str) -> pd.Series:
+        if series is None or series.empty:
+            return pd.Series(dtype="int64", name=label)
+        clean = pd.to_datetime(series, errors="coerce").dropna()
+        if clean.empty:
+            return pd.Series(dtype="int64", name=label)
+        month = clean.dt.to_period("M").dt.to_timestamp()
+        return month.value_counts().sort_index().rename(label)
+
+    frames = [
+        monthly_count(df.get("Vigilance Date de mise à jour"), "Date réf. risque"),
+        monthly_count(df.get("Date dernière revue"), "Dernières revues"),
+        monthly_count(df.get("Date prochaine revue"), "Prochaines revues"),
+    ]
+    combined = pd.concat(frames, axis=1).fillna(0).sort_index()
+    if combined.empty:
+        return pd.DataFrame(columns=["Mois", "Date réf. risque", "Dernières revues", "Prochaines revues", "% revues / clients"])
+    combined = combined.tail(6)
+    combined["% revues / clients"] = combined["Dernières revues"].div(max(len(df), 1))
+    combined = combined.reset_index().rename(columns={"index": "Mois"})
+    combined["Mois"] = pd.to_datetime(combined["Mois"]).dt.strftime("%Y-%m")
+    return combined
+
+
+def normalize_indicators_current(indicators_df: pd.DataFrame) -> pd.DataFrame:
+    if indicators_df is None or indicators_df.empty:
+        return pd.DataFrame(columns=[SOC_COL, "SIREN", "Dénomination", "Indicateur", "Statut", "Valeur", "Date de mise à jour", "Commentaire"])
+
+    groups = indicator_group_map(list(indicators_df.columns))
+    rows: list[dict[str, object]] = []
+    for _, row in indicators_df.iterrows():
+        base_info = {
+            SOC_COL: row.get(SOC_COL),
+            "SIREN": row.get("SIREN"),
+            "Dénomination": row.get("Dénomination"),
+        }
+        for indicator_name, mapping in groups.items():
+            if indicator_name == "Vigilance":
+                continue
+            statut = row.get(mapping.get("Statut", ""), None)
+            valeur = row.get(mapping.get("Valeur", ""), None)
+            commentaire = row.get(mapping.get("Commentaire", ""), None)
+            date_maj = row.get(mapping.get("Date de mise à jour", ""), None)
+            if pd.isna(statut) and pd.isna(valeur) and pd.isna(commentaire) and pd.isna(date_maj):
+                continue
+            rows.append({
+                **base_info,
+                "Indicateur": indicator_name,
+                "Statut": clean_text_column(pd.Series([statut])).iloc[0],
+                "Valeur": clean_text_column(pd.Series([valeur])).iloc[0],
+                "Date de mise à jour": pd.to_datetime(pd.Series([date_maj]), errors="coerce").iloc[0],
+                "Commentaire": clean_text_column(pd.Series([commentaire])).iloc[0],
+            })
+    return pd.DataFrame(rows)
+
+
+def build_indicator_analysis_table(filtered_portfolio: pd.DataFrame, indicators_df: pd.DataFrame) -> pd.DataFrame:
+    normalized = normalize_indicators_current(indicators_df)
+    if normalized.empty:
+        return pd.DataFrame(columns=["Indicateur", "Risque avéré", "Risque potentiel", "Risque mitigé", "Non calculable", "Total cas"])
+    keys = filtered_portfolio[[SOC_COL, "SIREN"]].drop_duplicates()
+    normalized = normalized.merge(keys, how="inner", on=[SOC_COL, "SIREN"])
+    if normalized.empty:
+        return pd.DataFrame(columns=["Indicateur", "Risque avéré", "Risque potentiel", "Risque mitigé", "Non calculable", "Total cas"])
+    crosstab = pd.crosstab(normalized["Indicateur"], normalized["Statut"])
+    for status in ["Risque avéré", "Risque potentiel", "Risque mitigé", "Non calculable"]:
+        if status not in crosstab.columns:
+            crosstab[status] = 0
+    crosstab["Total cas"] = crosstab[["Risque avéré", "Risque potentiel", "Risque mitigé", "Non calculable"]].sum(axis=1)
+    result = crosstab.reset_index().sort_values(["Total cas", "Indicateur"], ascending=[False, True], kind="stable")
+    return result[["Indicateur", "Risque avéré", "Risque potentiel", "Risque mitigé", "Non calculable", "Total cas"]].head(12).reset_index(drop=True)
+
+
+def build_analysis_detail_dataset(
+    df: pd.DataFrame,
+    line_col: str,
+    line_value: str,
+    column_col: str | None = None,
+    column_value: str | None = None,
+) -> pd.DataFrame:
+    detail = df.copy()
+    target_line = "" if line_value is None else str(line_value)
+    detail = detail[detail.get(line_col).fillna("Non renseigné").astype(str).replace({"": "Non renseigné"}) == target_line]
+    if column_col and column_value and column_value != "Tous":
+        target_col = str(column_value)
+        detail = detail[detail.get(column_col).fillna("Non renseigné").astype(str).replace({"": "Non renseigné"}) == target_col]
+    detail = detail.copy()
+    detail["Motif de présence"] = f"{line_col} = {target_line}" + (f" | {column_col} = {column_value}" if column_col and column_value and column_value != "Tous" else "")
+    detail_columns = [
+        "SIREN",
+        "Dénomination",
+        "Vigilance",
+        "Risque",
+        SOC_COL,
+        "Pays de résidence",
+        "Segment",
+        "Produit(service) principal",
+        "Canal d’opérations principal 12 mois",
+        "Statut EDD",
+        "Analyste",
+        "Valideur",
+        "Date dernière revue",
+        "Motif de présence",
+    ]
+    detail_columns = [c for c in detail_columns if c in detail.columns]
+    return detail[detail_columns]
+
+
+def render_analysis_kpis(df: pd.DataFrame) -> None:
+    total = len(df)
+    critical_share = df.get("Vigilance", pd.Series(index=df.index, dtype="string")).isin(CRITICAL_VIGILANCE).mean() if total else 0
+    risk_count = int(df.get("Risque", pd.Series(index=df.index, dtype="string")).eq("Risque avéré").sum())
+    edd_open = int(df.get("Statut EDD", pd.Series(index=df.index, dtype="string")).astype("string").str.lower().str.contains("ouvrir|ouverte|ouvert|cours", regex=True).sum())
+    governance_gap = int(
+        df.get("Alerte justificatif incomplet", pd.Series(index=df.index, dtype="int64")).sum()
+        + df.get("Alerte revue trop ancienne", pd.Series(index=df.index, dtype="int64")).sum()
+        + df.get("Alerte sans prochaine revue", pd.Series(index=df.index, dtype="int64")).sum()
+    )
+    cols = st.columns(5)
+    kpis = [
+        ("Clients visibles", total, "Périmètre filtré"),
+        ("Vigilance renforcée", f"{critical_share:.1%}", "Élevée + critique"),
+        ("Risques avérés", risk_count, "Statut importé"),
+        ("EDD concernées", edd_open, "À ouvrir / ouvertes / en cours"),
+        ("Écarts gouvernance", governance_gap, "Justificatifs / revues / planning"),
+    ]
+    for col, (title, value, subtitle) in zip(cols, kpis):
+        with col:
+            st.markdown(
+                f"<div class='cm-kpi-card'><div class='cm-kpi-title'>{escape(str(title))}</div><div class='cm-kpi-value'>{escape(str(value))}</div><div class='cm-kpi-subtitle'>{escape(str(subtitle))}</div></div>",
+                unsafe_allow_html=True,
+            )
+
+
+def render_analysis_screen(portfolio: pd.DataFrame, indicators: pd.DataFrame) -> None:
+    render_home_hero("Analyse")
+    nav = render_primary_navigation("analysis")
+    if nav != "analysis":
+        open_portfolio_view()
+        st.rerun()
+
+    filters = render_filters(portfolio)
+    filtered = apply_filters(portfolio, filters)
+    if filtered.empty:
+        st.warning("Aucun client ne correspond au périmètre société + filtres sélectionnés.")
+        return
+
+    render_analysis_kpis(filtered)
+    st.divider()
+
+    dimension_map = analysis_dimension_mapping(filtered)
+    measure_map = analysis_measure_mapping(filtered)
+    row_a, row_b, row_c, row_d = st.columns([1.25, 1.1, 1.1, 1.0])
+    row_options = list(dimension_map.keys())
+    default_row = "Segment" if "Segment" in row_options else row_options[0]
+    with row_a:
+        row_dimension_label = st.selectbox("Axe lignes", options=row_options, index=row_options.index(default_row), key="analysis_row_dimension")
+    col_options = ["Aucun"] + [opt for opt in row_options if opt != row_dimension_label]
+    with row_b:
+        column_dimension_label = st.selectbox("Axe colonnes", options=col_options, key="analysis_col_dimension")
+    measure_options = list(measure_map.keys())
+    with row_c:
+        measure_label = st.selectbox("Mesure", options=measure_options, key="analysis_measure")
+    with row_d:
+        sort_choice = st.selectbox("Tri", options=["Mesure décroissante", "Libellé A → Z"], key="analysis_sort")
+
+    row_col = dimension_map[row_dimension_label]
+    col_col = None if column_dimension_label == "Aucun" else dimension_map[column_dimension_label]
+    measure_key = measure_map[measure_label]
+    main_table, granularity_caption = build_analysis_main_table(
+        filtered,
+        row_col,
+        row_dimension_label,
+        measure_key,
+        column_col=col_col,
+        sort_desc=(sort_choice == "Mesure décroissante"),
+    )
+
+    st.markdown('<h3 class="cm-section-title">Analyse principale</h3>', unsafe_allow_html=True)
+    st.caption(granularity_caption)
+    render_small_table(
+        format_percent_column(main_table) if {"% portf.", "% mesure"} & set(main_table.columns) else main_table,
+        color_columns={"Vigilance": "vigilance", "Risque": "risk", "Statut": "risk"} if any(c in main_table.columns for c in ["Vigilance", "Risque", "Statut"]) else None,
+    )
+
+    if main_table.empty:
+        st.info("Aucun résultat à afficher pour les paramètres sélectionnés.")
+        return
+
+    detail_options = main_table[row_dimension_label].astype(str).tolist()
+    default_detail = detail_options[0] if detail_options else None
+
+    st.divider()
+    left, right = st.columns([1.1, 1.0])
+    with left:
+        st.markdown('<h3 class="cm-section-title">Jalons temporels</h3>', unsafe_allow_html=True)
+        trend_df = build_analysis_trend_table(filtered)
+        if trend_df.empty:
+            st.info("Aucune date exploitable n'est disponible sur le périmètre filtré.")
+        else:
+            chart_df = trend_df.set_index("Mois")[["Date réf. risque", "Dernières revues", "Prochaines revues"]]
+            st.line_chart(chart_df, height=280)
+            trend_table = trend_df.copy()
+            trend_table["% revues / clients"] = trend_table["% revues / clients"].map(lambda x: f"{x:.1%}")
+            render_small_table(trend_table)
+    with right:
+        st.markdown('<h3 class="cm-section-title">Indicateurs les plus contributifs</h3>', unsafe_allow_html=True)
+        indicator_table = build_indicator_analysis_table(filtered, indicators)
+        if indicator_table.empty:
+            st.info("Aucun indicateur exploitable n'est disponible sur le périmètre filtré.")
+        else:
+            render_small_table(indicator_table)
+
+    st.divider()
+    st.markdown('<h3 class="cm-section-title">Clients sous-jacents</h3>', unsafe_allow_html=True)
+    ctrl1, ctrl2 = st.columns([1.4, 1.0])
+    with ctrl1:
+        selected_row_value = st.selectbox(
+            f"{row_dimension_label} détaillé",
+            options=detail_options,
+            index=0 if detail_options else None,
+            key="analysis_detail_row",
+        )
+    selected_col_value = "Tous"
+    if col_col:
+        column_values = ["Tous"] + sorted(v for v in main_table.columns if v not in {row_dimension_label, "Total"})
+        with ctrl2:
+            selected_col_value = st.selectbox(
+                f"{column_dimension_label} détaillé",
+                options=column_values,
+                key="analysis_detail_col",
+            )
+
+    detail_df = build_analysis_detail_dataset(filtered, row_col, selected_row_value, col_col, selected_col_value)
+    if detail_df.empty:
+        st.info("Aucun client sous-jacent pour ce croisement.")
+    else:
+        st.caption("Cliquez sur un SIREN pour ouvrir la fiche client sans quitter votre contexte d’analyse.")
+        render_clickable_styled_dataframe(
+            style_dataframe(detail_df),
+            detail_df,
+            height=440,
+            hide_index=True,
+            key_prefix="analysis_detail_clients",
+        )
+
+    st.download_button(
+        label="Exporter la vue Analyse (.csv)",
+        data=dataframe_to_csv_bytes(detail_df if not detail_df.empty else filtered[ [c for c in DISPLAY_COLUMNS if c in filtered.columns] ]),
+        file_name="tableau2_analyse.csv",
+        mime="text/csv",
+        type="primary",
+    )
 
 
 def render_user_header(user: dict, selected_societies: list[str], total_societies: int) -> None:
@@ -2530,11 +2941,22 @@ def main() -> None:
     render_user_header(user, selected_societies, len(allowed_societies))
 
     current_view = st.session_state.get("cm_view", "portfolio")
+    scoped_indicators = restrict_to_societies(indicators, selected_societies)
+    scoped_history = restrict_to_societies(history, selected_societies)
     if current_view == "client":
-        render_client_screen(scoped, restrict_to_societies(indicators, selected_societies), restrict_to_societies(history, selected_societies), selected_societies, allowed_societies)
+        render_client_screen(scoped, scoped_indicators, scoped_history, selected_societies, allowed_societies)
+        return
+
+    if current_view == "analysis":
+        render_analysis_screen(scoped, scoped_indicators)
         return
 
     render_home_hero("Portefeuille 360°")
+    nav = render_primary_navigation("portfolio")
+    if nav == "analysis":
+        open_analysis_view()
+        st.rerun()
+
     render_client_launcher(scoped, key_prefix="header")
 
     filters = render_filters(scoped)
