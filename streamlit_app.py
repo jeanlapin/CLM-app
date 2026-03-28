@@ -2759,6 +2759,113 @@ def build_analysis_trend_table(df: pd.DataFrame) -> pd.DataFrame:
     return combined
 
 
+def build_analysis_group_table(
+    df: pd.DataFrame,
+    group_col: str,
+    group_label: str,
+    measure_key: str,
+    measure_label: str,
+    *,
+    sort_desc: bool = True,
+    top_n: int = 12,
+) -> tuple[pd.DataFrame, str]:
+    if df.empty:
+        return pd.DataFrame(columns=[group_label, "Clients", "% portf."]), ""
+    work = df.copy()
+    work[group_col] = work.get(group_col).fillna("Non renseigné").astype(str).replace({"": "Non renseigné"})
+    work["cm_client_key"] = work[SOC_COL].astype(str) + "|" + work["SIREN"].astype(str)
+    work["cm_measure"] = compute_measure_series(work, measure_key).astype(float)
+
+    total_clients = max(int(work["cm_client_key"].nunique()), 1)
+    total_measure = float(work["cm_measure"].sum())
+
+    grouped = (
+        work.groupby(group_col, dropna=False)
+        .agg(
+            Clients=("cm_client_key", "nunique"),
+            Mesure=("cm_measure", "sum"),
+            Vigilance=("Vigilance", lambda s: s.isin(CRITICAL_VIGILANCE).sum()),
+            Risque=("Risque", lambda s: s.eq("Risque avéré").sum()),
+        )
+        .reset_index()
+        .rename(columns={group_col: group_label, "Vigilance": "Vigilances critiques", "Risque": "Risques avérés"})
+    )
+    grouped["% portf."] = grouped["Clients"].div(total_clients).fillna(0)
+
+    if measure_key == "share":
+        grouped = grouped[[group_label, "Clients", "% portf.", "Vigilances critiques", "Risques avérés"]]
+        sort_col = "Clients" if sort_desc else group_label
+        ascending = False if sort_desc else True
+        grouped = grouped.sort_values(sort_col, ascending=ascending, kind="stable")
+        return grouped.head(top_n).reset_index(drop=True), f"Répartition simple par {group_label.lower()} sur le périmètre filtré."
+
+    grouped[measure_label] = grouped["Mesure"]
+    grouped["% mesure"] = grouped["Mesure"].div(total_measure).fillna(0) if total_measure else 0.0
+    grouped = grouped[[group_label, "Clients", "% portf.", measure_label, "% mesure", "Vigilances critiques", "Risques avérés"]]
+    sort_col = measure_label if sort_desc else group_label
+    ascending = False if sort_desc else True
+    grouped = grouped.sort_values(sort_col, ascending=ascending, kind="stable")
+    return grouped.head(top_n).reset_index(drop=True), f"Répartition simple par {group_label.lower()} ; la mesure choisie est affichée séparément."
+
+
+def build_analysis_cross_table(
+    df: pd.DataFrame,
+    row_col: str,
+    row_label: str,
+    col_col: str,
+    col_label: str,
+    measure_key: str,
+    measure_label: str,
+    *,
+    sort_desc: bool = True,
+    top_n: int = 14,
+) -> tuple[pd.DataFrame, str]:
+    if df.empty:
+        return pd.DataFrame(columns=[row_label, col_label, "Clients"]), ""
+    work = df.copy()
+    work[row_col] = work.get(row_col).fillna("Non renseigné").astype(str).replace({"": "Non renseigné"})
+    work[col_col] = work.get(col_col).fillna("Non renseigné").astype(str).replace({"": "Non renseigné"})
+    work["cm_client_key"] = work[SOC_COL].astype(str) + "|" + work["SIREN"].astype(str)
+    work["cm_measure"] = compute_measure_series(work, measure_key).astype(float)
+    total_clients = max(int(work["cm_client_key"].nunique()), 1)
+    total_measure = float(work["cm_measure"].sum())
+
+    grouped = (
+        work.groupby([row_col, col_col], dropna=False)
+        .agg(
+            Clients=("cm_client_key", "nunique"),
+            Mesure=("cm_measure", "sum"),
+            Vigilance=("Vigilance", lambda s: s.isin(CRITICAL_VIGILANCE).sum()),
+            Risque=("Risque", lambda s: s.eq("Risque avéré").sum()),
+        )
+        .reset_index()
+        .rename(columns={row_col: row_label, col_col: col_label, "Vigilance": "Vigilances critiques", "Risque": "Risques avérés"})
+    )
+    grouped["% portf."] = grouped["Clients"].div(total_clients).fillna(0)
+    if measure_key == "share":
+        grouped = grouped[[row_label, col_label, "Clients", "% portf.", "Vigilances critiques", "Risques avérés"]]
+        sort_col = "Clients" if sort_desc else row_label
+        ascending = False if sort_desc else True
+        grouped = grouped.sort_values(sort_col, ascending=ascending, kind="stable")
+        return grouped.head(top_n).reset_index(drop=True), f"Croisements majeurs entre {row_label.lower()} et {col_label.lower()}."
+
+    grouped[measure_label] = grouped["Mesure"]
+    grouped["% mesure"] = grouped["Mesure"].div(total_measure).fillna(0) if total_measure else 0.0
+    grouped = grouped[[row_label, col_label, "Clients", "% portf.", measure_label, "% mesure", "Vigilances critiques", "Risques avérés"]]
+    sort_col = measure_label if sort_desc else row_label
+    ascending = False if sort_desc else True
+    grouped = grouped.sort_values(sort_col, ascending=ascending, kind="stable")
+    return grouped.head(top_n).reset_index(drop=True), f"Croisements majeurs entre {row_label.lower()} et {col_label.lower()} avec la mesure sélectionnée."
+
+
+def render_analysis_simple_table(df: pd.DataFrame) -> None:
+    if df is None or df.empty:
+        st.info("Aucune donnée à afficher.")
+        return
+    display_df = format_table_for_display(df)
+    render_small_table(display_df)
+
+
 def normalize_indicators_current(indicators_df: pd.DataFrame) -> pd.DataFrame:
     if indicators_df is None or indicators_df.empty:
         return pd.DataFrame(columns=[SOC_COL, "SIREN", "Dénomination", "Indicateur", "Statut", "Valeur", "Date de mise à jour", "Commentaire"])
@@ -2943,39 +3050,77 @@ def render_analysis_screen(portfolio: pd.DataFrame, indicators: pd.DataFrame) ->
     row_options = list(dimension_map.keys())
     default_row = "Segment" if "Segment" in row_options else row_options[0]
     with row_a:
-        row_dimension_label = st.selectbox("Axe lignes", options=row_options, index=row_options.index(default_row), key="analysis_row_dimension")
+        row_dimension_label = st.selectbox("Axe principal", options=row_options, index=row_options.index(default_row), key="analysis_row_dimension")
     col_options = ["Aucun"] + [opt for opt in row_options if opt != row_dimension_label]
     with row_b:
-        column_dimension_label = st.selectbox("Axe colonnes", options=col_options, key="analysis_col_dimension")
+        column_dimension_label = st.selectbox("Axe secondaire", options=col_options, key="analysis_col_dimension")
     measure_options = list(measure_map.keys())
     with row_c:
         measure_label = st.selectbox("Mesure", options=measure_options, key="analysis_measure")
     with row_d:
         sort_choice = st.selectbox("Tri", options=["Mesure décroissante", "Libellé A → Z"], key="analysis_sort")
-    st.markdown("</div>", unsafe_allow_html=True)
 
     row_col = dimension_map[row_dimension_label]
     col_col = None if column_dimension_label == "Aucun" else dimension_map[column_dimension_label]
     measure_key = measure_map[measure_label]
-    main_table, granularity_caption = build_analysis_main_table(
+    sort_desc = sort_choice == "Mesure décroissante"
+
+    primary_table, primary_caption = build_analysis_group_table(
         filtered,
         row_col,
         row_dimension_label,
         measure_key,
-        column_col=col_col,
-        sort_desc=(sort_choice == "Mesure décroissante"),
+        measure_label,
+        sort_desc=sort_desc,
+        top_n=12,
     )
+    secondary_table = pd.DataFrame()
+    secondary_caption = ""
+    cross_table = pd.DataFrame()
+    cross_caption = ""
+    if col_col:
+        secondary_table, secondary_caption = build_analysis_group_table(
+            filtered,
+            col_col,
+            column_dimension_label,
+            measure_key,
+            measure_label,
+            sort_desc=sort_desc,
+            top_n=12,
+        )
+        cross_table, cross_caption = build_analysis_cross_table(
+            filtered,
+            row_col,
+            row_dimension_label,
+            col_col,
+            column_dimension_label,
+            measure_key,
+            measure_label,
+            sort_desc=sort_desc,
+            top_n=14,
+        )
 
     st.markdown('<h3 class="cm-section-title">Analyse principale</h3>', unsafe_allow_html=True)
-    st.caption(granularity_caption)
-    render_analysis_main_table(main_table)
+    if col_col:
+        left, right = st.columns(2)
+        with left:
+            st.caption(primary_caption)
+            render_analysis_simple_table(primary_table)
+        with right:
+            st.caption(secondary_caption)
+            render_analysis_simple_table(secondary_table)
+        st.markdown('<h3 class="cm-section-title">Croisements majeurs</h3>', unsafe_allow_html=True)
+        st.caption(cross_caption)
+        render_analysis_simple_table(cross_table)
+    else:
+        st.caption(primary_caption)
+        render_analysis_simple_table(primary_table)
 
-    if main_table.empty:
+    if primary_table.empty:
         st.info("Aucun résultat à afficher pour les paramètres sélectionnés.")
         return
 
-    detail_options = main_table[row_dimension_label].astype(str).tolist()
-    default_detail = detail_options[0] if detail_options else None
+    detail_options = primary_table[row_dimension_label].astype(str).tolist()
 
     st.divider()
     left, right = st.columns([1.1, 1.0])
@@ -3010,7 +3155,10 @@ def render_analysis_screen(portfolio: pd.DataFrame, indicators: pd.DataFrame) ->
         )
     selected_col_value = "Tous"
     if col_col:
-        column_values = ["Tous"] + sorted(v for v in main_table.columns if v not in {row_dimension_label, "Total"})
+        available_col_values = sorted(
+            filtered.get(col_col).fillna("Non renseigné").astype(str).replace({"": "Non renseigné"}).unique().tolist()
+        )
+        column_values = ["Tous"] + available_col_values
         with ctrl2:
             selected_col_value = st.selectbox(
                 f"{column_dimension_label} détaillé",
@@ -3033,7 +3181,7 @@ def render_analysis_screen(portfolio: pd.DataFrame, indicators: pd.DataFrame) ->
 
     st.download_button(
         label="Exporter la vue Analyse (.csv)",
-        data=dataframe_to_csv_bytes(detail_df if not detail_df.empty else filtered[ [c for c in DISPLAY_COLUMNS if c in filtered.columns] ]),
+        data=dataframe_to_csv_bytes(detail_df if not detail_df.empty else filtered[[c for c in DISPLAY_COLUMNS if c in filtered.columns]]),
         file_name="tableau2_analyse.csv",
         mime="text/csv",
         type="primary",
