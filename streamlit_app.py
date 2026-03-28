@@ -1489,7 +1489,12 @@ def render_distribution_block(title: str, dist_df: pd.DataFrame, index_col: str)
 
 
 def render_top_block(title: str, df: pd.DataFrame) -> None:
-    st.markdown("**{}**".format(title))
+    st.markdown(f'<h3 class="cm-section-title">{escape(title)}</h3>', unsafe_allow_html=True)
+    render_small_table(df)
+
+
+def render_alert_block(title: str, df: pd.DataFrame) -> None:
+    st.markdown(f'<h3 class="cm-section-title">{escape(title)}</h3>', unsafe_allow_html=True)
     render_small_table(df)
 
 
@@ -1558,8 +1563,7 @@ def main() -> None:
         render_distribution_block("Répartition par statut de risque", risk_df, "Statut")
 
     with col_right:
-        st.markdown("**Alertes de gouvernance**")
-        render_small_table(build_alert_table(filtered))
+        render_alert_block("Alertes de gouvernance", build_alert_table(filtered))
 
     st.divider()
     st.markdown('<h3 class="cm-section-title">Concentrations</h3>', unsafe_allow_html=True)
