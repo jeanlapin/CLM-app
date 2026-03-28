@@ -467,6 +467,101 @@ def inject_brand_theme() -> None:
             white-space: nowrap;
         }}
 
+        .cm-data-table-wrap {{
+            background: rgba(255,255,255,0.88);
+            border: 1px solid var(--cm-border);
+            border-radius: 18px;
+            overflow: auto;
+            box-shadow: 0 10px 24px rgba(22, 58, 89, 0.06);
+        }}
+
+        .cm-data-table {{
+            width: 100%;
+            min-width: 980px;
+            border-collapse: separate;
+            border-spacing: 0;
+            font-size: 0.93rem;
+        }}
+
+        .cm-data-table thead th {{
+            position: sticky;
+            top: 0;
+            z-index: 2;
+            background: linear-gradient(135deg, var(--cm-primary), #245782);
+            color: #FFFFFF;
+            text-align: left;
+            padding: 0.82rem 0.9rem;
+            font-family: 'Sora', sans-serif;
+            font-size: 0.78rem;
+            font-weight: 800;
+            letter-spacing: 0.04em;
+            text-transform: uppercase;
+            white-space: nowrap;
+        }}
+
+        .cm-data-table thead th:first-child {{
+            border-top-left-radius: 16px;
+        }}
+
+        .cm-data-table thead th:last-child {{
+            border-top-right-radius: 16px;
+        }}
+
+        .cm-data-table tbody td {{
+            padding: 0.78rem 0.9rem;
+            border-top: 1px solid rgba(22, 58, 89, 0.08);
+            vertical-align: middle;
+            color: var(--cm-text);
+            background: rgba(255,255,255,0.96);
+            white-space: nowrap;
+        }}
+
+        .cm-data-table tbody tr:nth-child(even) td {{
+            background: rgba(221, 234, 248, 0.28);
+        }}
+
+        .cm-data-table td.cm-number {{
+            text-align: right;
+            font-variant-numeric: tabular-nums;
+            font-weight: 700;
+        }}
+
+        .cm-data-table td.cm-strong {{
+            font-weight: 700;
+            color: var(--cm-primary);
+            white-space: normal;
+            min-width: 240px;
+        }}
+
+        .cm-data-table td.cm-wrap {{
+            white-space: normal;
+        }}
+
+        .cm-data-table td.cm-narrow {{
+            width: 1%;
+        }}
+
+        .cm-siren-link {{
+            display: inline-flex;
+            align-items: center;
+            gap: 0.35rem;
+            font-weight: 800;
+            color: var(--cm-primary) !important;
+            text-decoration: none;
+            border-bottom: 2px solid rgba(22,58,89,0.18);
+            padding-bottom: 0.05rem;
+        }}
+
+        .cm-siren-link:hover {{
+            color: #245782 !important;
+            border-bottom-color: #245782;
+        }}
+
+        .cm-siren-link span {{
+            font-size: 0.85rem;
+            opacity: 0.88;
+        }}
+
         .cm-stream-note {{
             margin: 0.1rem 0 0.65rem 0;
             color: var(--cm-muted);
@@ -1826,6 +1921,7 @@ def table_column_weight(column_name: str) -> float:
     return 1.1
 
 
+
 def render_clickable_streamlit_table(
     df: pd.DataFrame,
     *,
@@ -1837,67 +1933,67 @@ def render_clickable_streamlit_table(
         return
 
     working = reorder_table_columns_for_ui(df.copy())
-    for col in working.columns:
-        if pd.api.types.is_datetime64_any_dtype(working[col]):
-            working[col] = pd.to_datetime(working[col], errors="coerce").dt.strftime("%d/%m/%Y")
 
-    if len(working) > 150:
-        st.caption("Aperçu limité aux 150 premières lignes pour conserver une navigation fluide.")
-        working = working.head(150).copy()
+    if len(working) > 300:
+        st.caption("Aperçu limité aux 300 premières lignes pour conserver une navigation fluide.")
+        working = working.head(300).copy()
 
     society_col = siren_society_column(working)
     columns = list(working.columns)
-    weights = [table_column_weight(col) for col in columns]
 
     if "SIREN" in columns and society_col is not None:
-        st.markdown("<div class='cm-stream-note'>Cliquez sur un SIREN pour ouvrir directement la fiche client.</div>", unsafe_allow_html=True)
+        st.markdown(
+            "<div class='cm-stream-note'>Cliquez sur un SIREN pour ouvrir directement la fiche client.</div>",
+            unsafe_allow_html=True,
+        )
 
-    container = st.container(height=height, border=False) if height else st.container(border=False)
-    with container:
-        header_cols = st.columns(weights, gap="small")
-        for col_obj, col_name in zip(header_cols, columns):
-            with col_obj:
-                st.markdown(
-                    f"<div class='cm-stream-head'>{escape(str(col_name))}</div>",
-                    unsafe_allow_html=True,
+    wrapper_style = f"max-height:{int(height)}px;" if height else ""
+
+    html = [f"<div class='cm-data-table-wrap' style='{wrapper_style}'><table class='cm-data-table'><thead><tr>"]
+    for col_name in columns:
+        html.append(f"<th>{escape(str(col_name))}</th>")
+    html.append("</tr></thead><tbody>")
+
+    for _, row in working.iterrows():
+        html.append("<tr>")
+        for col_name in columns:
+            value = row.get(col_name)
+            classes: list[str] = []
+
+            if col_name == "SIREN" and society_col is not None:
+                societe = quote_plus(str(row.get(society_col, "")))
+                siren = quote_plus(str(value))
+                rendered = (
+                    f"<a class='cm-siren-link' href='?view=client&societe={societe}&siren={siren}' target='_self'>"
+                    f"{escape(display_value(value))}<span>↗</span></a>"
                 )
+                classes.append("cm-narrow")
+            elif col_name == "Vigilance":
+                rendered = render_status_badge(display_value(value), "vigilance")
+                classes.append("cm-wrap")
+            elif col_name in {"Risque", "Statut"}:
+                rendered = render_status_badge(display_value(value), "risk")
+                classes.append("cm-wrap")
+            else:
+                rendered = escape(display_value(value))
+                if col_name in {"Dénomination", "Client"}:
+                    classes.append("cm-strong")
+                elif col_name in {"Motifs", "Commentaire"}:
+                    classes.append("cm-wrap")
 
-        for row_idx, (_, row) in enumerate(working.iterrows()):
-            row_cols = st.columns(weights, gap="small")
-            row_class = "cm-even" if row_idx % 2 else "cm-odd"
-            for col_obj, col_name in zip(row_cols, columns):
-                value = row.get(col_name)
-                with col_obj:
-                    if col_name == "SIREN" and society_col is not None:
-                        label = f"↗ {display_value(value)}"
-                        if st.button(
-                            label,
-                            key=f"{key_prefix}_open_{row_idx}",
-                            help="Ouvrir la fiche client",
-                            use_container_width=False,
-                        ):
-                            open_client_detail(str(row.get(society_col, "")), str(value))
-                            st.rerun()
-                    elif col_name == "Vigilance":
-                        rendered = render_status_badge(display_value(value), "vigilance")
-                        st.markdown(f"<div class='cm-stream-cell {row_class}'>{rendered}</div>", unsafe_allow_html=True)
-                    elif col_name in {"Risque", "Statut"}:
-                        rendered = render_status_badge(display_value(value), "risk")
-                        st.markdown(f"<div class='cm-stream-cell {row_class}'>{rendered}</div>", unsafe_allow_html=True)
-                    else:
-                        extra_classes = ["cm-stream-cell", row_class]
-                        if col_name in {"Dénomination", "Client"}:
-                            extra_classes.append("cm-text-strong")
-                        if pd.api.types.is_number(value) and not isinstance(value, bool):
-                            extra_classes.append("cm-number")
-                        class_attr = " ".join(extra_classes)
-                        st.markdown(
-                            f"<div class='{class_attr}'>{escape(display_value(value))}</div>",
-                            unsafe_allow_html=True,
-                        )
+            if pd.api.types.is_number(value) and not isinstance(value, bool):
+                classes.append("cm-number")
+
+            class_attr = f" class='{' '.join(classes)}'" if classes else ""
+            html.append(f"<td{class_attr}>{rendered}</td>")
+        html.append("</tr>")
+
+    html.append("</tbody></table></div>")
+    st.markdown("".join(html), unsafe_allow_html=True)
 
 
 def render_clickable_dataframe(
+
     df: pd.DataFrame,
     *,
     use_container_width: bool = True,
