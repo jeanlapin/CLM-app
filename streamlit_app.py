@@ -2142,10 +2142,13 @@ def main() -> None:
     priority_df = build_priority_table(filtered, top_n=10)
     st.dataframe(style_dataframe(priority_df), use_container_width=True, height=420, hide_index=True)
     if not priority_df.empty:
-        render_client_launcher(
-            priority_df[[SOC_COL, "SIREN", "Dénomination"]].drop_duplicates(),
-            key_prefix="priority",
-        )
+        launcher_df = priority_df.rename(columns={"Société": SOC_COL, "Client": "Dénomination"})
+        launcher_cols = [c for c in [SOC_COL, "SIREN", "Dénomination"] if c in launcher_df.columns]
+        if len(launcher_cols) == 3:
+            render_client_launcher(
+                launcher_df[launcher_cols].drop_duplicates(),
+                key_prefix="priority",
+            )
 
     export_columns = [c for c in DISPLAY_COLUMNS if c in filtered.columns]
     st.download_button(
