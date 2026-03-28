@@ -13,6 +13,9 @@ DEFAULT_DATA_FILES = {
     "history": "03_Indicateurs_historique.csv",
 }
 
+SOC_COL = "societe_id"
+KEY_COLUMNS = [SOC_COL, "SIREN"]
+
 VIGILANCE_ORDER = [
     "Vigilance Critique",
     "Vigilance Élevée",
@@ -46,6 +49,7 @@ FILTER_MAPPING = {
 }
 
 DISPLAY_COLUMNS = [
+    SOC_COL,
     "SIREN",
     "Dénomination",
     "Pays de résidence",
@@ -65,6 +69,16 @@ DISPLAY_COLUMNS = [
     "Score priorité",
     "Motifs",
 ]
+
+REQUIRED_COLUMNS = {
+    "base": [SOC_COL, "SIREN", "Dénomination"],
+    "indicators": [SOC_COL, "SIREN", "Vigilance statut", "Vigilance Date de mise à jour"],
+    "history": [SOC_COL, "SIREN"],
+}
+
+
+class DataValidationError(ValueError):
+    pass
 
 
 def resolve_data_file(filename: str, search_root: Path | None = None) -> Path:
@@ -91,11 +105,29 @@ def read_csv_semicolon(path: Path) -> pd.DataFrame:
     return df.dropna(how="all")
 
 
+def validate_required_columns(df: pd.DataFrame, file_label: str) -> None:
+    missing = [col for col in REQUIRED_COLUMNS[file_label] if col not in df.columns]
+    if missing:
+        raise DataValidationError(
+            f"Le fichier {DEFAULT_DATA_FILES[file_label]!r} ne contient pas les colonnes obligatoires : {', '.join(missing)}. "
+            f"Ajoutez notamment '{SOC_COL}' en première colonne."
+        )
+
+
 def normalize_siren(series: pd.Series) -> pd.Series:
     return (
         series.astype(str)
         .str.strip()
         .str.replace(r"\.0$", "", regex=True)
+        .replace({"nan": np.nan, "None": np.nan, "": np.nan})
+    )
+
+
+def normalize_societe_id(series: pd.Series) -> pd.Series:
+    return (
+        series.astype(str)
+        .str.strip()
+        .str.upper()
         .replace({"nan": np.nan, "None": np.nan, "": np.nan})
     )
 
@@ -128,12 +160,17 @@ def load_source_data(search_root: Path | None = None) -> tuple[pd.DataFrame, pd.
     indicators = read_csv_semicolon(resolve_data_file(DEFAULT_DATA_FILES["indicators"], search_root))
     history = read_csv_semicolon(resolve_data_file(DEFAULT_DATA_FILES["history"], search_root))
 
-    for df in (base, indicators, history):
-        df["SIREN"] = normalize_siren(df["SIREN"])
-        df.dropna(subset=["SIREN"], inplace=True)
+    validate_required_columns(base, "base")
+    validate_required_columns(indicators, "indicators")
+    validate_required_columns(history, "history")
 
-    base = base.drop_duplicates(subset=["SIREN"], keep="first").copy()
-    indicators = indicators.drop_duplicates(subset=["SIREN"], keep="first").copy()
+    for df in (base, indicators, history):
+        df[SOC_COL] = normalize_societe_id(df[SOC_COL])
+        df["SIREN"] = normalize_siren(df["SIREN"])
+        df.dropna(subset=KEY_COLUMNS, inplace=True)
+
+    base = base.drop_duplicates(subset=KEY_COLUMNS, keep="first").copy()
+    indicators = indicators.drop_duplicates(subset=KEY_COLUMNS, keep="first").copy()
 
     for col in [
         "Cross border",
@@ -187,7 +224,7 @@ def build_portfolio_dataset(search_root: Path | None = None) -> pd.DataFrame:
 
     ind_status_cols = status_columns(indicators)
     required_indicator_cols = [
-        "SIREN",
+        *KEY_COLUMNS,
         "Vigilance statut",
         "Vigilance valeur",
         "Vigilance Date de mise à jour",
@@ -196,31 +233,35 @@ def build_portfolio_dataset(search_root: Path | None = None) -> pd.DataFrame:
     ]
     required_indicator_cols = list(dict.fromkeys(c for c in required_indicator_cols if c in indicators.columns))
 
-    portfolio = base.merge(indicators[required_indicator_cols], how="left", on="SIREN")
+    portfolio = base.merge(indicators[required_indicator_cols], how="left", on=KEY_COLUMNS)
 
-    history_count = history.groupby("SIREN").size().rename("Nb historique")
-    portfolio = portfolio.merge(history_count, how="left", left_on="SIREN", right_index=True)
+    history_count = history.groupby(KEY_COLUMNS).size().rename("Nb historique").reset_index()
+    portfolio = portfolio.merge(history_count, how="left", on=KEY_COLUMNS)
     portfolio["Nb historique"] = portfolio["Nb historique"].fillna(0).astype(int)
 
     portfolio["Vigilance"] = portfolio.get("Vigilance statut")
     portfolio["Risque"] = portfolio.get("Statut de risque (import SaaS source)")
 
     for label in ["Risque avéré", "Risque potentiel", "Risque mitigé", "Risque levé", "Non calculable"]:
-        portfolio[f"Nb {label}"] = portfolio[ind_status_cols].eq(label).sum(axis=1)
+        portfolio[f"Nb {label}"] = portfolio[ind_status_cols].eq(label).sum(axis=1) if ind_status_cols else 0
 
     today = pd.Timestamp.today().normalize()
     portfolio["Alerte justificatif incomplet"] = (
-        (portfolio["Flag justificatif complet"] != "Oui")
+        (portfolio.get("Flag justificatif complet") != "Oui")
         & (portfolio["Vigilance"].isin(CRITICAL_VIGILANCE))
     ).astype(int)
     portfolio["Alerte vigilance critique"] = (portfolio["Vigilance"] == "Vigilance Critique").astype(int)
     portfolio["Alerte revue trop ancienne"] = (
         portfolio["Vigilance"].isin(CRITICAL_VIGILANCE)
-        & portfolio["Date dernière revue"].notna()
+        & portfolio.get("Date dernière revue", pd.Series(index=portfolio.index, dtype="datetime64[ns]")).notna()
         & ((today - portfolio["Date dernière revue"]).dt.days > 90)
     ).astype(int)
-    portfolio["Alerte sans prochaine revue"] = portfolio["Date prochaine revue"].isna().astype(int)
-    portfolio["Alerte cross-border élevé"] = portfolio["Cross border"].ge(0.25).fillna(False).astype(int)
+    portfolio["Alerte sans prochaine revue"] = portfolio.get(
+        "Date prochaine revue", pd.Series(index=portfolio.index, dtype="datetime64[ns]")
+    ).isna().astype(int)
+    portfolio["Alerte cross-border élevé"] = portfolio.get(
+        "Cross border", pd.Series(index=portfolio.index, dtype="float64")
+    ).ge(0.25).fillna(False).astype(int)
     portfolio["Alerte cash intensité élevée"] = (
         portfolio.get("Cash intensité Statut", pd.Series(index=portfolio.index, dtype="string"))
         .isin(PRIORITY_RISK)
@@ -248,6 +289,19 @@ def build_portfolio_dataset(search_root: Path | None = None) -> pd.DataFrame:
     )
     portfolio["Motifs"] = pd.Series(motifs, index=portfolio.index, dtype="string").str.strip()
     return portfolio
+
+
+def available_societies(df: pd.DataFrame) -> list[str]:
+    if SOC_COL not in df.columns:
+        return []
+    return non_empty_sorted(df[SOC_COL].unique())
+
+
+def restrict_to_societies(df: pd.DataFrame, societies: list[str] | set[str] | tuple[str, ...]) -> pd.DataFrame:
+    if not societies:
+        return df.iloc[0:0].copy()
+    normalized = {str(s).strip().upper() for s in societies if str(s).strip()}
+    return df[df[SOC_COL].astype(str).str.upper().isin(normalized)].copy()
 
 
 def non_empty_sorted(values: Iterable[object]) -> list[str]:
@@ -302,7 +356,7 @@ def ranked_counts(df: pd.DataFrame, column: str, top_n: int = 5) -> pd.DataFrame
 
 def build_priority_table(df: pd.DataFrame, top_n: int = 10) -> pd.DataFrame:
     priority = (
-        df.sort_values(["Score priorité", "SIREN"], ascending=[False, False], kind="stable")
+        df.sort_values(["Score priorité", SOC_COL, "SIREN"], ascending=[False, True, False], kind="stable")
         .head(top_n)
         .copy()
     )
@@ -310,6 +364,7 @@ def build_priority_table(df: pd.DataFrame, top_n: int = 10) -> pd.DataFrame:
     return priority[
         [
             "#",
+            SOC_COL,
             "Dénomination",
             "SIREN",
             "Pays de résidence",
@@ -323,6 +378,7 @@ def build_priority_table(df: pd.DataFrame, top_n: int = 10) -> pd.DataFrame:
         ]
     ].rename(
         columns={
+            SOC_COL: "Société",
             "Dénomination": "Client",
             "Pays de résidence": "Pays",
             "Statut EDD": "EDD",
