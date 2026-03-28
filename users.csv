@@ -1,0 +1,4 @@
+username;password;display_name;role;enabled;societes_autorisees
+admin;admin123;Administrateur;admin;true;ALL
+marie;marie123;Marie;user;true;ASSUMAGIC
+paul;paul123;Paul;user;true;SOC_B,SOC_C
