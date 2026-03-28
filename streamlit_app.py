@@ -1922,6 +1922,87 @@ def table_column_weight(column_name: str) -> float:
 
 
 
+def status_emoji(value: object, palette: str = "generic") -> str:
+    text = display_value(value)
+    lower = text.lower()
+    if text == "-":
+        return "⚪"
+    if palette == "vigilance":
+        if "critique" in lower:
+            return "🔴"
+        if "élev" in lower:
+            return "🟠"
+        if "modér" in lower:
+            return "🟡"
+        if "allég" in lower:
+            return "🟢"
+        if "aucune" in lower:
+            return "🟢"
+    if palette == "risk":
+        if "avéré" in lower or "critique" in lower:
+            return "🔴"
+        if "élev" in lower or "fort" in lower:
+            return "🟠"
+        if "modér" in lower or "surveillance" in lower:
+            return "🟡"
+        if any(token in lower for token in ["faible", "levé", "aucun", "mitig", "clos", "normal"]):
+            return "🟢"
+    return "🔵"
+
+
+def format_table_display_dataframe(df: pd.DataFrame) -> pd.DataFrame:
+    display_df = reorder_table_columns_for_ui(df.copy())
+    for col in display_df.columns:
+        if col == "SIREN":
+            display_df[col] = display_df[col].apply(lambda x: f"↗ {display_value(x)}")
+        elif col == "Vigilance":
+            display_df[col] = display_df[col].apply(lambda x: f"{status_emoji(x, 'vigilance')} {display_value(x)}")
+        elif col in {"Risque", "Statut"}:
+            display_df[col] = display_df[col].apply(lambda x: f"{status_emoji(x, 'risk')} {display_value(x)}")
+        else:
+            display_df[col] = display_df[col].apply(display_value)
+    return display_df
+
+
+def style_interactive_table(display_df: pd.DataFrame, raw_df: pd.DataFrame) -> pd.io.formats.style.Styler:
+    def style_cell(column_name: str, value: object) -> str:
+        lower = str(value).lower()
+        base = "padding: 0.18rem 0;"
+        if column_name == "SIREN":
+            return base + "color: #163A59; font-weight: 800; text-decoration: underline;"
+        if column_name in {"Dénomination", "Client"}:
+            return base + "font-weight: 700; color: #163A59;"
+        if column_name == "Vigilance":
+            if "🔴" in str(value):
+                return base + "background-color: rgba(191, 36, 36, 0.12); color: #8A1F1F; font-weight: 700;"
+            if "🟠" in str(value):
+                return base + "background-color: rgba(209, 98, 0, 0.12); color: #9A4D00; font-weight: 700;"
+            if "🟡" in str(value):
+                return base + "background-color: rgba(184, 134, 11, 0.14); color: #7A5A00; font-weight: 700;"
+            if "🟢" in str(value):
+                return base + "background-color: rgba(31, 122, 74, 0.10); color: #1F7A4A; font-weight: 700;"
+        if column_name in {"Risque", "Statut"}:
+            if "🔴" in str(value):
+                return base + "background-color: rgba(191, 36, 36, 0.12); color: #8A1F1F; font-weight: 700;"
+            if "🟠" in str(value):
+                return base + "background-color: rgba(209, 98, 0, 0.12); color: #9A4D00; font-weight: 700;"
+            if "🟡" in str(value):
+                return base + "background-color: rgba(184, 134, 11, 0.14); color: #7A5A00; font-weight: 700;"
+            if "🟢" in str(value):
+                return base + "background-color: rgba(31, 122, 74, 0.10); color: #1F7A4A; font-weight: 700;"
+        if column_name in {"Nb", "%", "#", "Rang", "Score", "Score priorité"}:
+            return base + "text-align: right; font-variant-numeric: tabular-nums; font-weight: 700;"
+        return base
+
+    styled = display_df.style
+    styled = styled.set_table_styles([
+        {"selector": "th", "props": [("background-color", "#163A59"), ("color", "white"), ("font-weight", "700")]},
+    ])
+    styled = styled.apply(lambda s: [style_cell(s.name, v) for v in s], axis=0)
+    return styled
+
+
+
 def render_clickable_streamlit_table(
     df: pd.DataFrame,
     *,
@@ -1932,68 +2013,62 @@ def render_clickable_streamlit_table(
         st.info("Aucune donnée disponible.")
         return
 
-    working = reorder_table_columns_for_ui(df.copy())
-
-    if len(working) > 300:
+    raw_df = reorder_table_columns_for_ui(df.copy()).reset_index(drop=True)
+    if len(raw_df) > 300:
         st.caption("Aperçu limité aux 300 premières lignes pour conserver une navigation fluide.")
-        working = working.head(300).copy()
+        raw_df = raw_df.head(300).copy().reset_index(drop=True)
 
-    society_col = siren_society_column(working)
-    columns = list(working.columns)
+    display_df = format_table_display_dataframe(raw_df)
+    society_col = siren_society_column(raw_df)
 
-    if "SIREN" in columns and society_col is not None:
+    if "SIREN" in raw_df.columns and society_col is not None:
         st.markdown(
-            "<div class='cm-stream-note'>Cliquez sur un SIREN pour ouvrir directement la fiche client.</div>",
+            "<div class='cm-stream-note'><strong>↗ Cliquez directement sur une cellule de la colonne SIREN</strong> pour ouvrir la fiche client.</div>",
             unsafe_allow_html=True,
         )
 
-    wrapper_style = f"max-height:{int(height)}px;" if height else ""
+    column_config: dict[str, object] = {}
+    for col in display_df.columns:
+        if col == "SIREN":
+            column_config[col] = st.column_config.TextColumn("SIREN", width="small")
+        elif col in {"Dénomination", "Client"}:
+            column_config[col] = st.column_config.TextColumn(col, width="large")
+        elif col in {"Vigilance", "Risque", "Statut", SOC_COL, "Société"}:
+            column_config[col] = st.column_config.TextColumn(col, width="medium")
+        elif col in {"Nb", "%", "#", "Rang", "Score", "Score priorité"}:
+            column_config[col] = st.column_config.TextColumn(col, width="small")
+        else:
+            column_config[col] = st.column_config.TextColumn(col, width="medium")
 
-    html = [f"<div class='cm-data-table-wrap' style='{wrapper_style}'><table class='cm-data-table'><thead><tr>"]
-    for col_name in columns:
-        html.append(f"<th>{escape(str(col_name))}</th>")
-    html.append("</tr></thead><tbody>")
+    event = st.dataframe(
+        style_interactive_table(display_df, raw_df),
+        width="stretch",
+        height=height if height is not None else "auto",
+        hide_index=True,
+        column_order=list(display_df.columns),
+        column_config=column_config,
+        on_select="rerun",
+        selection_mode="single-cell",
+        row_height=40,
+        key=f"cm_df_{key_prefix}",
+    )
 
-    for _, row in working.iterrows():
-        html.append("<tr>")
-        for col_name in columns:
-            value = row.get(col_name)
-            classes: list[str] = []
+    cells = []
+    if event is not None:
+        try:
+            cells = list(event.selection.get("cells", []))
+        except Exception:
+            cells = []
 
-            if col_name == "SIREN" and society_col is not None:
-                societe = quote_plus(str(row.get(society_col, "")))
-                siren = quote_plus(str(value))
-                rendered = (
-                    f"<a class='cm-siren-link' href='?view=client&societe={societe}&siren={siren}' target='_self'>"
-                    f"{escape(display_value(value))}<span>↗</span></a>"
-                )
-                classes.append("cm-narrow")
-            elif col_name == "Vigilance":
-                rendered = render_status_badge(display_value(value), "vigilance")
-                classes.append("cm-wrap")
-            elif col_name in {"Risque", "Statut"}:
-                rendered = render_status_badge(display_value(value), "risk")
-                classes.append("cm-wrap")
-            else:
-                rendered = escape(display_value(value))
-                if col_name in {"Dénomination", "Client"}:
-                    classes.append("cm-strong")
-                elif col_name in {"Motifs", "Commentaire"}:
-                    classes.append("cm-wrap")
-
-            if pd.api.types.is_number(value) and not isinstance(value, bool):
-                classes.append("cm-number")
-
-            class_attr = f" class='{' '.join(classes)}'" if classes else ""
-            html.append(f"<td{class_attr}>{rendered}</td>")
-        html.append("</tr>")
-
-    html.append("</tbody></table></div>")
-    st.markdown("".join(html), unsafe_allow_html=True)
+    if cells and society_col is not None and "SIREN" in raw_df.columns:
+        row_idx, col_name = cells[0]
+        if col_name == "SIREN" and 0 <= int(row_idx) < len(raw_df):
+            row = raw_df.iloc[int(row_idx)]
+            open_client_detail(str(row.get(society_col, "")), str(row.get("SIREN", "")))
+            st.rerun()
 
 
 def render_clickable_dataframe(
-
     df: pd.DataFrame,
     *,
     use_container_width: bool = True,
