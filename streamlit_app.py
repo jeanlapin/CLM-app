@@ -546,14 +546,51 @@ def inject_brand_theme() -> None:
             color: rgba(255,255,255,0.84);
         }}
 
-        .cm-premium-foot {{
-            margin-top: 0.9rem;
-            font-size: 0.83rem;
+        .cm-page-hero {{
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin: 0 0 1.25rem 0;
+            padding: 0.25rem 0 0.5rem 0;
+        }}
+
+        .cm-page-hero-inner {{
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 1rem;
+            width: 100%;
+        }}
+
+        .cm-page-hero-logo {{
+            width: 74px;
+            height: 74px;
+            object-fit: contain;
+            filter: drop-shadow(0 10px 18px rgba(22, 58, 89, 0.16));
+        }}
+
+        .cm-page-hero-title {{
+            margin: 0;
+            font-family: 'Cormorant Garamond', serif !important;
+            font-size: clamp(2.2rem, 4vw, 3.5rem);
             font-weight: 700;
-            color: #CFE4FF;
+            line-height: 1;
+            letter-spacing: 0.01em;
+            color: var(--cm-primary);
         }}
 
         @media (max-width: 900px) {{
+            .cm-page-hero-inner {{
+                flex-direction: column;
+                gap: 0.55rem;
+            }}
+            .cm-page-hero-logo {{
+                width: 58px;
+                height: 58px;
+            }}
+            .cm-page-hero-title {{
+                text-align: center;
+            }}
             .cm-premium-grid {{
                 grid-template-columns: 1fr;
             }}
@@ -592,37 +629,17 @@ def render_sidebar_brand(user: dict | None = None) -> None:
             st.caption(f"Connecté en tant que {user['display_name']}")
 
 
+
 def render_home_hero(user: dict | None = None) -> None:
-    welcome = f"Bienvenue {user['display_name']}" if user else "Application sécurisée"
-    user_scope_text = (
-        "Accédez à votre périmètre multi-société, publiez les jeux 01/02/03 côté administration et pilotez le portefeuille avec une vue unifiée."
-        if user
-        else "Connectez-vous pour accéder à votre périmètre société, à la supervision des vigilances et au tableau de pilotage."
-    )
-    pills = [
-        "Multi-société",
-        "Pilotage portefeuille",
-        "Vigilance & risque",
-    ]
     st.markdown(
-        f"""
-        <section class="cm-hero">
-            <div class="cm-hero-grid">
-                <div>
-                    <div class="cm-hero-badge">{welcome}</div>
-                    <h1>CLASSIFICATION<br/>MANAGEMENT</h1>
-                    <p class="cm-hero-subtitle">{APP_SUBTITLE}</p>
-                    <p class="cm-hero-body cm-hero-note">{user_scope_text}</p>
-                    <div class="cm-hero-pills">
-                        {''.join(f'<span class="cm-hero-pill">{escape(item)}</span>' for item in pills)}
-                    </div>
-                </div>
-                <div class="cm-hero-logo-card">
-                    <img src="{LOGO_DATA_URI}" alt="Logo Classification Management" />
-                </div>
+        f'''
+        <section class="cm-page-hero">
+            <div class="cm-page-hero-inner">
+                <img class="cm-page-hero-logo" src="{LOGO_DATA_URI}" alt="Logo Classification Management" />
+                <h1 class="cm-page-hero-title">Portefeuille 360°</h1>
             </div>
         </section>
-        """,
+        ''',
         unsafe_allow_html=True,
     )
 
@@ -1464,9 +1481,9 @@ def render_kpis(df: pd.DataFrame) -> None:
             st.caption("Fraîcheur visible : dernière mise à jour vigilance = {}.".format(last_update.strftime("%d/%m/%Y")))
 
 
+
 def render_distribution_block(title: str, dist_df: pd.DataFrame, index_col: str) -> None:
-    st.markdown("**{}**".format(title))
-    st.bar_chart(dist_df.set_index(index_col)[["Nb"]], height=260)
+    st.markdown(f'<h3 class="cm-section-title">{escape(title)}</h3>', unsafe_allow_html=True)
     color_columns = {index_col: "vigilance"} if index_col == "Vigilance" else ({index_col: "risk"} if index_col == "Statut" else {})
     render_small_table(format_percent_column(dist_df), color_columns=color_columns)
 
@@ -1503,8 +1520,6 @@ def main() -> None:
         return
 
     render_home_hero(user)
-    render_home_showcase(user)
-
     render_admin_data_manager(user)
 
     try:
