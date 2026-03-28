@@ -630,13 +630,13 @@ def render_sidebar_brand(user: dict | None = None) -> None:
 
 
 
-def render_home_hero(user: dict | None = None) -> None:
+def render_home_hero(title: str) -> None:
     st.markdown(
         f'''
         <section class="cm-page-hero">
             <div class="cm-page-hero-inner">
                 <img class="cm-page-hero-logo" src="{LOGO_DATA_URI}" alt="Logo Classification Management" />
-                <h1 class="cm-page-hero-title">Portefeuille 360°</h1>
+                <h1 class="cm-page-hero-title">{escape(title)}</h1>
             </div>
         </section>
         ''',
@@ -864,7 +864,7 @@ def get_current_user():
 
 
 def login_form() -> None:
-    render_home_hero(None)
+    render_home_hero("Classification Management")
     render_home_showcase(None)
     st.markdown('<h3 class="cm-section-title">Connexion</h3>', unsafe_allow_html=True)
     with st.form("login_form", clear_on_submit=False):
@@ -1524,7 +1524,7 @@ def main() -> None:
         login_form()
         return
 
-    render_home_hero(user)
+    render_home_hero("Portefeuille 360°")
     render_admin_data_manager(user)
 
     try:
