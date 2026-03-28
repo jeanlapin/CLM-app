@@ -303,36 +303,43 @@ def inject_brand_theme() -> None:
 
         .stButton > button, .stDownloadButton > button, .stFileUploader button {{
             border-radius: 14px;
-            border: 1px solid rgba(22, 58, 89, 0.10);
-            font-weight: 700;
-            padding: 0.55rem 1rem;
-            box-shadow: 0 8px 20px rgba(22, 58, 89, 0.08);
-            background: #FFFFFF;
-            color: var(--cm-primary) !important;
+            border: none !important;
+            font-weight: 800;
+            padding: 0.6rem 1rem;
+            box-shadow: 0 10px 24px rgba(22, 58, 89, 0.14);
+            background: linear-gradient(135deg, var(--cm-primary), #245782) !important;
+            color: #FFFFFF !important;
+        }}
+
+        .stButton > button[kind="secondary"], .stDownloadButton > button[kind="secondary"] {{
+            background: linear-gradient(135deg, #245782, #2F6B9E) !important;
+            color: #FFFFFF !important;
+            border: none !important;
         }}
 
         .stButton > button[kind="primary"], .stDownloadButton > button[kind="primary"] {{
             background: linear-gradient(135deg, var(--cm-primary), #245782) !important;
-            color: white !important;
-            border: none;
+            color: #FFFFFF !important;
+            border: none !important;
         }}
 
         .stButton > button:hover, .stDownloadButton > button:hover, .stFileUploader button:hover {{
-            border-color: rgba(22, 58, 89, 0.22);
-            color: var(--cm-primary) !important;
+            color: #FFFFFF !important;
+            filter: brightness(1.04);
+            transform: translateY(-1px);
         }}
 
         [data-testid="stSidebar"] .stButton > button,
         [data-testid="stSidebar"] .stDownloadButton > button,
         [data-testid="stSidebar"] .stFileUploader button {{
-            background: #FFFFFF !important;
-            color: var(--cm-primary) !important;
-            border: 1px solid rgba(22, 58, 89, 0.12) !important;
+            background: linear-gradient(135deg, var(--cm-primary), #245782) !important;
+            color: #FFFFFF !important;
+            border: none !important;
         }}
 
-        [data-testid="stSidebar"] .stButton > button[kind="primary"],
-        [data-testid="stSidebar"] .stDownloadButton > button[kind="primary"] {{
-            background: linear-gradient(135deg, var(--cm-primary), #245782) !important;
+        [data-testid="stSidebar"] .stButton > button[kind="secondary"],
+        [data-testid="stSidebar"] .stDownloadButton > button[kind="secondary"] {{
+            background: linear-gradient(135deg, #245782, #2F6B9E) !important;
             color: #FFFFFF !important;
             border: none !important;
         }}
@@ -340,7 +347,53 @@ def inject_brand_theme() -> None:
         [data-testid="stSidebar"] .stFileUploader button:hover,
         [data-testid="stSidebar"] .stButton > button:hover,
         [data-testid="stSidebar"] .stDownloadButton > button:hover {{
+            color: #FFFFFF !important;
+            filter: brightness(1.05);
+        }}
+
+        div[data-testid="stFileUploaderDropzone"] {{
+            background: rgba(22, 58, 89, 0.05) !important;
+            border: 1px dashed rgba(22, 58, 89, 0.25) !important;
+            border-radius: 16px !important;
+        }}
+
+        div[data-testid="stFileUploaderDropzone"] * {{
             color: var(--cm-primary) !important;
+        }}
+
+        [data-testid="stSidebar"] div[data-testid="stFileUploaderDropzone"] {{
+            background: rgba(255,255,255,0.08) !important;
+            border: 1px dashed rgba(255,255,255,0.30) !important;
+        }}
+
+        [data-testid="stSidebar"] div[data-testid="stFileUploaderDropzone"] * {{
+            color: #FFFFFF !important;
+        }}
+
+        div[data-testid="stExpander"] {{
+            border: none !important;
+            background: transparent !important;
+        }}
+
+        div[data-testid="stExpander"] details {{
+            border: none !important;
+            background: transparent !important;
+        }}
+
+        div[data-testid="stExpander"] summary {{
+            background: linear-gradient(135deg, var(--cm-primary), #245782) !important;
+            color: #FFFFFF !important;
+            border-radius: 14px !important;
+            padding: 0.35rem 0.8rem !important;
+            box-shadow: 0 10px 20px rgba(22, 58, 89, 0.12);
+        }}
+
+        div[data-testid="stExpander"] summary p,
+        div[data-testid="stExpander"] summary span,
+        div[data-testid="stExpander"] summary svg {{
+            color: #FFFFFF !important;
+            fill: #FFFFFF !important;
+            font-weight: 800 !important;
         }}
 
         [data-testid="stDataFrame"], .stAlert, div[data-baseweb="select"], .stTextInput > div > div,
@@ -413,7 +466,97 @@ def inject_brand_theme() -> None:
             white-space: nowrap;
         }}
 
+        .cm-hero-pills {{
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.55rem;
+            margin-top: 1rem;
+        }}
+
+        .cm-hero-pill {{
+            padding: 0.45rem 0.75rem;
+            border-radius: 999px;
+            background: rgba(255,255,255,0.10);
+            border: 1px solid rgba(255,255,255,0.16);
+            color: rgba(255,255,255,0.95);
+            font-size: 0.86rem;
+            font-weight: 700;
+        }}
+
+        .cm-premium-grid {{
+            display: grid;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: 1rem;
+            margin: 1rem 0 1.2rem 0;
+        }}
+
+        .cm-premium-card {{
+            position: relative;
+            overflow: hidden;
+            border-radius: 24px;
+            padding: 1.15rem 1.15rem 1rem 1.15rem;
+            background: linear-gradient(160deg, rgba(22, 58, 89, 0.98), rgba(36, 87, 130, 0.92));
+            border: 1px solid rgba(255,255,255,0.08);
+            color: #FFFFFF;
+            min-height: 190px;
+            box-shadow: 0 14px 34px rgba(22, 58, 89, 0.16);
+        }}
+
+        .cm-premium-card::after {{
+            content: "";
+            position: absolute;
+            right: -42px;
+            top: -42px;
+            width: 128px;
+            height: 128px;
+            border-radius: 50%;
+            background: radial-gradient(circle, rgba(255,255,255,0.18), rgba(255,255,255,0));
+        }}
+
+        .cm-premium-kicker {{
+            font-family: 'Sora', sans-serif;
+            font-size: 0.78rem;
+            font-weight: 800;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            color: rgba(255,255,255,0.76);
+        }}
+
+        .cm-premium-title {{
+            margin-top: 0.4rem;
+            font-family: 'Sora', sans-serif;
+            font-size: 1.12rem;
+            font-weight: 800;
+            line-height: 1.2;
+            color: #FFFFFF;
+        }}
+
+        .cm-premium-value {{
+            margin-top: 0.7rem;
+            font-family: 'Montserrat', sans-serif;
+            font-size: 1.72rem;
+            font-weight: 800;
+            color: #FFFFFF;
+        }}
+
+        .cm-premium-text {{
+            margin-top: 0.45rem;
+            font-size: 0.95rem;
+            line-height: 1.55;
+            color: rgba(255,255,255,0.84);
+        }}
+
+        .cm-premium-foot {{
+            margin-top: 0.9rem;
+            font-size: 0.83rem;
+            font-weight: 700;
+            color: #CFE4FF;
+        }}
+
         @media (max-width: 900px) {{
+            .cm-premium-grid {{
+                grid-template-columns: 1fr;
+            }}
             .cm-hero-grid {{
                 grid-template-columns: 1fr;
             }}
@@ -452,10 +595,15 @@ def render_sidebar_brand(user: dict | None = None) -> None:
 def render_home_hero(user: dict | None = None) -> None:
     welcome = f"Bienvenue {user['display_name']}" if user else "Application sécurisée"
     user_scope_text = (
-        "Accédez à votre périmètre multi-société, chargez les jeux de données côté administration et pilotez le portefeuille en toute simplicité."
+        "Accédez à votre périmètre multi-société, publiez les jeux 01/02/03 côté administration et pilotez le portefeuille avec une vue unifiée."
         if user
-        else "Connectez-vous pour accéder à votre périmètre société, aux indicateurs clés et au tableau de pilotage."
+        else "Connectez-vous pour accéder à votre périmètre société, à la supervision des vigilances et au tableau de pilotage."
     )
+    pills = [
+        "Multi-société",
+        "Pilotage portefeuille",
+        "Vigilance & risque",
+    ]
     st.markdown(
         f"""
         <section class="cm-hero">
@@ -465,6 +613,9 @@ def render_home_hero(user: dict | None = None) -> None:
                     <h1>CLASSIFICATION<br/>MANAGEMENT</h1>
                     <p class="cm-hero-subtitle">{APP_SUBTITLE}</p>
                     <p class="cm-hero-body cm-hero-note">{user_scope_text}</p>
+                    <div class="cm-hero-pills">
+                        {''.join(f'<span class="cm-hero-pill">{escape(item)}</span>' for item in pills)}
+                    </div>
                 </div>
                 <div class="cm-hero-logo-card">
                     <img src="{LOGO_DATA_URI}" alt="Logo Classification Management" />
@@ -474,6 +625,91 @@ def render_home_hero(user: dict | None = None) -> None:
         """,
         unsafe_allow_html=True,
     )
+
+
+def render_home_showcase(user: dict | None = None) -> None:
+    manifest = load_manifest() if user else None
+
+    if user is None:
+        cards = [
+            {
+                "kicker": "Supervision",
+                "title": "Vision portefeuille",
+                "value": "360°",
+                "text": "Consolidez le portefeuille, visualisez les vigilances et priorisez les dossiers les plus sensibles.",
+                "foot": "Tableau de bord unifié",
+            },
+            {
+                "kicker": "Administration",
+                "title": "Publication contrôlée",
+                "value": "01 / 02 / 03",
+                "text": "L’administrateur charge un jeu de données unique puis l’ensemble des utilisateurs travaille sur la même version active.",
+                "foot": "Un seul jeu partagé",
+            },
+            {
+                "kicker": "Multi-société",
+                "title": "Accès cloisonnés",
+                "value": "Users",
+                "text": "Chaque utilisateur n’accède qu’à son périmètre autorisé, avec une expérience fluide et homogène.",
+                "foot": "Gouvernance d’accès intégrée",
+            },
+        ]
+    else:
+        if user["role"] == "admin" or "ALL" in user["societes_autorisees"]:
+            scope_value = "Toutes"
+            scope_text = "Vous pouvez superviser l’ensemble des sociétés présentes dans le jeu actif."
+        else:
+            scope_value = str(len(user["societes_autorisees"]))
+            scope_text = "Votre périmètre est limité aux sociétés autorisées sur votre compte."
+        published_value = format_manifest_date(manifest.get("published_at_utc")) if manifest else "En attente"
+        published_text = (
+            "Jeu actif publié par {}.".format(manifest.get("published_by_name") or manifest.get("published_by") or "inconnu")
+            if manifest else
+            "Aucun jeu de données n’a encore été publié."
+        )
+        cards = [
+            {
+                "kicker": "Périmètre",
+                "title": "Accès utilisateur",
+                "value": scope_value,
+                "text": scope_text,
+                "foot": f"Rôle : {user['role']}",
+            },
+            {
+                "kicker": "Jeu actif",
+                "title": "Publication données",
+                "value": published_value,
+                "text": published_text,
+                "foot": (
+                    "Sociétés : {}".format(manifest.get("societes_count", 0))
+                    if manifest else "Publication requise"
+                ),
+            },
+            {
+                "kicker": "Gouvernance",
+                "title": "Cadre de pilotage",
+                "value": "V / R",
+                "text": "Le bleu structure la navigation, le rouge marque le critique ou le risque avéré, l’orange signale le niveau élevé.",
+                "foot": "Lecture visuelle harmonisée",
+            },
+        ]
+
+    html = ["<section class='cm-premium-grid'>"]
+    for card in cards:
+        html.append(
+            f"""
+            <article class="cm-premium-card">
+                <div class="cm-premium-kicker">{escape(card['kicker'])}</div>
+                <div class="cm-premium-title">{escape(card['title'])}</div>
+                <div class="cm-premium-value">{escape(card['value'])}</div>
+                <div class="cm-premium-text">{escape(card['text'])}</div>
+                <div class="cm-premium-foot">{escape(card['foot'])}</div>
+            </article>
+            """
+        )
+    html.append("</section>")
+    st.markdown("".join(html), unsafe_allow_html=True)
+
 
 def app_root() -> Path:
     return Path(__file__).resolve().parent
@@ -612,6 +848,7 @@ def get_current_user():
 
 def login_form() -> None:
     render_home_hero(None)
+    render_home_showcase(None)
     st.markdown('<h3 class="cm-section-title">Connexion</h3>', unsafe_allow_html=True)
     with st.form("login_form", clear_on_submit=False):
         username = st.text_input("Identifiant")
@@ -1266,7 +1503,7 @@ def main() -> None:
         return
 
     render_home_hero(user)
-    st.caption("L’admin publie un jeu de données 01/02/03 ; tous les utilisateurs lisent ensuite ce jeu actif.")
+    render_home_showcase(user)
 
     render_admin_data_manager(user)
 
