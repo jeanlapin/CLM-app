@@ -11,9 +11,16 @@ st.markdown("""
     html, body, [class*="css"] { font-family: 'Inter', sans-serif; }
     .stApp { background-color: #002b45; color: white; }
     
-    /* Libellés en blanc pur */
-    [data-testid="stMetricLabel"] { color: #ffffff !important; font-weight: 600 !important; }
-    [data-testid="stMetricValue"] { color: #00d4ff !important; font-weight: 700; }
+    /* LIGNE TOTAL : Libellés en blanc pur */
+    [data-testid="stMetricLabel"] { 
+        color: #ffffff !important; 
+        font-weight: 600 !important; 
+        font-size: 1.1rem !important; 
+    }
+    [data-testid="stMetricValue"] { 
+        color: #00d4ff !important; 
+        font-weight: 700 !important; 
+    }
     
     h1, h2, h3 { color: #ffffff !important; font-weight: 700 !important; }
     .stDataFrame { background-color: white; border-radius: 8px; }
@@ -21,46 +28,56 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-# 2. Chargement et Nettoyage
-def load_data():
+# 2. Chargement et Fusion des données
+@st.cache_data
+def load_and_merge():
     try:
-        # Lecture du fichier
-        df = pd.read_csv("01_Donnees_base_source.csv", sep=';', encoding='utf-8')
-        # On supprime les lignes vides (basé sur SIREN)
-        df = df.dropna(subset=['SIREN'])
-        return df
+        # Lecture du fichier de BASE (Fichier 01)
+        df_base = pd.read_csv("01_Donnees_base_source.csv", sep=';', encoding='utf-8')
+        df_base = df_base.dropna(subset=['SIREN'])
+        df_base['SIREN'] = df_base['SIREN'].astype(str).str.replace('.0', '', regex=False)
+
+        # Lecture du fichier INDICATEURS (Fichier 02)
+        df_ind = pd.read_csv("02_Indicateurs_source.csv", sep=';', encoding='utf-8')
+        df_ind = df_ind.dropna(subset=['SIREN'])
+        df_ind['SIREN'] = df_ind['SIREN'].astype(str).str.replace('.0', '', regex=False)
+
+        # FUSION : On récupère la colonne 'Statut' du fichier 02 et on la nomme 'Niveau de Vigilance'
+        df_merged = pd.merge(df_base, df_ind[['SIREN', 'Statut']], on='SIREN', how='left')
+        df_merged = df_merged.rename(columns={'Statut': 'Niveau de Vigilance'})
+        
+        return df_merged
     except Exception as e:
+        st.error(f"Erreur lors du chargement des fichiers : {e}")
         return None
 
-df_base = load_data()
+df_f_total = load_and_merge()
 
 st.title("🛡️ Be CLM - Classification Management")
 
-if df_base is not None:
+if df_f_total is not None:
     # --- BARRE LATÉRALE (FILTRES) ---
     st.sidebar.header("Filtres de recherche")
     
-    sel_seg = st.sidebar.multiselect("Segments", options=sorted(df_base['Segment'].dropna().unique()))
-    sel_pays = st.sidebar.multiselect("Pays", options=sorted(df_base['Pays de résidence'].dropna().unique()))
+    sel_seg = st.sidebar.multiselect("Segments", options=sorted(df_f_total['Segment'].dropna().unique()))
+    sel_pays = st.sidebar.multiselect("Pays", options=sorted(df_f_total['Pays de résidence'].dropna().unique()))
     
-    # Filtre Statut de Risque
     risk_col = 'Statut de risque (import SaaS source)'
-    sel_risk = st.sidebar.multiselect("Statut de Risque", options=sorted(df_base[risk_col].dropna().unique()))
+    sel_risk = st.sidebar.multiselect("Statut de Risque", options=sorted(df_f_total[risk_col].dropna().unique()))
     
-    # Filtre Statut de Vigilance
-    # Si la colonne s'appelle 'Vigilance' dans votre fichier
-    vig_col = 'Vigilance' if 'Vigilance' in df_base.columns else 'Statut EDD'
-    sel_vig = st.sidebar.multiselect("Niveau de Vigilance", options=sorted(df_base[vig_col].dropna().unique()))
+    # Filtre sur la nouvelle colonne issue du fichier 02
+    vig_col = 'Niveau de Vigilance'
+    sel_vig = st.sidebar.multiselect("Statut de Vigilance", options=sorted(df_f_total[vig_col].dropna().unique()))
 
     # Application des filtres
-    df_f = df_base.copy()
+    df_f = df_f_total.copy()
     if sel_seg: df_f = df_f[df_f['Segment'].isin(sel_seg)]
     if sel_pays: df_f = df_f[df_f['Pays de résidence'].isin(sel_pays)]
     if sel_risk: df_f = df_f[df_f[risk_col].isin(sel_risk)]
     if sel_vig: df_f = df_f[df_f[vig_col].isin(sel_vig)]
 
-    # --- BANDEAU DE SYNTHÈSE ---
-    st.subheader("Synthèse et Pilotage du Portefeuille")
+    # --- BANDEAU DE SYNTHÈSE AVEC JAUGE DE VIGILANCE ---
+    st.subheader("Synthèse du Portefeuille")
     
     col_kpi, col_chart = st.columns([2, 1])
     
@@ -76,17 +93,16 @@ if df_base is not None:
             st.metric("International", len(df_f) - fr)
 
     with col_chart:
-        # JAUGE SUR LE STATUT DE VIGILANCE
+        # JAUGE SUR LE STATUT DE VIGILANCE (issu du Fichier 02)
         vig_counts = df_f[vig_col].value_counts().reset_index()
         vig_counts.columns = ['Statut', 'Nombre']
         
-        # Couleurs adaptées : Bleu pour Standard/Aucune, Orange/Rouge pour Renforcée
         chart = alt.Chart(vig_counts).mark_arc(innerRadius=50).encode(
             theta=alt.Theta(field="Nombre", type="quantitative"),
             color=alt.Color(field="Statut", type="nominal", 
                             scale=alt.Scale(range=['#00d4ff', '#ffaa00', '#ff4b4b', '#2ecc71'])),
             tooltip=['Statut', 'Nombre']
-        ).properties(height=200, title="Répartition par Vigilance")
+        ).properties(height=200, title="Répartition Vigilance")
         
         st.altair_chart(chart, use_container_width=True)
 
@@ -97,4 +113,4 @@ if df_base is not None:
     st.dataframe(df_f[cols_display], use_container_width=True)
 
 else:
-    st.error("Fichier source introuvable ou mal nommé sur GitHub.")
+    st.warning("Vérifiez que les fichiers '01_Donnees_base_source.csv' et '02_Indicateurs_source.csv' sont bien sur votre GitHub.")
