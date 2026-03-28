@@ -1579,7 +1579,7 @@ def main() -> None:
 
     st.divider()
     st.markdown('<h3 class="cm-section-title">Dossiers prioritaires</h3>', unsafe_allow_html=True)
-    st.dataframe(style_dataframe(build_priority_table(filtered, top_n=10)), use_container_width=True, height=420)
+    st.dataframe(style_dataframe(build_priority_table(filtered, top_n=10)), use_container_width=True, height=420, hide_index=True)
 
     export_columns = [c for c in DISPLAY_COLUMNS if c in filtered.columns]
     st.download_button(
@@ -1591,7 +1591,7 @@ def main() -> None:
     )
 
     with st.expander("Aperçu des données sous-jacentes filtrées"):
-        st.dataframe(style_dataframe(filtered[export_columns]), use_container_width=True, height=420)
+        st.dataframe(style_dataframe(filtered[export_columns]), use_container_width=True, height=420, hide_index=True)
 
 
 if __name__ == "__main__":
