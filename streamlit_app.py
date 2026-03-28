@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from html import escape
 import base64
 from io import BytesIO
 from datetime import datetime, timezone
@@ -107,7 +108,7 @@ def inject_brand_theme() -> None:
     st.markdown(
         f"""
         <style>
-        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Montserrat:wght@600;700;800&display=swap');
+        @import url('https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Sora:wght@500;600;700;800&family=Cormorant+Garamond:wght@500;600;700&display=swap');
 
         :root {{
             --cm-primary: {PRIMARY_COLOR};
@@ -121,7 +122,7 @@ def inject_brand_theme() -> None:
         }}
 
         html, body, [class*="css"] {{
-            font-family: 'Inter', sans-serif;
+            font-family: 'Manrope', sans-serif;
             color: var(--cm-text);
         }}
 
@@ -132,7 +133,7 @@ def inject_brand_theme() -> None:
         }}
 
         h1, h2, h3, .cm-heading, [data-testid="stMetricLabel"] {{
-            font-family: 'Montserrat', sans-serif !important;
+            font-family: 'Sora', sans-serif !important;
             letter-spacing: 0.01em;
         }}
 
@@ -164,16 +165,17 @@ def inject_brand_theme() -> None:
             padding: 0.25rem 0 1rem 0;
         }}
 
-        .cm-sidebar-brand img {{
+        .cm-sidebar-brand img {
             width: 64px;
             height: 64px;
-            border-radius: 18px;
-            box-shadow: 0 14px 30px rgba(0, 0, 0, 0.18);
-            background: rgba(255,255,255,0.08);
-        }}
+            border-radius: 0;
+            box-shadow: none;
+            background: transparent;
+            object-fit: contain;
+        }
 
         .cm-sidebar-brand-title {{
-            font-family: 'Montserrat', sans-serif;
+            font-family: 'Sora', sans-serif;
             font-size: 1.02rem;
             font-weight: 800;
             line-height: 1.05;
@@ -219,43 +221,56 @@ def inject_brand_theme() -> None:
             text-transform: uppercase;
         }}
 
-        .cm-hero h1 {{
-            margin: 0.7rem 0 0.45rem 0;
+        .cm-hero h1 {
+            margin: 0.7rem 0 0.35rem 0;
             color: white;
-            font-size: clamp(2rem, 3.2vw, 3.6rem);
-            line-height: 0.98;
+            font-size: clamp(2.2rem, 3.4vw, 3.9rem);
+            line-height: 0.96;
             letter-spacing: 0.02em;
-        }}
+        }
 
-        .cm-hero p {{
-            margin: 0.35rem 0;
-            font-size: 1rem;
-            line-height: 1.6;
-            color: rgba(255,255,255,0.9);
+        .cm-hero-subtitle {
+            margin: 0.25rem 0 0.45rem 0;
+            font-family: 'Cormorant Garamond', serif !important;
+            font-size: clamp(1.45rem, 2.15vw, 2.15rem) !important;
+            font-weight: 600;
+            line-height: 1.15 !important;
+            letter-spacing: 0.01em;
+            color: rgba(255,255,255,0.96) !important;
+            max-width: 950px;
+        }
+
+        .cm-hero-body {
+            margin: 0.45rem 0 0 0;
+            font-family: 'Manrope', sans-serif !important;
+            font-size: 1.03rem !important;
+            font-weight: 500;
+            line-height: 1.65 !important;
+            color: rgba(255,255,255,0.88) !important;
             max-width: 900px;
-        }}
+        }
 
-        .cm-hero-note {{
-            font-size: 0.92rem !important;
-            color: rgba(255,255,255,0.78) !important;
-        }}
+        .cm-hero-note {
+            font-size: 0.96rem !important;
+            color: rgba(255,255,255,0.82) !important;
+        }
 
-        .cm-hero-logo-card {{
+        .cm-hero-logo-card {
             display: flex;
             align-items: center;
             justify-content: center;
-            background: rgba(255,255,255,0.09);
-            border: 1px solid rgba(255,255,255,0.12);
-            border-radius: 26px;
             min-height: 210px;
-            backdrop-filter: blur(6px);
-        }}
+            background: transparent;
+            border: none;
+            border-radius: 0;
+            backdrop-filter: none;
+        }
 
-        .cm-hero-logo-card img {{
-            width: min(180px, 100%);
+        .cm-hero-logo-card img {
+            width: min(210px, 100%);
             height: auto;
-            filter: drop-shadow(0 16px 22px rgba(0,0,0,0.18));
-        }}
+            filter: drop-shadow(0 18px 26px rgba(0,0,0,0.14));
+        }
 
         .cm-section-title {{
             font-family: 'Montserrat', sans-serif;
@@ -309,6 +324,61 @@ def inject_brand_theme() -> None:
             margin-top: -0.2rem;
         }}
 
+        .cm-mini-table-wrap {
+            background: rgba(255,255,255,0.8);
+            border: 1px solid var(--cm-border);
+            border-radius: 18px;
+            overflow: hidden;
+            box-shadow: 0 10px 24px rgba(22, 58, 89, 0.06);
+        }
+
+        .cm-mini-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.94rem;
+        }
+
+        .cm-mini-table thead th {
+            background: var(--cm-primary);
+            color: white;
+            text-align: left;
+            padding: 0.72rem 0.85rem;
+            font-family: 'Sora', sans-serif;
+            font-size: 0.8rem;
+            font-weight: 700;
+            letter-spacing: 0.04em;
+            text-transform: uppercase;
+        }
+
+        .cm-mini-table td {
+            padding: 0.72rem 0.85rem;
+            border-top: 1px solid rgba(22, 58, 89, 0.08);
+            vertical-align: middle;
+            color: var(--cm-text);
+        }
+
+        .cm-mini-table tbody tr:nth-child(even) td {
+            background: rgba(221, 234, 248, 0.3);
+        }
+
+        .cm-mini-table td.cm-number {
+            text-align: right;
+            font-variant-numeric: tabular-nums;
+            font-weight: 700;
+        }
+
+        .cm-badge {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            padding: 0.28rem 0.62rem;
+            border-radius: 999px;
+            font-size: 0.82rem;
+            font-weight: 800;
+            line-height: 1.1;
+            white-space: nowrap;
+        }
+
         @media (max-width: 900px) {{
             .cm-hero-grid {{
                 grid-template-columns: 1fr;
@@ -359,8 +429,8 @@ def render_home_hero(user: dict | None = None) -> None:
                 <div>
                     <div class="cm-hero-badge">{welcome}</div>
                     <h1>CLASSIFICATION<br/>MANAGEMENT</h1>
-                    <p>{APP_SUBTITLE}</p>
-                    <p class="cm-hero-note">{user_scope_text}</p>
+                    <p class="cm-hero-subtitle">{APP_SUBTITLE}</p>
+                    <p class="cm-hero-body cm-hero-note">{user_scope_text}</p>
                 </div>
                 <div class="cm-hero-logo-card">
                     <img src="{LOGO_DATA_URI}" alt="Logo Classification Management" />
@@ -895,6 +965,95 @@ def format_manifest_date(value: str | None) -> str:
         return str(value)
 
 
+
+
+def status_palette(value: object, status_type: str) -> tuple[str, str]:
+    val = str(value).strip() if pd.notna(value) else ""
+    if status_type == "vigilance":
+        mapping = {
+            "Vigilance Critique": ("#D92D20", "#FFFFFF"),
+            "Vigilance Élevée": ("#F79009", "#FFFFFF"),
+            "Vigilance Modérée": ("#FEEFC6", "#8A4B00"),
+            "Vigilance Allégée": ("#D1FADF", "#065F46"),
+            "Vigilance Aucune": ("#EAF2FB", "#163A59"),
+        }
+        return mapping.get(val, ("#EEF2F7", "#334155"))
+    mapping = {
+        "Risque avéré": ("#D92D20", "#FFFFFF"),
+        "Risque potentiel": ("#F79009", "#FFFFFF"),
+        "Risque mitigé": ("#D1FADF", "#065F46"),
+        "Risque levé": ("#E3F2E8", "#166534"),
+        "Non calculable": ("#E5E7EB", "#475467"),
+        "Aucun risque détecté": ("#EAF2FB", "#163A59"),
+    }
+    return mapping.get(val, ("#EEF2F7", "#334155"))
+
+
+def render_status_badge(value: object, status_type: str) -> str:
+    bg, fg = status_palette(value, status_type)
+    return f'<span class="cm-badge" style="background:{bg}; color:{fg};">{escape(str(value))}</span>'
+
+
+def render_small_table(df: pd.DataFrame, color_columns: dict[str, str] | None = None) -> None:
+    color_columns = color_columns or {}
+    if df is None or df.empty:
+        st.info("Aucune donnée à afficher.")
+        return
+
+    html = ["<div class='cm-mini-table-wrap'><table class='cm-mini-table'><thead><tr>"]
+    for col in df.columns:
+        html.append(f"<th>{escape(str(col))}</th>")
+    html.append("</tr></thead><tbody>")
+
+    for _, row in df.iterrows():
+        html.append("<tr>")
+        for col in df.columns:
+            value = row[col]
+            classes = []
+            if pd.api.types.is_number(value) and not isinstance(value, bool):
+                classes.append("cm-number")
+            class_attr = f" class='{' '.join(classes)}'" if classes else ""
+            if pd.isna(value):
+                rendered = ""
+            elif col in color_columns:
+                rendered = render_status_badge(value, color_columns[col])
+            else:
+                rendered = escape(str(value))
+            html.append(f"<td{class_attr}>{rendered}</td>")
+        html.append("</tr>")
+    html.append("</tbody></table></div>")
+    st.markdown("".join(html), unsafe_allow_html=True)
+
+
+def dataframe_cell_style(value: object, status_type: str) -> str:
+    if pd.isna(value):
+        return ""
+    bg, fg = status_palette(value, status_type)
+    return f"background-color: {bg}; color: {fg}; font-weight: 700; border-radius: 999px;"
+
+
+def style_dataframe(df: pd.DataFrame) -> pd.io.formats.style.Styler:
+    out = df.copy()
+    for col in out.columns:
+        if pd.api.types.is_datetime64_any_dtype(out[col]):
+            out[col] = out[col].dt.strftime("%d/%m/%Y")
+    styler = (
+        out.style
+        .hide(axis="index")
+        .set_table_styles([
+            {"selector": "th", "props": [("background-color", PRIMARY_COLOR), ("color", "white"), ("font-family", "Sora, sans-serif"), ("font-weight", "700")]},
+            {"selector": "td", "props": [("border-color", "rgba(22, 58, 89, 0.08)")]},
+        ])
+    )
+    if "Vigilance" in out.columns:
+        styler = styler.map(lambda v: dataframe_cell_style(v, "vigilance"), subset=["Vigilance"])
+    if "Risque" in out.columns:
+        styler = styler.map(lambda v: dataframe_cell_style(v, "risk"), subset=["Risque"])
+    if "Statut" in out.columns:
+        styler = styler.map(lambda v: dataframe_cell_style(v, "risk"), subset=["Statut"])
+    return styler
+
+
 def render_admin_data_manager(user: dict) -> None:
     if user["role"] != "admin":
         return
@@ -1037,12 +1196,13 @@ def render_kpis(df: pd.DataFrame) -> None:
 def render_distribution_block(title: str, dist_df: pd.DataFrame, index_col: str) -> None:
     st.markdown("**{}**".format(title))
     st.bar_chart(dist_df.set_index(index_col)[["Nb"]], height=260)
-    st.dataframe(format_percent_column(dist_df), hide_index=True, use_container_width=True)
+    color_columns = {index_col: "vigilance"} if index_col == "Vigilance" else ({index_col: "risk"} if index_col == "Statut" else {})
+    render_small_table(format_percent_column(dist_df), color_columns=color_columns)
 
 
 def render_top_block(title: str, df: pd.DataFrame) -> None:
     st.markdown("**{}**".format(title))
-    st.dataframe(df, hide_index=True, use_container_width=True)
+    render_small_table(df)
 
 
 def render_user_header(user: dict, selected_societies: list[str], total_societies: int) -> None:
@@ -1113,7 +1273,7 @@ def main() -> None:
 
     with col_right:
         st.markdown("**Alertes de gouvernance**")
-        st.dataframe(build_alert_table(filtered), hide_index=True, use_container_width=True, height=400)
+        render_small_table(build_alert_table(filtered))
 
     st.divider()
     st.markdown('<h3 class="cm-section-title">Concentrations</h3>', unsafe_allow_html=True)
@@ -1129,7 +1289,7 @@ def main() -> None:
 
     st.divider()
     st.markdown('<h3 class="cm-section-title">Dossiers prioritaires</h3>', unsafe_allow_html=True)
-    st.dataframe(build_priority_table(filtered, top_n=10), hide_index=True, use_container_width=True, height=420)
+    st.dataframe(style_dataframe(build_priority_table(filtered, top_n=10)), use_container_width=True, height=420)
 
     export_columns = [c for c in DISPLAY_COLUMNS if c in filtered.columns]
     st.download_button(
@@ -1141,7 +1301,7 @@ def main() -> None:
     )
 
     with st.expander("Aperçu des données sous-jacentes filtrées"):
-        st.dataframe(filtered[export_columns], hide_index=True, use_container_width=True, height=420)
+        st.dataframe(style_dataframe(filtered[export_columns]), use_container_width=True, height=420)
 
 
 if __name__ == "__main__":
