@@ -1728,12 +1728,6 @@ def display_value(value: object, kind: str | None = None) -> str:
     return text
 
 
-def build_client_href(societe_id: object, siren: object) -> str:
-    soc = quote_plus(str(societe_id or "").strip())
-    sir = quote_plus(str(siren or "").strip())
-    return f"?view=client&societe={soc}&siren={sir}"
-
-
 def sync_view_state_from_query_params() -> None:
     query_params = st.query_params
     view = str(query_params.get("view", "")).strip().lower()
@@ -1756,10 +1750,21 @@ def siren_society_column(df: pd.DataFrame) -> str | None:
     return None
 
 
-def render_clickable_html_table(
+def table_column_weight(column_name: str) -> float:
+    if column_name in {SOC_COL, "Société", "SIREN", "#", "Nb", "%"}:
+        return 0.9
+    if column_name in {"Dénomination", "Client"}:
+        return 1.6
+    if column_name in {"Motifs", "Commentaire"}:
+        return 2.1
+    return 1.15
+
+
+def render_clickable_streamlit_table(
     df: pd.DataFrame,
     *,
     height: int | None = None,
+    key_prefix: str = "table",
 ) -> None:
     if df is None or df.empty:
         st.info("Aucune donnée disponible.")
@@ -1770,43 +1775,73 @@ def render_clickable_html_table(
         if pd.api.types.is_datetime64_any_dtype(working[col]):
             working[col] = pd.to_datetime(working[col], errors="coerce").dt.strftime("%d/%m/%Y")
 
+    if len(working) > 150:
+        st.caption("Aperçu limité aux 150 premières lignes pour conserver une navigation fluide.")
+        working = working.head(150).copy()
+
     society_col = siren_society_column(working)
-    style_attr = f" style=\"max-height:{int(height)}px;\"" if height else ""
-    html = [f"<div class='cm-click-table-wrap'{style_attr}><table class='cm-click-table'><thead><tr>"]
-    for col in working.columns:
-        html.append(f"<th>{escape(str(col))}</th>")
-    html.append("</tr></thead><tbody>")
+    columns = list(working.columns)
+    weights = [table_column_weight(col) for col in columns]
 
-    for _, row in working.iterrows():
-        html.append("<tr>")
-        for col in working.columns:
-            value = row.get(col)
-            if col == "SIREN" and society_col is not None:
-                href = build_client_href(row.get(society_col), value)
-                label = escape(display_value(value))
-                rendered = (
-                    f"<a class='cm-table-link' href='{escape(href)}' title='Ouvrir la fiche client'>"
-                    f"{label}<span class='cm-table-link-icon'>↗</span></a>"
+    container = st.container(height=height, border=False) if height else st.container(border=False)
+    with container:
+        header_cols = st.columns(weights, gap="small")
+        for col_obj, col_name in zip(header_cols, columns):
+            with col_obj:
+                st.markdown(
+                    f"<div class='cm-stream-head'>{escape(str(col_name))}</div>",
+                    unsafe_allow_html=True,
                 )
-            elif col == "Vigilance":
-                rendered = render_status_badge(display_value(value), "vigilance")
-            elif col in {"Risque", "Statut"}:
-                rendered = render_status_badge(display_value(value), "risk")
-            else:
-                rendered = escape(display_value(value))
-            html.append(f"<td>{rendered}</td>")
-        html.append("</tr>")
 
-    html.append("</tbody></table></div>")
-    st.markdown("".join(html), unsafe_allow_html=True)
+        for row_idx, (_, row) in enumerate(working.iterrows()):
+            row_cols = st.columns(weights, gap="small")
+            for col_obj, col_name in zip(row_cols, columns):
+                value = row.get(col_name)
+                with col_obj:
+                    if col_name == "SIREN" and society_col is not None:
+                        label = f"{display_value(value)} ↗"
+                        if st.button(
+                            label,
+                            key=f"{key_prefix}_open_{row_idx}",
+                            help="Ouvrir la fiche client",
+                            use_container_width=True,
+                        ):
+                            open_client_detail(str(row.get(society_col, "")), str(value))
+                            st.rerun()
+                    elif col_name == "Vigilance":
+                        rendered = render_status_badge(display_value(value), "vigilance")
+                        st.markdown(f"<div class='cm-stream-cell'>{rendered}</div>", unsafe_allow_html=True)
+                    elif col_name in {"Risque", "Statut"}:
+                        rendered = render_status_badge(display_value(value), "risk")
+                        st.markdown(f"<div class='cm-stream-cell'>{rendered}</div>", unsafe_allow_html=True)
+                    else:
+                        st.markdown(
+                            f"<div class='cm-stream-cell'>{escape(display_value(value))}</div>",
+                            unsafe_allow_html=True,
+                        )
 
 
-def render_clickable_dataframe(df: pd.DataFrame, *, use_container_width: bool = True, height: int | None = None, hide_index: bool = True) -> None:
-    render_clickable_html_table(df, height=height)
+def render_clickable_dataframe(
+    df: pd.DataFrame,
+    *,
+    use_container_width: bool = True,
+    height: int | None = None,
+    hide_index: bool = True,
+    key_prefix: str = "table",
+) -> None:
+    render_clickable_streamlit_table(df, height=height, key_prefix=key_prefix)
 
 
-def render_clickable_styled_dataframe(styler: pd.io.formats.style.Styler, source_df: pd.DataFrame, *, use_container_width: bool = True, height: int | None = None, hide_index: bool = True) -> None:
-    render_clickable_html_table(source_df, height=height)
+def render_clickable_styled_dataframe(
+    styler: pd.io.formats.style.Styler,
+    source_df: pd.DataFrame,
+    *,
+    use_container_width: bool = True,
+    height: int | None = None,
+    hide_index: bool = True,
+    key_prefix: str = "table",
+) -> None:
+    render_clickable_streamlit_table(source_df, height=height, key_prefix=key_prefix)
 
 
 def client_label(row: pd.Series) -> str:
@@ -1817,9 +1852,6 @@ def open_client_detail(societe_id: str, siren: str) -> None:
     st.session_state["cm_view"] = "client"
     st.session_state["cm_client_societe"] = societe_id
     st.session_state["cm_client_siren"] = siren
-    st.query_params["view"] = "client"
-    st.query_params["societe"] = societe_id
-    st.query_params["siren"] = siren
 
 
 def return_to_portfolio() -> None:
@@ -2295,7 +2327,7 @@ def main() -> None:
     st.divider()
     st.markdown('<h3 class="cm-section-title">Dossiers prioritaires</h3>', unsafe_allow_html=True)
     priority_df = build_priority_table(filtered, top_n=10)
-    render_clickable_styled_dataframe(style_dataframe(priority_df), priority_df, use_container_width=True, height=420, hide_index=True)
+    render_clickable_styled_dataframe(style_dataframe(priority_df), priority_df, use_container_width=True, height=420, hide_index=True, key_prefix="priority_table")
     if not priority_df.empty:
         launcher_df = priority_df.rename(columns={"Société": SOC_COL, "Client": "Dénomination"})
         launcher_cols = [c for c in [SOC_COL, "SIREN", "Dénomination"] if c in launcher_df.columns]
@@ -2315,7 +2347,7 @@ def main() -> None:
     )
 
     with st.expander("Aperçu des données sous-jacentes filtrées"):
-        render_clickable_styled_dataframe(style_dataframe(filtered[export_columns]), filtered[export_columns], use_container_width=True, height=420, hide_index=True)
+        render_clickable_styled_dataframe(style_dataframe(filtered[export_columns]), filtered[export_columns], use_container_width=True, height=420, hide_index=True, key_prefix="filtered_table")
 
 
 
