@@ -2,13 +2,17 @@ from __future__ import annotations
 
 import streamlit as st
 
+from auth import get_current_user, login_form, logout_button
 from tableau1_logic import (
     CRITICAL_VIGILANCE,
     DISPLAY_COLUMNS,
     FILTER_MAPPING,
     RISK_ORDER,
+    SOC_COL,
     VIGILANCE_ORDER,
+    DataValidationError,
     apply_filters,
+    available_societies,
     build_alert_table,
     build_distribution,
     build_portfolio_dataset,
@@ -17,9 +21,10 @@ from tableau1_logic import (
     format_percent_column,
     non_empty_sorted,
     ranked_counts,
+    restrict_to_societies,
 )
 
-PAGE_TITLE = "Tableau 1 – Portefeuille"
+PAGE_TITLE = "Tableau 1 – Portefeuille multi-société"
 
 
 @st.cache_data(show_spinner=False)
@@ -31,6 +36,35 @@ def reset_filters() -> None:
     for key in list(st.session_state.keys()):
         if key.startswith("filter_"):
             st.session_state[key] = "Tous"
+
+
+def render_scope_selector(df, user):
+    all_societies = available_societies(df)
+
+    if user.is_admin or "ALL" in user.societes_autorisees:
+        allowed = all_societies
+    else:
+        allowed = [s for s in all_societies if s in set(user.societes_autorisees)]
+
+    if not allowed:
+        st.error("Votre compte ne possède aucun accès société correspondant aux données chargées.")
+        st.stop()
+
+    with st.sidebar:
+        st.markdown("### Périmètre")
+        selection = st.multiselect(
+            "Sociétés visibles",
+            options=allowed,
+            default=allowed,
+            key="selected_societies",
+            help="Le tableau est calculé uniquement sur les sociétés sélectionnées parmi vos droits.",
+        )
+
+    if not selection:
+        st.warning("Sélectionnez au moins une société pour afficher le tableau.")
+        st.stop()
+
+    return selection, allowed
 
 
 def render_filters(df):
@@ -90,20 +124,45 @@ def render_top_block(title, df):
     st.dataframe(df, hide_index=True, use_container_width=True)
 
 
+def render_user_header(user, selected_societies, total_societies):
+    with st.sidebar:
+        st.markdown("### Session")
+        st.write(f"**Utilisateur :** {user.display_name}")
+        st.write(f"**Rôle :** {user.role}")
+        st.write(f"**Sociétés sélectionnées :** {len(selected_societies)} / {total_societies}")
+        logout_button()
+
+
 def main() -> None:
     st.set_page_config(page_title=PAGE_TITLE, layout="wide")
     st.title(PAGE_TITLE)
     st.caption(
-        "Reproduction Streamlit du tableau 1 basée sur 01_Donnees_base_source.csv, "
-        "02_Indicateurs_source.csv et 03_Indicateurs_historique.csv."
+        "Version avec authentification utilisateur et filtrage automatique par société autorisée. "
+        "Les fichiers 01, 02 et 03 doivent contenir la colonne 'societe_id' en première position."
     )
 
-    portfolio = load_portfolio()
-    filters = render_filters(portfolio)
-    filtered = apply_filters(portfolio, filters)
+    user = get_current_user() or login_form()
+    if user is None:
+        return
+
+    try:
+        portfolio = load_portfolio()
+    except FileNotFoundError as exc:
+        st.error(str(exc))
+        return
+    except DataValidationError as exc:
+        st.error(str(exc))
+        return
+
+    selected_societies, allowed_societies = render_scope_selector(portfolio, user)
+    scoped = restrict_to_societies(portfolio, selected_societies)
+    render_user_header(user, selected_societies, len(allowed_societies))
+
+    filters = render_filters(scoped)
+    filtered = apply_filters(scoped, filters)
 
     if filtered.empty:
-        st.warning("Aucun client ne correspond aux filtres sélectionnés.")
+        st.warning("Aucun client ne correspond au périmètre société + filtres sélectionnés.")
         return
 
     render_kpis(filtered)
@@ -138,17 +197,17 @@ def main() -> None:
     st.subheader("Dossiers prioritaires")
     st.dataframe(build_priority_table(filtered, top_n=10), hide_index=True, use_container_width=True, height=420)
 
+    export_columns = [c for c in DISPLAY_COLUMNS if c in filtered.columns]
     st.download_button(
         label="Exporter la vue filtrée (.csv)",
-        data=dataframe_to_csv_bytes(filtered[[c for c in DISPLAY_COLUMNS if c in filtered.columns]]),
+        data=dataframe_to_csv_bytes(filtered[export_columns]),
         file_name="tableau1_portefeuille_filtre.csv",
         mime="text/csv",
         type="primary",
     )
 
     with st.expander("Aperçu des données sous-jacentes filtrées"):
-        preview_cols = [c for c in DISPLAY_COLUMNS if c in filtered.columns]
-        st.dataframe(filtered[preview_cols], hide_index=True, use_container_width=True, height=420)
+        st.dataframe(filtered[export_columns], hide_index=True, use_container_width=True, height=420)
 
 
 if __name__ == "__main__":
