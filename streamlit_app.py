@@ -108,7 +108,7 @@ def inject_brand_theme() -> None:
     st.markdown(
         f"""
         <style>
-        @import url('https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Sora:wght@500;600;700;800&family=Cormorant+Garamond:wght@500;600;700&display=swap');
+        @import url('https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Sora:wght@500;600;700;800&family=Montserrat:wght@600;700;800&family=Cormorant+Garamond:wght@500;600;700&display=swap');
 
         :root {{
             --cm-primary: {PRIMARY_COLOR};
@@ -165,14 +165,14 @@ def inject_brand_theme() -> None:
             padding: 0.25rem 0 1rem 0;
         }}
 
-        .cm-sidebar-brand img {
+        .cm-sidebar-brand img {{
             width: 64px;
             height: 64px;
             border-radius: 0;
             box-shadow: none;
             background: transparent;
             object-fit: contain;
-        }
+        }}
 
         .cm-sidebar-brand-title {{
             font-family: 'Sora', sans-serif;
@@ -221,15 +221,15 @@ def inject_brand_theme() -> None:
             text-transform: uppercase;
         }}
 
-        .cm-hero h1 {
+        .cm-hero h1 {{
             margin: 0.7rem 0 0.35rem 0;
             color: white;
             font-size: clamp(2.2rem, 3.4vw, 3.9rem);
             line-height: 0.96;
             letter-spacing: 0.02em;
-        }
+        }}
 
-        .cm-hero-subtitle {
+        .cm-hero-subtitle {{
             margin: 0.25rem 0 0.45rem 0;
             font-family: 'Cormorant Garamond', serif !important;
             font-size: clamp(1.45rem, 2.15vw, 2.15rem) !important;
@@ -238,9 +238,9 @@ def inject_brand_theme() -> None:
             letter-spacing: 0.01em;
             color: rgba(255,255,255,0.96) !important;
             max-width: 950px;
-        }
+        }}
 
-        .cm-hero-body {
+        .cm-hero-body {{
             margin: 0.45rem 0 0 0;
             font-family: 'Manrope', sans-serif !important;
             font-size: 1.03rem !important;
@@ -248,14 +248,14 @@ def inject_brand_theme() -> None:
             line-height: 1.65 !important;
             color: rgba(255,255,255,0.88) !important;
             max-width: 900px;
-        }
+        }}
 
-        .cm-hero-note {
+        .cm-hero-note {{
             font-size: 0.96rem !important;
             color: rgba(255,255,255,0.82) !important;
-        }
+        }}
 
-        .cm-hero-logo-card {
+        .cm-hero-logo-card {{
             display: flex;
             align-items: center;
             justify-content: center;
@@ -264,13 +264,13 @@ def inject_brand_theme() -> None:
             border: none;
             border-radius: 0;
             backdrop-filter: none;
-        }
+        }}
 
-        .cm-hero-logo-card img {
+        .cm-hero-logo-card img {{
             width: min(210px, 100%);
             height: auto;
             filter: drop-shadow(0 18px 26px rgba(0,0,0,0.14));
-        }
+        }}
 
         .cm-section-title {{
             font-family: 'Montserrat', sans-serif;
@@ -324,21 +324,21 @@ def inject_brand_theme() -> None:
             margin-top: -0.2rem;
         }}
 
-        .cm-mini-table-wrap {
+        .cm-mini-table-wrap {{
             background: rgba(255,255,255,0.8);
             border: 1px solid var(--cm-border);
             border-radius: 18px;
             overflow: hidden;
             box-shadow: 0 10px 24px rgba(22, 58, 89, 0.06);
-        }
+        }}
 
-        .cm-mini-table {
+        .cm-mini-table {{
             width: 100%;
             border-collapse: collapse;
             font-size: 0.94rem;
-        }
+        }}
 
-        .cm-mini-table thead th {
+        .cm-mini-table thead th {{
             background: var(--cm-primary);
             color: white;
             text-align: left;
@@ -348,26 +348,26 @@ def inject_brand_theme() -> None:
             font-weight: 700;
             letter-spacing: 0.04em;
             text-transform: uppercase;
-        }
+        }}
 
-        .cm-mini-table td {
+        .cm-mini-table td {{
             padding: 0.72rem 0.85rem;
             border-top: 1px solid rgba(22, 58, 89, 0.08);
             vertical-align: middle;
             color: var(--cm-text);
-        }
+        }}
 
-        .cm-mini-table tbody tr:nth-child(even) td {
+        .cm-mini-table tbody tr:nth-child(even) td {{
             background: rgba(221, 234, 248, 0.3);
-        }
+        }}
 
-        .cm-mini-table td.cm-number {
+        .cm-mini-table td.cm-number {{
             text-align: right;
             font-variant-numeric: tabular-nums;
             font-weight: 700;
-        }
+        }}
 
-        .cm-badge {
+        .cm-badge {{
             display: inline-flex;
             align-items: center;
             justify-content: center;
@@ -377,7 +377,7 @@ def inject_brand_theme() -> None:
             font-weight: 800;
             line-height: 1.1;
             white-space: nowrap;
-        }
+        }}
 
         @media (max-width: 900px) {{
             .cm-hero-grid {{
