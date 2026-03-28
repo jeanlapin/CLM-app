@@ -1,0 +1,4 @@
+username;display_name;password_hash;role;enabled;societes_autorisees
+admin;Administrateur;REPLACE_WITH_HASH;admin;true;ALL
+analyste_a;Analyste Société A;REPLACE_WITH_HASH;user;true;ASSUMAGIC
+manager_ab;Manager A et B;REPLACE_WITH_HASH;user;true;SOC_A,SOC_B
