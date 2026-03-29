@@ -429,13 +429,14 @@ def inject_brand_theme() -> None:
         .cm-mini-table thead th {{
             background: var(--cm-primary);
             color: white;
-            text-align: left;
+            text-align: center;
             padding: 0.72rem 0.85rem;
             font-family: 'Sora', sans-serif;
             font-size: 0.8rem;
             font-weight: 700;
             letter-spacing: 0.04em;
-            text-transform: uppercase;
+            text-transform: none;
+            font-variant-caps: all-small-caps;
         }}
 
         .cm-mini-table td {{
@@ -443,6 +444,7 @@ def inject_brand_theme() -> None:
             border-top: 1px solid rgba(22, 58, 89, 0.08);
             vertical-align: middle;
             color: var(--cm-text);
+            text-align: center;
         }}
 
         .cm-mini-table tbody tr:nth-child(even) td {{
@@ -450,7 +452,7 @@ def inject_brand_theme() -> None:
         }}
 
         .cm-mini-table td.cm-number {{
-            text-align: right;
+            text-align: center;
             font-variant-numeric: tabular-nums;
             font-weight: 700;
         }}
@@ -477,13 +479,14 @@ def inject_brand_theme() -> None:
             z-index: 1;
             background: linear-gradient(135deg, var(--cm-primary), #245782);
             color: #FFFFFF;
-            text-align: left;
+            text-align: center;
             padding: 0.86rem 0.95rem;
             font-family: 'Sora', sans-serif;
             font-size: 0.82rem;
             font-weight: 800;
             letter-spacing: 0.03em;
-            text-transform: uppercase;
+            text-transform: none;
+            font-variant-caps: all-small-caps;
             white-space: nowrap;
         }}
 
@@ -494,6 +497,7 @@ def inject_brand_theme() -> None:
             color: var(--cm-text);
             white-space: nowrap;
             background: rgba(255,255,255,0.98);
+            text-align: center;
         }}
 
         .cm-analysis-main-table tbody tr:nth-child(even) td {{
@@ -505,7 +509,7 @@ def inject_brand_theme() -> None:
         }}
 
         .cm-analysis-main-table tbody td.cm-number {{
-            text-align: right;
+            text-align: center;
             font-variant-numeric: tabular-nums;
             font-weight: 700;
         }}
@@ -513,6 +517,7 @@ def inject_brand_theme() -> None:
         .cm-analysis-main-table tbody td.cm-first-col {{
             font-weight: 800;
             color: var(--cm-primary);
+            text-align: center;
         }}
 
         .cm-analysis-params {{
@@ -1008,7 +1013,9 @@ def inject_brand_theme() -> None:
             font-weight: 700;
             letter-spacing: 0.01em;
             padding: 0.78rem 0.9rem;
-            text-align: left;
+            text-align: center;
+            text-transform: none;
+            font-variant-caps: all-small-caps;
             white-space: nowrap;
         }}
 
@@ -1018,6 +1025,7 @@ def inject_brand_theme() -> None:
             vertical-align: middle;
             background: rgba(255,255,255,0.98);
             white-space: nowrap;
+            text-align: center;
         }}
 
         .cm-click-table tbody tr:nth-child(even) td {{
