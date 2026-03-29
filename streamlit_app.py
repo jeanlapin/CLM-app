@@ -3013,6 +3013,8 @@ def build_analysis_cross_table(
     *,
     sort_desc: bool = True,
     top_n: int = 14,
+    focus_row_value: str | None = None,
+    focus_col_value: str | None = None,
 ) -> tuple[pd.DataFrame, str]:
     if df.empty:
         return pd.DataFrame(columns=[row_label, col_label, "Clients"]), ""
@@ -3036,11 +3038,23 @@ def build_analysis_cross_table(
         .rename(columns={row_col: row_label, col_col: col_label, "Vigilance": "Vigilances critiques", "Risque": "Risques avérés"})
     )
     grouped["% portf."] = grouped["Clients"].div(total_clients).fillna(0)
+    focus_active = focus_row_value not in {None, "", "Tous"} and focus_col_value not in {None, "", "Tous"}
+    focus_mask = None
+    if focus_active:
+        focus_mask = (
+            grouped[row_label].astype(str).eq(str(focus_row_value))
+            & grouped[col_label].astype(str).eq(str(focus_col_value))
+        )
+
     if measure_key in {"share", "clients"}:
         grouped = grouped[[row_label, col_label, "Clients", "% portf.", "Vigilances critiques", "Risques avérés"]]
         sort_col = "Clients" if sort_desc else row_label
         ascending = False if sort_desc else True
         grouped = grouped.sort_values(sort_col, ascending=ascending, kind="stable")
+        if focus_active:
+            focused = grouped.loc[focus_mask].reset_index(drop=True)
+            caption = f"Croisement sélectionné : {row_label} = {focus_row_value} | {col_label} = {focus_col_value}."
+            return focused, caption
         return grouped.head(top_n).reset_index(drop=True), f"Croisements majeurs entre {row_label.lower()} et {col_label.lower()}."
 
     safe_measure_label = measure_label if measure_label not in grouped.columns else f"{measure_label} (mesure)"
@@ -3050,6 +3064,10 @@ def build_analysis_cross_table(
     sort_col = safe_measure_label if sort_desc else row_label
     ascending = False if sort_desc else True
     grouped = grouped.sort_values(sort_col, ascending=ascending, kind="stable")
+    if focus_active:
+        focused = grouped.loc[focus_mask].reset_index(drop=True)
+        caption = f"Croisement sélectionné : {row_label} = {focus_row_value} | {col_label} = {focus_col_value}."
+        return focused, caption
     return grouped.head(top_n).reset_index(drop=True), f"Croisements majeurs entre {row_label.lower()} et {col_label.lower()} avec la mesure sélectionnée."
 
 
@@ -3518,6 +3536,8 @@ def render_analysis_screen(portfolio: pd.DataFrame, indicators: pd.DataFrame) ->
             measure_label,
             sort_desc=sort_desc,
             top_n=14,
+            focus_row_value=st.session_state.get("analysis_focus_row_value"),
+            focus_col_value=st.session_state.get("analysis_focus_col_value"),
         )
 
     selected_primary = None
