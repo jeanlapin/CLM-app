@@ -412,6 +412,35 @@ def inject_brand_theme() -> None:
             margin-top: -0.2rem;
         }}
 
+        .cm-table-panel-title {{
+            display: block;
+            width: 100%;
+            background: var(--cm-primary);
+            color: #FFFFFF;
+            border-radius: 16px 16px 0 0;
+            padding: 0.78rem 0.95rem;
+            font-family: 'Sora', sans-serif;
+            font-size: 0.84rem;
+            font-weight: 800;
+            letter-spacing: 0.05em;
+            text-transform: none;
+            font-variant-caps: all-small-caps;
+            text-align: center;
+            margin-bottom: 0;
+        }}
+
+        .cm-table-panel-caption {{
+            margin: 0 0 0.45rem 0;
+            padding: 0.42rem 0.8rem 0.2rem 0.8rem;
+            border-left: 1px solid var(--cm-border);
+            border-right: 1px solid var(--cm-border);
+            border-bottom: 1px solid var(--cm-border);
+            border-radius: 0 0 14px 14px;
+            background: rgba(255,255,255,0.72);
+            color: var(--cm-muted);
+            font-size: 0.84rem;
+        }}
+
         .cm-mini-table-wrap {{
             background: rgba(255,255,255,0.8);
             border: 1px solid var(--cm-border);
@@ -2165,7 +2194,7 @@ def style_interactive_table(display_df: pd.DataFrame, raw_df: pd.DataFrame) -> p
         if column_name == "SIREN":
             return base + "color: #163A59; font-weight: 800; text-decoration: underline;"
         if column_name in {"Dénomination", "Client"}:
-            return base + "text-align: left; font-weight: 700; color: #163A59;"
+            return base + "text-align: center; font-weight: 700; color: #163A59;"
         if column_name == "Vigilance":
             if "🔴" in text:
                 return base + "background-color: rgba(191, 36, 36, 0.10); color: #8A1F1F; font-weight: 700; border-radius: 999px;"
@@ -2962,6 +2991,13 @@ def build_analysis_cross_table(
     return grouped.head(top_n).reset_index(drop=True), f"Croisements majeurs entre {row_label.lower()} et {col_label.lower()} avec la mesure sélectionnée."
 
 
+def render_analysis_panel_header(title: str, caption: str | None = None) -> None:
+    st.markdown(f"<div class='cm-table-panel-title'>{escape(title)}</div>", unsafe_allow_html=True)
+    if caption:
+        st.markdown(f"<div class='cm-table-panel-caption'>{escape(caption)}</div>", unsafe_allow_html=True)
+
+
+
 def render_selectable_analysis_table(
     df: pd.DataFrame,
     *,
@@ -3414,23 +3450,21 @@ def render_analysis_screen(portfolio: pd.DataFrame, indicators: pd.DataFrame) ->
             top_n=14,
         )
 
-    st.markdown('<h3 class="cm-section-title">Analyse principale</h3>', unsafe_allow_html=True)
     selected_primary = None
     selected_secondary = None
     selected_cross = None
     if col_col:
         left, right = st.columns(2)
         with left:
-            st.caption(primary_caption)
+            render_analysis_panel_header("Analyse principale", primary_caption)
             selected_primary = render_selectable_analysis_table(primary_table, key_prefix="analysis_primary", height=430)
         with right:
-            st.caption(secondary_caption)
+            render_analysis_panel_header("Analyse secondaire", secondary_caption)
             selected_secondary = render_selectable_analysis_table(secondary_table, key_prefix="analysis_secondary", height=430)
-        st.markdown('<h3 class="cm-section-title">Croisements majeurs</h3>', unsafe_allow_html=True)
-        st.caption(cross_caption)
+        render_analysis_panel_header("Analyse croisée", cross_caption)
         selected_cross = render_selectable_analysis_table(cross_table, key_prefix="analysis_cross", height=470)
     else:
-        st.caption(primary_caption)
+        render_analysis_panel_header("Analyse principale", primary_caption)
         selected_primary = render_selectable_analysis_table(primary_table, key_prefix="analysis_primary", height=470)
 
     if selected_primary is not None:
