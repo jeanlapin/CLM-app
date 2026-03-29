@@ -451,11 +451,17 @@ def inject_brand_theme() -> None:
             background: rgba(221, 234, 248, 0.3);
         }}
 
-        .cm-mini-table td.cm-number {{
+        .cm-mini-table td.cm-number {
             text-align: center;
             font-variant-numeric: tabular-nums;
             font-weight: 700;
-        }}
+        }
+
+        .cm-mini-table td.cm-number-soft {
+            text-align: center;
+            font-variant-numeric: tabular-nums;
+            font-weight: 500;
+        }
 
         .cm-analysis-main-wrap {{
             background: rgba(255,255,255,0.86);
@@ -1773,7 +1779,7 @@ def render_status_badge(value: object, status_type: str) -> str:
     return f'<span class="cm-badge" style="background:{bg}; color:{fg};">{escape(str(value))}</span>'
 
 
-def render_small_table(df: pd.DataFrame, color_columns: dict[str, str] | None = None) -> None:
+def render_small_table(df: pd.DataFrame, color_columns: dict[str, str] | None = None, *, bold_numbers: bool = True) -> None:
     color_columns = color_columns or {}
     if df is None or df.empty:
         st.info("Aucune donnée à afficher.")
@@ -1790,7 +1796,7 @@ def render_small_table(df: pd.DataFrame, color_columns: dict[str, str] | None = 
             value = row[col]
             classes = []
             if pd.api.types.is_number(value) and not isinstance(value, bool):
-                classes.append("cm-number")
+                classes.append("cm-number" if bold_numbers else "cm-number-soft")
             class_attr = f" class='{' '.join(classes)}'" if classes else ""
             if pd.isna(value):
                 rendered = ""
@@ -2786,15 +2792,15 @@ def build_analysis_trend_table(df: pd.DataFrame) -> pd.DataFrame:
         return month.value_counts().sort_index().rename(label)
 
     frames = [
-        monthly_count(df.get("Vigilance Date de mise à jour"), "Date réf. risque"),
+        monthly_count(df.get("Vigilance Date de mise à jour"), "Mises à jour vigilance"),
         monthly_count(df.get("Date dernière revue"), "Dernières revues"),
         monthly_count(df.get("Date prochaine revue"), "Prochaines revues"),
     ]
     combined = pd.concat(frames, axis=1).fillna(0).sort_index()
     if combined.empty:
-        return pd.DataFrame(columns=["Mois", "Date réf. risque", "Dernières revues", "Prochaines revues", "% revues / clients"])
+        return pd.DataFrame(columns=["Mois", "Mises à jour vigilance", "Dernières revues", "Prochaines revues", "% clients revus"])
     combined = combined.tail(6)
-    combined["% revues / clients"] = combined["Dernières revues"].div(max(len(df), 1))
+    combined["% clients revus"] = combined["Dernières revues"].div(max(len(df), 1))
     combined = combined.reset_index().rename(columns={"index": "Mois"})
     combined["Mois"] = pd.to_datetime(combined["Mois"]).dt.strftime("%Y-%m")
     return combined
@@ -3250,7 +3256,7 @@ def render_analysis_screen(portfolio: pd.DataFrame, indicators: pd.DataFrame) ->
     if indicator_table.empty:
         st.info("Aucun indicateur exploitable n'est disponible sur le périmètre filtré.")
     else:
-        render_small_table(indicator_table)
+        render_small_table(indicator_table, bold_numbers=False)
 
     st.markdown('<h3 class="cm-section-title">Jalons temporels</h3>', unsafe_allow_html=True)
     trend_df = build_analysis_trend_table(filtered)
@@ -3258,8 +3264,12 @@ def render_analysis_screen(portfolio: pd.DataFrame, indicators: pd.DataFrame) ->
         st.info("Aucune date exploitable n'est disponible sur le périmètre filtré.")
     else:
         trend_table = trend_df.copy()
-        trend_table["% revues / clients"] = trend_table["% revues / clients"].map(lambda x: f"{x:.1%}")
-        render_small_table(trend_table)
+        for col in ["Mises à jour vigilance", "Dernières revues", "Prochaines revues"]:
+            if col in trend_table.columns:
+                trend_table[col] = trend_table[col].fillna(0).round(0).astype(int)
+        if "% clients revus" in trend_table.columns:
+            trend_table["% clients revus"] = trend_table["% clients revus"].map(lambda x: f"{x:.0%}")
+        render_small_table(trend_table, bold_numbers=False)
 
     st.divider()
     st.markdown('<h3 class="cm-section-title">Clients sous-jacents</h3>', unsafe_allow_html=True)
