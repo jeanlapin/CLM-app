@@ -451,17 +451,17 @@ def inject_brand_theme() -> None:
             background: rgba(221, 234, 248, 0.3);
         }}
 
-        .cm-mini-table td.cm-number {
+        .cm-mini-table td.cm-number {{
             text-align: center;
             font-variant-numeric: tabular-nums;
             font-weight: 700;
-        }
+        }}
 
-        .cm-mini-table td.cm-number-soft {
+        .cm-mini-table td.cm-number-soft {{
             text-align: center;
             font-variant-numeric: tabular-nums;
             font-weight: 500;
-        }
+        }}
 
         .cm-analysis-main-wrap {{
             background: rgba(255,255,255,0.86);
