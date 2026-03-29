@@ -1077,34 +1077,34 @@ def inject_brand_theme() -> None:
         }}
 
 
-        div[data-testid="stRadio"] {
+        div[data-testid="stRadio"] {{
             margin-bottom: 0 !important;
             padding-bottom: 0 !important;
             border: 0 !important;
             background: transparent !important;
             box-shadow: none !important;
-        }
+        }}
 
-        div[data-testid="stRadio"] > div {
+        div[data-testid="stRadio"] > div {{
             margin-bottom: 0 !important;
             padding-bottom: 0 !important;
             border: 0 !important;
             background: transparent !important;
             box-shadow: none !important;
-        }
+        }}
 
-        div[data-testid="stRadio"] fieldset {
+        div[data-testid="stRadio"] fieldset {{
             margin: 0 !important;
             padding: 0 !important;
             border: 0 !important;
             background: transparent !important;
             box-shadow: none !important;
             min-width: 0 !important;
-        }
+        }}
 
-        div[data-testid="stRadio"] hr {
+        div[data-testid="stRadio"] hr {{
             display: none !important;
-        }
+        }}
         
         </style>
         """,
