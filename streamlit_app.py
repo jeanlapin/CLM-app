@@ -3038,29 +3038,93 @@ def render_analysis_screen(portfolio: pd.DataFrame, indicators: pd.DataFrame) ->
         open_portfolio_view()
         st.rerun()
 
-    filters = render_filters(portfolio)
-    filtered = apply_filters(portfolio, filters)
+    st.markdown('<div class="cm-analysis-params">', unsafe_allow_html=True)
+    top_left, top_right = st.columns([5.8, 1.2])
+    with top_left:
+        st.markdown('<h3 class="cm-section-title">Pilotage de l’analyse</h3>', unsafe_allow_html=True)
+        st.caption("Un seul bandeau pour filtrer le périmètre et paramétrer la vue d’analyse.")
+    with top_right:
+        if st.button("Réinitialiser", type="secondary", key="analysis_reset_all"):
+            reset_filters()
+            for key in [
+                "analysis_row_dimension",
+                "analysis_col_dimension",
+                "analysis_measure",
+                "analysis_sort",
+                "analysis_detail_row",
+                "analysis_detail_col",
+            ]:
+                st.session_state.pop(key, None)
+            st.rerun()
+
+    filter_labels = list(FILTER_MAPPING.keys())
+    selections: dict[str, str] = {}
+    filter_cols = st.columns(5)
+    for idx, label in enumerate(filter_labels):
+        column = FILTER_MAPPING[label]
+        options = ["Tous"] + non_empty_sorted(portfolio[column].unique()) if column in portfolio.columns else ["Tous"]
+        state_key = "filter_" + label
+        if st.session_state.get(state_key) not in options:
+            st.session_state[state_key] = "Tous"
+        with filter_cols[idx % 5]:
+            selections[label] = st.selectbox(label, options=options, key=state_key)
+        if idx % 5 == 4 and idx < len(filter_labels) - 1:
+            filter_cols = st.columns(5)
+
+    filtered = apply_filters(portfolio, selections)
     if filtered.empty:
+        st.markdown('</div>', unsafe_allow_html=True)
         st.warning("Aucun client ne correspond au périmètre société + filtres sélectionnés.")
         return
 
-    render_analysis_kpis(filtered)
-
     dimension_map = analysis_dimension_mapping(filtered)
     measure_map = analysis_measure_mapping(filtered)
-    row_a, row_b, row_c, row_d = st.columns([1.25, 1.1, 1.1, 1.0])
     row_options = list(dimension_map.keys())
     default_row = "Segment" if "Segment" in row_options else row_options[0]
-    with row_a:
-        row_dimension_label = st.selectbox("Axe principal", options=row_options, index=row_options.index(default_row), key="analysis_row_dimension")
+    if st.session_state.get("analysis_row_dimension") not in row_options:
+        st.session_state["analysis_row_dimension"] = default_row
+
+    analysis_cols = st.columns([1.25, 1.15, 1.05, 0.9])
+    with analysis_cols[0]:
+        row_dimension_label = st.selectbox(
+            "Analyser par",
+            options=row_options,
+            index=row_options.index(st.session_state.get("analysis_row_dimension", default_row)),
+            key="analysis_row_dimension",
+        )
     col_options = ["Aucun"] + [opt for opt in row_options if opt != row_dimension_label]
-    with row_b:
-        column_dimension_label = st.selectbox("Axe secondaire", options=col_options, key="analysis_col_dimension")
+    if st.session_state.get("analysis_col_dimension") not in col_options:
+        st.session_state["analysis_col_dimension"] = "Aucun"
+    with analysis_cols[1]:
+        column_dimension_label = st.selectbox(
+            "Affiner par",
+            options=col_options,
+            index=col_options.index(st.session_state.get("analysis_col_dimension", "Aucun")),
+            key="analysis_col_dimension",
+        )
     measure_options = list(measure_map.keys())
-    with row_c:
-        measure_label = st.selectbox("Mesure", options=measure_options, key="analysis_measure")
-    with row_d:
-        sort_choice = st.selectbox("Tri", options=["Mesure décroissante", "Libellé A → Z"], key="analysis_sort")
+    if st.session_state.get("analysis_measure") not in measure_options:
+        st.session_state["analysis_measure"] = measure_options[0]
+    with analysis_cols[2]:
+        measure_label = st.selectbox(
+            "Mesure",
+            options=measure_options,
+            index=measure_options.index(st.session_state.get("analysis_measure", measure_options[0])),
+            key="analysis_measure",
+        )
+    sort_options = ["Mesure décroissante", "Libellé A → Z"]
+    if st.session_state.get("analysis_sort") not in sort_options:
+        st.session_state["analysis_sort"] = sort_options[0]
+    with analysis_cols[3]:
+        sort_choice = st.selectbox(
+            "Tri",
+            options=sort_options,
+            index=sort_options.index(st.session_state.get("analysis_sort", sort_options[0])),
+            key="analysis_sort",
+        )
+    st.markdown('</div>', unsafe_allow_html=True)
+
+    render_analysis_kpis(filtered)
 
     row_col = dimension_map[row_dimension_label]
     col_col = None if column_dimension_label == "Aucun" else dimension_map[column_dimension_label]
@@ -3188,7 +3252,6 @@ def render_analysis_screen(portfolio: pd.DataFrame, indicators: pd.DataFrame) ->
         mime="text/csv",
         type="primary",
     )
-
 
 def render_user_header(user: dict, selected_societies: list[str], total_societies: int) -> None:
     manifest = load_manifest()
