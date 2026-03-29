@@ -2129,51 +2129,76 @@ def status_emoji(value: object, palette: str = "generic") -> str:
 def format_table_display_dataframe(df: pd.DataFrame) -> pd.DataFrame:
     display_df = reorder_table_columns_for_ui(df.copy())
     for col in display_df.columns:
+        series = display_df[col]
+        if pd.api.types.is_datetime64_any_dtype(series):
+            display_df[col] = pd.to_datetime(series, errors="coerce").dt.strftime("%d/%m/%Y").fillna("")
+            continue
+        if col.startswith("%") or "%" in col:
+            display_df[col] = series.map(lambda x: "" if pd.isna(x) else f"{float(x) * 100:.1f} %".replace('.', ','))
+            continue
         if col == "SIREN":
-            display_df[col] = display_df[col].apply(lambda x: f"↗ {display_value(x)}")
-        elif col == "Vigilance":
-            display_df[col] = display_df[col].apply(lambda x: f"{status_emoji(x, 'vigilance')} {display_value(x)}")
-        elif col in {"Risque", "Statut"}:
-            display_df[col] = display_df[col].apply(lambda x: f"{status_emoji(x, 'risk')} {display_value(x)}")
-        else:
-            display_df[col] = display_df[col].apply(display_value)
+            display_df[col] = series.apply(lambda x: f"↗ {display_value(x)}")
+            continue
+        if col == "Vigilance":
+            display_df[col] = series.apply(lambda x: f"{status_emoji(x, 'vigilance')} {display_value(x)}")
+            continue
+        if col in {"Risque", "Statut"}:
+            display_df[col] = series.apply(lambda x: f"{status_emoji(x, 'risk')} {display_value(x)}")
+            continue
+        if pd.api.types.is_numeric_dtype(series):
+            non_null = series.dropna()
+            if non_null.empty:
+                display_df[col] = series.map(lambda x: "" if pd.isna(x) else str(x))
+            elif np.allclose(non_null.astype(float) % 1, 0):
+                display_df[col] = series.map(lambda x: "" if pd.isna(x) else f"{int(round(float(x))):,}".replace(",", " "))
+            else:
+                display_df[col] = series.map(lambda x: "" if pd.isna(x) else f"{float(x):,.1f}".replace(",", " ").replace(".", ","))
+            continue
+        display_df[col] = series.apply(display_value)
     return display_df
 
 
 def style_interactive_table(display_df: pd.DataFrame, raw_df: pd.DataFrame) -> pd.io.formats.style.Styler:
     def style_cell(column_name: str, value: object) -> str:
-        lower = str(value).lower()
-        base = "padding: 0.18rem 0;"
+        base = "padding: 0.42rem 0.55rem; text-align: center; vertical-align: middle; border-bottom: 1px solid rgba(22,58,89,0.08);"
+        text = str(value)
         if column_name == "SIREN":
             return base + "color: #163A59; font-weight: 800; text-decoration: underline;"
         if column_name in {"Dénomination", "Client"}:
-            return base + "font-weight: 700; color: #163A59;"
+            return base + "text-align: left; font-weight: 700; color: #163A59;"
         if column_name == "Vigilance":
-            if "🔴" in str(value):
-                return base + "background-color: rgba(191, 36, 36, 0.12); color: #8A1F1F; font-weight: 700;"
-            if "🟠" in str(value):
-                return base + "background-color: rgba(209, 98, 0, 0.12); color: #9A4D00; font-weight: 700;"
-            if "🟡" in str(value):
-                return base + "background-color: rgba(184, 134, 11, 0.14); color: #7A5A00; font-weight: 700;"
-            if "🟢" in str(value):
-                return base + "background-color: rgba(31, 122, 74, 0.10); color: #1F7A4A; font-weight: 700;"
+            if "🔴" in text:
+                return base + "background-color: rgba(191, 36, 36, 0.10); color: #8A1F1F; font-weight: 700; border-radius: 999px;"
+            if "🟠" in text:
+                return base + "background-color: rgba(209, 98, 0, 0.10); color: #9A4D00; font-weight: 700; border-radius: 999px;"
+            if "🟡" in text:
+                return base + "background-color: rgba(184, 134, 11, 0.12); color: #7A5A00; font-weight: 700; border-radius: 999px;"
+            if "🟢" in text:
+                return base + "background-color: rgba(31, 122, 74, 0.10); color: #1F7A4A; font-weight: 700; border-radius: 999px;"
         if column_name in {"Risque", "Statut"}:
-            if "🔴" in str(value):
-                return base + "background-color: rgba(191, 36, 36, 0.12); color: #8A1F1F; font-weight: 700;"
-            if "🟠" in str(value):
-                return base + "background-color: rgba(209, 98, 0, 0.12); color: #9A4D00; font-weight: 700;"
-            if "🟡" in str(value):
-                return base + "background-color: rgba(184, 134, 11, 0.14); color: #7A5A00; font-weight: 700;"
-            if "🟢" in str(value):
-                return base + "background-color: rgba(31, 122, 74, 0.10); color: #1F7A4A; font-weight: 700;"
-        if column_name in {"Nb", "%", "#", "Rang", "Score", "Score priorité"}:
-            return base + "text-align: right; font-variant-numeric: tabular-nums; font-weight: 700;"
+            if "🔴" in text:
+                return base + "background-color: rgba(191, 36, 36, 0.10); color: #8A1F1F; font-weight: 700; border-radius: 999px;"
+            if "🟠" in text:
+                return base + "background-color: rgba(209, 98, 0, 0.10); color: #9A4D00; font-weight: 700; border-radius: 999px;"
+            if "🟡" in text:
+                return base + "background-color: rgba(184, 134, 11, 0.12); color: #7A5A00; font-weight: 700; border-radius: 999px;"
+            if "🟢" in text:
+                return base + "background-color: rgba(31, 122, 74, 0.10); color: #1F7A4A; font-weight: 700; border-radius: 999px;"
+        if column_name.startswith("%") or "%" in column_name:
+            return base + "font-variant-numeric: tabular-nums; font-weight: 700;"
+        if column_name in {"Clients", "Vigilances critiques", "Risques avérés", "Nb", "#", "Rang", "Score", "Score priorité"}:
+            return base + "font-variant-numeric: tabular-nums; font-weight: 700;"
         return base
+
+    zebra = pd.DataFrame("", index=display_df.index, columns=display_df.columns)
+    zebra.iloc[1::2, :] = "background-color: rgba(22,58,89,0.025);"
 
     styled = display_df.style
     styled = styled.set_table_styles([
-        {"selector": "th", "props": [("background-color", "#163A59"), ("color", "white"), ("font-weight", "700")]},
+        {"selector": "thead th", "props": [("background-color", "#163A59"), ("color", "white"), ("font-weight", "700"), ("text-transform", "uppercase"), ("font-size", "0.76rem"), ("letter-spacing", "0.08em"), ("text-align", "center"), ("border-bottom", "0")]},
+        {"selector": "tbody td", "props": [("background-color", "#ffffff")]},
     ])
+    styled = styled.apply(lambda _: zebra, axis=None)
     styled = styled.apply(lambda s: [style_cell(s.name, v) for v in s], axis=0)
     return styled
 
@@ -2950,12 +2975,18 @@ def render_selectable_analysis_table(
     raw_df = df.copy().reset_index(drop=True)
     display_df = format_table_display_dataframe(raw_df)
 
+    st.caption("Cliquez sur une ligne pour définir le focus analytique et mettre à jour les clients sous-jacents.")
+
     column_config: dict[str, object] = {}
     for col in display_df.columns:
-        if col in {"SIREN", "Clients", "Vigilances critiques", "Risques avérés"}:
-            column_config[col] = st.column_config.TextColumn(col, width="small")
+        if col == "SIREN":
+            column_config[col] = st.column_config.TextColumn(col, width="small", help="Repère client")
         elif col in {"Dénomination", "Client"}:
             column_config[col] = st.column_config.TextColumn(col, width="large")
+        elif col.startswith("%") or "%" in col:
+            column_config[col] = st.column_config.TextColumn(col, width="small")
+        elif col in {"Clients", "Vigilances critiques", "Risques avérés"}:
+            column_config[col] = st.column_config.TextColumn(col, width="small")
         else:
             column_config[col] = st.column_config.TextColumn(col, width="medium")
 
@@ -2968,7 +2999,7 @@ def render_selectable_analysis_table(
         column_config=column_config,
         on_select="rerun",
         selection_mode="single-row",
-        row_height=40,
+        row_height=42,
         key=f"cm_analysis_select_{key_prefix}",
     )
 
