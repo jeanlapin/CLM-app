@@ -3083,10 +3083,11 @@ def render_selectable_analysis_table(
     *,
     key_prefix: str,
     height: int = 420,
-) -> pd.Series | None:
+) -> tuple[str, pd.Series | None]:
     if df is None or df.empty:
         st.info("Aucune donnée à afficher.")
-        return None
+        st.session_state.pop(f"analysis_selected_idx_{key_prefix}", None)
+        return "empty", None
 
     raw_df = df.copy().reset_index(drop=True)
     display_df = format_table_display_dataframe(raw_df)
@@ -3134,9 +3135,18 @@ def render_selectable_analysis_table(
         except Exception:
             rows = []
 
+    state_key = f"analysis_selected_idx_{key_prefix}"
+    previous_idx = st.session_state.get(state_key)
+
     if rows and 0 <= rows[0] < len(raw_df):
-        return raw_df.iloc[rows[0]]
-    return None
+        st.session_state[state_key] = rows[0]
+        return "selected", raw_df.iloc[rows[0]]
+
+    if previous_idx is not None:
+        st.session_state.pop(state_key, None)
+        return "cleared", None
+
+    return "idle", None
 
 
 def render_analysis_simple_table(df: pd.DataFrame) -> None:
@@ -3525,32 +3535,42 @@ def render_analysis_screen(portfolio: pd.DataFrame, indicators: pd.DataFrame) ->
             top_n=12,
         )
 
-    selected_primary = None
-    selected_secondary = None
+    primary_action, selected_primary = "idle", None
+    secondary_action, selected_secondary = "idle", None
     if col_col:
         left, right = st.columns(2)
         with left:
             render_analysis_panel_header("Analyse principale", primary_caption)
-            selected_primary = render_selectable_analysis_table(primary_table, key_prefix="analysis_primary", height=430)
+            primary_action, selected_primary = render_selectable_analysis_table(primary_table, key_prefix="analysis_primary", height=430)
         with right:
             render_analysis_panel_header("Analyse secondaire", secondary_caption)
-            selected_secondary = render_selectable_analysis_table(secondary_table, key_prefix="analysis_secondary", height=430)
+            secondary_action, selected_secondary = render_selectable_analysis_table(secondary_table, key_prefix="analysis_secondary", height=430)
     else:
         render_analysis_panel_header("Analyse principale", primary_caption)
-        selected_primary = render_selectable_analysis_table(primary_table, key_prefix="analysis_primary", height=470)
+        primary_action, selected_primary = render_selectable_analysis_table(primary_table, key_prefix="analysis_primary", height=470)
 
-    if selected_primary is not None:
+    if primary_action == "selected" and selected_primary is not None:
         set_analysis_focus(
             row_label=row_dimension_label,
             row_value=str(selected_primary.get(row_dimension_label, "")),
             source="primary",
         )
-    if selected_secondary is not None and col_col:
+    elif primary_action == "cleared":
+        st.session_state.pop("analysis_focus_row_label", None)
+        st.session_state.pop("analysis_focus_row_value", None)
+        if not col_col:
+            st.session_state.pop("analysis_focus_col_label", None)
+            st.session_state.pop("analysis_focus_col_value", None)
+
+    if col_col and secondary_action == "selected" and selected_secondary is not None:
         set_analysis_focus(
             col_label=column_dimension_label,
             col_value=str(selected_secondary.get(column_dimension_label, "")),
             source="secondary",
         )
+    elif col_col and secondary_action == "cleared":
+        st.session_state.pop("analysis_focus_col_label", None)
+        st.session_state.pop("analysis_focus_col_value", None)
 
     cross_table = pd.DataFrame()
     cross_caption = ""
