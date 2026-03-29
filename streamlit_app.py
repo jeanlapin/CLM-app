@@ -1076,6 +1076,36 @@ def inject_brand_theme() -> None:
             }}
         }}
 
+
+        div[data-testid="stRadio"] {
+            margin-bottom: 0 !important;
+            padding-bottom: 0 !important;
+            border: 0 !important;
+            background: transparent !important;
+            box-shadow: none !important;
+        }
+
+        div[data-testid="stRadio"] > div {
+            margin-bottom: 0 !important;
+            padding-bottom: 0 !important;
+            border: 0 !important;
+            background: transparent !important;
+            box-shadow: none !important;
+        }
+
+        div[data-testid="stRadio"] fieldset {
+            margin: 0 !important;
+            padding: 0 !important;
+            border: 0 !important;
+            background: transparent !important;
+            box-shadow: none !important;
+            min-width: 0 !important;
+        }
+
+        div[data-testid="stRadio"] hr {
+            display: none !important;
+        }
+        
         </style>
         """,
         unsafe_allow_html=True,
@@ -2907,6 +2937,53 @@ def build_analysis_cross_table(
     return grouped.head(top_n).reset_index(drop=True), f"Croisements majeurs entre {row_label.lower()} et {col_label.lower()} avec la mesure sélectionnée."
 
 
+def render_selectable_analysis_table(
+    df: pd.DataFrame,
+    *,
+    key_prefix: str,
+    height: int = 420,
+) -> pd.Series | None:
+    if df is None or df.empty:
+        st.info("Aucune donnée à afficher.")
+        return None
+
+    raw_df = df.copy().reset_index(drop=True)
+    display_df = format_table_display_dataframe(raw_df)
+
+    column_config: dict[str, object] = {}
+    for col in display_df.columns:
+        if col in {"SIREN", "Clients", "Vigilances critiques", "Risques avérés"}:
+            column_config[col] = st.column_config.TextColumn(col, width="small")
+        elif col in {"Dénomination", "Client"}:
+            column_config[col] = st.column_config.TextColumn(col, width="large")
+        else:
+            column_config[col] = st.column_config.TextColumn(col, width="medium")
+
+    event = st.dataframe(
+        style_interactive_table(display_df, raw_df),
+        width="stretch",
+        height=height,
+        hide_index=True,
+        column_order=list(display_df.columns),
+        column_config=column_config,
+        on_select="rerun",
+        selection_mode="single-row",
+        row_height=40,
+        key=f"cm_analysis_select_{key_prefix}",
+    )
+
+    rows: list[int] = []
+    if event is not None:
+        try:
+            rows = [int(i) for i in event.selection.get("rows", [])]
+        except Exception:
+            rows = []
+
+    if rows and 0 <= rows[0] < len(raw_df):
+        return raw_df.iloc[rows[0]]
+    return None
+
+
 def render_analysis_simple_table(df: pd.DataFrame) -> None:
     if df is None or df.empty:
         st.info("Aucune donnée à afficher.")
@@ -2964,21 +3041,95 @@ def build_indicator_analysis_table(filtered_portfolio: pd.DataFrame, indicators_
     return result[["Indicateur", "Risque avéré", "Risque potentiel", "Risque mitigé", "Non calculable", "Total cas"]].head(12).reset_index(drop=True)
 
 
-def build_analysis_detail_dataset(
+def normalize_analysis_category(series: pd.Series) -> pd.Series:
+    return series.fillna("Non renseigné").astype(str).replace({"": "Non renseigné"})
+
+
+def clear_analysis_focus() -> None:
+    for key in [
+        "analysis_focus_row_label",
+        "analysis_focus_row_value",
+        "analysis_focus_col_label",
+        "analysis_focus_col_value",
+        "analysis_focus_source",
+    ]:
+        st.session_state.pop(key, None)
+
+
+def set_analysis_focus(
+    *,
+    row_label: str | None = None,
+    row_value: str | None = None,
+    col_label: str | None = None,
+    col_value: str | None = None,
+    source: str | None = None,
+) -> None:
+    if row_label is not None:
+        st.session_state["analysis_focus_row_label"] = row_label
+        st.session_state["analysis_focus_row_value"] = row_value
+    if col_label is not None:
+        st.session_state["analysis_focus_col_label"] = col_label
+        st.session_state["analysis_focus_col_value"] = col_value
+    if source is not None:
+        st.session_state["analysis_focus_source"] = source
+
+
+def validate_analysis_focus(
     df: pd.DataFrame,
-    line_col: str,
-    line_value: str,
+    row_col: str,
+    row_label: str,
+    col_col: str | None,
+    col_label: str | None,
+) -> None:
+    row_value = st.session_state.get("analysis_focus_row_value")
+    row_label_state = st.session_state.get("analysis_focus_row_label")
+    if row_label_state != row_label:
+        st.session_state.pop("analysis_focus_row_label", None)
+        st.session_state.pop("analysis_focus_row_value", None)
+    elif row_value is not None:
+        valid_row_values = set(normalize_analysis_category(df.get(row_col, pd.Series(dtype='object'))).unique().tolist())
+        if str(row_value) not in valid_row_values:
+            st.session_state.pop("analysis_focus_row_label", None)
+            st.session_state.pop("analysis_focus_row_value", None)
+
+    if not col_col or not col_label:
+        st.session_state.pop("analysis_focus_col_label", None)
+        st.session_state.pop("analysis_focus_col_value", None)
+    else:
+        col_value = st.session_state.get("analysis_focus_col_value")
+        col_label_state = st.session_state.get("analysis_focus_col_label")
+        if col_label_state != col_label:
+            st.session_state.pop("analysis_focus_col_label", None)
+            st.session_state.pop("analysis_focus_col_value", None)
+        elif col_value is not None:
+            valid_col_values = set(normalize_analysis_category(df.get(col_col, pd.Series(dtype='object'))).unique().tolist())
+            if str(col_value) not in valid_col_values:
+                st.session_state.pop("analysis_focus_col_label", None)
+                st.session_state.pop("analysis_focus_col_value", None)
+
+
+def build_analysis_focus_dataset(
+    df: pd.DataFrame,
+    row_col: str | None = None,
+    row_value: str | None = None,
+    row_label: str | None = None,
     column_col: str | None = None,
     column_value: str | None = None,
+    column_label: str | None = None,
 ) -> pd.DataFrame:
     detail = df.copy()
-    target_line = "" if line_value is None else str(line_value)
-    detail = detail[detail.get(line_col).fillna("Non renseigné").astype(str).replace({"": "Non renseigné"}) == target_line]
-    if column_col and column_value and column_value != "Tous":
-        target_col = str(column_value)
-        detail = detail[detail.get(column_col).fillna("Non renseigné").astype(str).replace({"": "Non renseigné"}) == target_col]
+    focus_parts: list[str] = []
+
+    if row_col and row_value not in {None, "", "Tous"}:
+        detail = detail[normalize_analysis_category(detail.get(row_col, pd.Series(index=detail.index, dtype='object'))) == str(row_value)]
+        focus_parts.append(f"{row_label or row_col} = {row_value}")
+
+    if column_col and column_value not in {None, "", "Tous"}:
+        detail = detail[normalize_analysis_category(detail.get(column_col, pd.Series(index=detail.index, dtype='object'))) == str(column_value)]
+        focus_parts.append(f"{column_label or column_col} = {column_value}")
+
     detail = detail.copy()
-    detail["Motif de présence"] = f"{line_col} = {target_line}" + (f" | {column_col} = {column_value}" if column_col and column_value and column_value != "Tous" else "")
+    detail["Motif de présence"] = " | ".join(focus_parts) if focus_parts else "Périmètre filtré"
     detail_columns = [
         "SIREN",
         "Dénomination",
@@ -3098,8 +3249,11 @@ def render_analysis_screen(portfolio: pd.DataFrame, indicators: pd.DataFrame) ->
                 "analysis_col_dimension",
                 "analysis_measure",
                 "analysis_sort",
-                "analysis_detail_row",
-                "analysis_detail_col",
+                "analysis_focus_row_label",
+                "analysis_focus_row_value",
+                "analysis_focus_col_label",
+                "analysis_focus_col_value",
+                "analysis_focus_source",
             ]:
                 st.session_state.pop(key, None)
             st.rerun()
@@ -3192,6 +3346,7 @@ def render_analysis_screen(portfolio: pd.DataFrame, indicators: pd.DataFrame) ->
     col_col = None if column_dimension_label == "Aucun" else dimension_map[column_dimension_label]
     measure_key = measure_map[measure_label]
     sort_desc = sort_choice == "Indicateur décroissant"
+    validate_analysis_focus(filtered, row_col, row_dimension_label, col_col, None if column_dimension_label == "Aucun" else column_dimension_label)
 
     primary_table, primary_caption = build_analysis_group_table(
         filtered,
@@ -3229,26 +3384,50 @@ def render_analysis_screen(portfolio: pd.DataFrame, indicators: pd.DataFrame) ->
         )
 
     st.markdown('<h3 class="cm-section-title">Analyse principale</h3>', unsafe_allow_html=True)
+    selected_primary = None
+    selected_secondary = None
+    selected_cross = None
     if col_col:
         left, right = st.columns(2)
         with left:
             st.caption(primary_caption)
-            render_analysis_simple_table(primary_table)
+            selected_primary = render_selectable_analysis_table(primary_table, key_prefix="analysis_primary", height=430)
         with right:
             st.caption(secondary_caption)
-            render_analysis_simple_table(secondary_table)
+            selected_secondary = render_selectable_analysis_table(secondary_table, key_prefix="analysis_secondary", height=430)
         st.markdown('<h3 class="cm-section-title">Croisements majeurs</h3>', unsafe_allow_html=True)
         st.caption(cross_caption)
-        render_analysis_simple_table(cross_table)
+        selected_cross = render_selectable_analysis_table(cross_table, key_prefix="analysis_cross", height=470)
     else:
         st.caption(primary_caption)
-        render_analysis_simple_table(primary_table)
+        selected_primary = render_selectable_analysis_table(primary_table, key_prefix="analysis_primary", height=470)
+
+    if selected_primary is not None:
+        set_analysis_focus(
+            row_label=row_dimension_label,
+            row_value=str(selected_primary.get(row_dimension_label, "")),
+            col_label=column_dimension_label if col_col else None,
+            col_value=st.session_state.get("analysis_focus_col_value") if col_col else None,
+            source="primary",
+        )
+    if selected_secondary is not None and col_col:
+        set_analysis_focus(
+            col_label=column_dimension_label,
+            col_value=str(selected_secondary.get(column_dimension_label, "")),
+            source="secondary",
+        )
+    if selected_cross is not None and col_col:
+        set_analysis_focus(
+            row_label=row_dimension_label,
+            row_value=str(selected_cross.get(row_dimension_label, "")),
+            col_label=column_dimension_label,
+            col_value=str(selected_cross.get(column_dimension_label, "")),
+            source="cross",
+        )
 
     if primary_table.empty:
         st.info("Aucun résultat à afficher pour les paramètres sélectionnés.")
         return
-
-    detail_options = primary_table[row_dimension_label].astype(str).tolist()
 
     st.divider()
     st.markdown('<h3 class="cm-section-title">Indicateurs les plus contributifs</h3>', unsafe_allow_html=True)
@@ -3273,30 +3452,38 @@ def render_analysis_screen(portfolio: pd.DataFrame, indicators: pd.DataFrame) ->
 
     st.divider()
     st.markdown('<h3 class="cm-section-title">Clients sous-jacents</h3>', unsafe_allow_html=True)
-    ctrl1, ctrl2 = st.columns([1.4, 1.0])
-    with ctrl1:
-        selected_row_value = st.selectbox(
-            f"{row_dimension_label} détaillé",
-            options=detail_options,
-            index=0 if detail_options else None,
-            key="analysis_detail_row",
-        )
-    selected_col_value = "Tous"
-    if col_col:
-        available_col_values = sorted(
-            filtered.get(col_col).fillna("Non renseigné").astype(str).replace({"": "Non renseigné"}).unique().tolist()
-        )
-        column_values = ["Tous"] + available_col_values
-        with ctrl2:
-            selected_col_value = st.selectbox(
-                f"{column_dimension_label} détaillé",
-                options=column_values,
-                key="analysis_detail_col",
-            )
+    active_row_value = st.session_state.get("analysis_focus_row_value")
+    active_col_value = st.session_state.get("analysis_focus_col_value") if col_col else None
 
-    detail_df = build_analysis_detail_dataset(filtered, row_col, selected_row_value, col_col, selected_col_value)
+    focus_parts = []
+    if active_row_value not in {None, "", "Tous"}:
+        focus_parts.append(f"{row_dimension_label} = {active_row_value}")
+    if col_col and active_col_value not in {None, "", "Tous"}:
+        focus_parts.append(f"{column_dimension_label} = {active_col_value}")
+
+    focus_bar_left, focus_bar_right = st.columns([6.0, 1.2])
+    with focus_bar_left:
+        if focus_parts:
+            st.caption("Focus actif : " + " | ".join(focus_parts))
+        else:
+            st.caption("Cliquez sur une ligne d’un tableau d’analyse pour afficher automatiquement les clients sous-jacents correspondants.")
+    with focus_bar_right:
+        if focus_parts and st.button("Effacer le focus", type="secondary", key="analysis_clear_focus"):
+            clear_analysis_focus()
+            st.rerun()
+
+    detail_df = build_analysis_focus_dataset(
+        filtered,
+        row_col=row_col,
+        row_value=active_row_value,
+        row_label=row_dimension_label,
+        column_col=col_col,
+        column_value=active_col_value,
+        column_label=None if column_dimension_label == "Aucun" else column_dimension_label,
+    ) if focus_parts else pd.DataFrame()
+
     if detail_df.empty:
-        st.info("Aucun client sous-jacent pour ce croisement.")
+        st.info("Aucun client sous-jacent à afficher tant qu’aucun focus n’est sélectionné.")
     else:
         st.caption("Cliquez sur un SIREN pour ouvrir la fiche client sans quitter votre contexte d’analyse.")
         render_clickable_styled_dataframe(
