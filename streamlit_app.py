@@ -524,6 +524,39 @@ def inject_brand_theme() -> None:
             margin-bottom: 0.9rem;
         }}
 
+        .cm-analysis-mode-shell {{
+            margin: 0.2rem 0 0.35rem 0;
+            padding: 0.85rem 1rem 0.15rem 1rem;
+            border-radius: 18px;
+            border: 1px solid rgba(22, 58, 89, 0.16);
+            background: linear-gradient(180deg, rgba(221, 234, 248, 0.88), rgba(237, 244, 252, 0.78));
+            box-shadow: inset 0 1px 0 rgba(255,255,255,0.65);
+        }}
+
+        .cm-analysis-mode-kicker {{
+            font-family: 'Sora', sans-serif;
+            font-size: 0.78rem;
+            font-weight: 800;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            color: #2F6B9E;
+            margin-bottom: 0.12rem;
+        }}
+
+        .cm-analysis-mode-title {{
+            font-family: 'Montserrat', sans-serif;
+            font-size: 1.05rem;
+            font-weight: 800;
+            color: var(--cm-primary);
+            margin-bottom: 0.12rem;
+        }}
+
+        .cm-analysis-mode-note {{
+            font-size: 0.92rem;
+            color: var(--cm-muted);
+            margin-bottom: 0.35rem;
+        }}
+
         .cm-badge {{
             display: inline-flex;
             align-items: center;
@@ -3084,43 +3117,58 @@ def render_analysis_screen(portfolio: pd.DataFrame, indicators: pd.DataFrame) ->
     if st.session_state.get("analysis_row_dimension") not in row_options:
         st.session_state["analysis_row_dimension"] = default_row
 
+    st.markdown(
+        """
+        <div class="cm-analysis-mode-shell">
+            <div class="cm-analysis-mode-kicker">Paramètres d’analyse</div>
+            <div class="cm-analysis-mode-title">Structurez la lecture du portefeuille</div>
+            <div class="cm-analysis-mode-note">Choisissez l’angle principal, l’éventuel niveau d’affinage, l’indicateur à lire et le classement.</div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
     analysis_cols = st.columns([1.25, 1.15, 1.05, 0.9])
     with analysis_cols[0]:
         row_dimension_label = st.selectbox(
-            "Analyser par",
+            "Vue principale",
             options=row_options,
             index=row_options.index(st.session_state.get("analysis_row_dimension", default_row)),
             key="analysis_row_dimension",
+            help="Dimension principale de lecture de l’analyse.",
         )
     col_options = ["Aucun"] + [opt for opt in row_options if opt != row_dimension_label]
     if st.session_state.get("analysis_col_dimension") not in col_options:
         st.session_state["analysis_col_dimension"] = "Aucun"
     with analysis_cols[1]:
         column_dimension_label = st.selectbox(
-            "Affiner par",
+            "Vue secondaire",
             options=col_options,
             index=col_options.index(st.session_state.get("analysis_col_dimension", "Aucun")),
             key="analysis_col_dimension",
+            help="Découpe complémentaire pour affiner la vue principale.",
         )
     measure_options = list(measure_map.keys())
     if st.session_state.get("analysis_measure") not in measure_options:
         st.session_state["analysis_measure"] = measure_options[0]
     with analysis_cols[2]:
         measure_label = st.selectbox(
-            "Mesure",
+            "Indicateur",
             options=measure_options,
             index=measure_options.index(st.session_state.get("analysis_measure", measure_options[0])),
             key="analysis_measure",
+            help="Mesure affichée dans les tableaux d’analyse.",
         )
-    sort_options = ["Mesure décroissante", "Libellé A → Z"]
+    sort_options = ["Indicateur décroissant", "Libellé A → Z"]
     if st.session_state.get("analysis_sort") not in sort_options:
         st.session_state["analysis_sort"] = sort_options[0]
     with analysis_cols[3]:
         sort_choice = st.selectbox(
-            "Tri",
+            "Classement",
             options=sort_options,
             index=sort_options.index(st.session_state.get("analysis_sort", sort_options[0])),
             key="analysis_sort",
+            help="Ordre d’affichage des regroupements.",
         )
     st.markdown('</div>', unsafe_allow_html=True)
 
@@ -3129,7 +3177,7 @@ def render_analysis_screen(portfolio: pd.DataFrame, indicators: pd.DataFrame) ->
     row_col = dimension_map[row_dimension_label]
     col_col = None if column_dimension_label == "Aucun" else dimension_map[column_dimension_label]
     measure_key = measure_map[measure_label]
-    sort_desc = sort_choice == "Mesure décroissante"
+    sort_desc = sort_choice == "Indicateur décroissant"
 
     primary_table, primary_caption = build_analysis_group_table(
         filtered,
