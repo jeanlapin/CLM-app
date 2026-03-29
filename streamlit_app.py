@@ -3514,8 +3514,6 @@ def render_analysis_screen(portfolio: pd.DataFrame, indicators: pd.DataFrame) ->
     )
     secondary_table = pd.DataFrame()
     secondary_caption = ""
-    cross_table = pd.DataFrame()
-    cross_caption = ""
     if col_col:
         secondary_table, secondary_caption = build_analysis_group_table(
             filtered,
@@ -3526,6 +3524,37 @@ def render_analysis_screen(portfolio: pd.DataFrame, indicators: pd.DataFrame) ->
             sort_desc=sort_desc,
             top_n=12,
         )
+
+    selected_primary = None
+    selected_secondary = None
+    if col_col:
+        left, right = st.columns(2)
+        with left:
+            render_analysis_panel_header("Analyse principale", primary_caption)
+            selected_primary = render_selectable_analysis_table(primary_table, key_prefix="analysis_primary", height=430)
+        with right:
+            render_analysis_panel_header("Analyse secondaire", secondary_caption)
+            selected_secondary = render_selectable_analysis_table(secondary_table, key_prefix="analysis_secondary", height=430)
+    else:
+        render_analysis_panel_header("Analyse principale", primary_caption)
+        selected_primary = render_selectable_analysis_table(primary_table, key_prefix="analysis_primary", height=470)
+
+    if selected_primary is not None:
+        set_analysis_focus(
+            row_label=row_dimension_label,
+            row_value=str(selected_primary.get(row_dimension_label, "")),
+            source="primary",
+        )
+    if selected_secondary is not None and col_col:
+        set_analysis_focus(
+            col_label=column_dimension_label,
+            col_value=str(selected_secondary.get(column_dimension_label, "")),
+            source="secondary",
+        )
+
+    cross_table = pd.DataFrame()
+    cross_caption = ""
+    if col_col:
         cross_table, cross_caption = build_analysis_cross_table(
             filtered,
             row_col,
@@ -3539,46 +3568,8 @@ def render_analysis_screen(portfolio: pd.DataFrame, indicators: pd.DataFrame) ->
             focus_row_value=st.session_state.get("analysis_focus_row_value"),
             focus_col_value=st.session_state.get("analysis_focus_col_value"),
         )
-
-    selected_primary = None
-    selected_secondary = None
-    selected_cross = None
-    if col_col:
-        left, right = st.columns(2)
-        with left:
-            render_analysis_panel_header("Analyse principale", primary_caption)
-            selected_primary = render_selectable_analysis_table(primary_table, key_prefix="analysis_primary", height=430)
-        with right:
-            render_analysis_panel_header("Analyse secondaire", secondary_caption)
-            selected_secondary = render_selectable_analysis_table(secondary_table, key_prefix="analysis_secondary", height=430)
         render_analysis_panel_header("Analyse croisée", cross_caption)
-        selected_cross = render_selectable_analysis_table(cross_table, key_prefix="analysis_cross", height=470)
-    else:
-        render_analysis_panel_header("Analyse principale", primary_caption)
-        selected_primary = render_selectable_analysis_table(primary_table, key_prefix="analysis_primary", height=470)
-
-    if selected_primary is not None:
-        set_analysis_focus(
-            row_label=row_dimension_label,
-            row_value=str(selected_primary.get(row_dimension_label, "")),
-            col_label=column_dimension_label if col_col else None,
-            col_value=st.session_state.get("analysis_focus_col_value") if col_col else None,
-            source="primary",
-        )
-    if selected_secondary is not None and col_col:
-        set_analysis_focus(
-            col_label=column_dimension_label,
-            col_value=str(selected_secondary.get(column_dimension_label, "")),
-            source="secondary",
-        )
-    if selected_cross is not None and col_col:
-        set_analysis_focus(
-            row_label=row_dimension_label,
-            row_value=str(selected_cross.get(row_dimension_label, "")),
-            col_label=column_dimension_label,
-            col_value=str(selected_cross.get(column_dimension_label, "")),
-            source="cross",
-        )
+        render_small_table(cross_table, bold_numbers=False)
 
     if primary_table.empty:
         st.info("Aucun résultat à afficher pour les paramètres sélectionnés.")
