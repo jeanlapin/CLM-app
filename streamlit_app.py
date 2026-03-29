@@ -3237,25 +3237,21 @@ def render_analysis_screen(portfolio: pd.DataFrame, indicators: pd.DataFrame) ->
     detail_options = primary_table[row_dimension_label].astype(str).tolist()
 
     st.divider()
-    left, right = st.columns([1.1, 1.0])
-    with left:
-        st.markdown('<h3 class="cm-section-title">Jalons temporels</h3>', unsafe_allow_html=True)
-        trend_df = build_analysis_trend_table(filtered)
-        if trend_df.empty:
-            st.info("Aucune date exploitable n'est disponible sur le périmètre filtré.")
-        else:
-            chart_df = trend_df.set_index("Mois")[["Date réf. risque", "Dernières revues", "Prochaines revues"]]
-            st.line_chart(chart_df, height=280)
-            trend_table = trend_df.copy()
-            trend_table["% revues / clients"] = trend_table["% revues / clients"].map(lambda x: f"{x:.1%}")
-            render_small_table(trend_table)
-    with right:
-        st.markdown('<h3 class="cm-section-title">Indicateurs les plus contributifs</h3>', unsafe_allow_html=True)
-        indicator_table = build_indicator_analysis_table(filtered, indicators)
-        if indicator_table.empty:
-            st.info("Aucun indicateur exploitable n'est disponible sur le périmètre filtré.")
-        else:
-            render_small_table(indicator_table)
+    st.markdown('<h3 class="cm-section-title">Indicateurs les plus contributifs</h3>', unsafe_allow_html=True)
+    indicator_table = build_indicator_analysis_table(filtered, indicators)
+    if indicator_table.empty:
+        st.info("Aucun indicateur exploitable n'est disponible sur le périmètre filtré.")
+    else:
+        render_small_table(indicator_table)
+
+    st.markdown('<h3 class="cm-section-title">Jalons temporels</h3>', unsafe_allow_html=True)
+    trend_df = build_analysis_trend_table(filtered)
+    if trend_df.empty:
+        st.info("Aucune date exploitable n'est disponible sur le périmètre filtré.")
+    else:
+        trend_table = trend_df.copy()
+        trend_table["% revues / clients"] = trend_table["% revues / clients"].map(lambda x: f"{x:.1%}")
+        render_small_table(trend_table)
 
     st.divider()
     st.markdown('<h3 class="cm-section-title">Clients sous-jacents</h3>', unsafe_allow_html=True)
