@@ -407,6 +407,34 @@ def inject_brand_theme() -> None:
             box-shadow: 0 10px 24px rgba(22, 58, 89, 0.05);
         }}
 
+        [data-testid="stDataFrame"] [role="columnheader"] {{
+            background: var(--cm-primary) !important;
+            color: #FFFFFF !important;
+            justify-content: center !important;
+            text-align: center !important;
+            font-family: 'Sora', sans-serif !important;
+            font-size: 0.78rem !important;
+            font-weight: 800 !important;
+            letter-spacing: 0.05em !important;
+            font-variant-caps: all-small-caps !important;
+            text-transform: none !important;
+            border-bottom: 0 !important;
+        }}
+
+        [data-testid="stDataFrame"] [role="columnheader"] * {{
+            color: #FFFFFF !important;
+            text-align: center !important;
+        }}
+
+        [data-testid="stDataFrame"] [role="gridcell"] {{
+            justify-content: center !important;
+            text-align: center !important;
+        }}
+
+        [data-testid="stDataFrame"] [role="gridcell"] * {{
+            text-align: center !important;
+        }}
+
         .cm-block-caption {{
             color: var(--cm-muted);
             margin-top: -0.2rem;
@@ -439,6 +467,38 @@ def inject_brand_theme() -> None:
             background: rgba(255,255,255,0.72);
             color: var(--cm-muted);
             font-size: 0.84rem;
+        }}
+
+        .cm-analysis-hint-row {{
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 0.9rem;
+            margin: 0.15rem 0 0.55rem 0;
+        }}
+
+        .cm-analysis-hint-text {{
+            color: var(--cm-muted);
+            font-size: 0.82rem;
+            line-height: 1.35;
+        }}
+
+        .cm-analysis-jump-btn {{
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            white-space: nowrap;
+            background: var(--cm-primary);
+            color: #FFFFFF !important;
+            text-decoration: none !important;
+            padding: 0.52rem 0.8rem;
+            border-radius: 999px;
+            font-family: 'Sora', sans-serif;
+            font-size: 0.76rem;
+            font-weight: 800;
+            letter-spacing: 0.04em;
+            font-variant-caps: all-small-caps;
+            box-shadow: 0 10px 18px rgba(22, 58, 89, 0.18);
         }}
 
         .cm-mini-table-wrap {{
@@ -2225,7 +2285,9 @@ def style_interactive_table(display_df: pd.DataFrame, raw_df: pd.DataFrame) -> p
     styled = display_df.style
     styled = styled.set_table_styles([
         {"selector": "thead th", "props": [("background-color", "#163A59"), ("color", "white"), ("font-weight", "700"), ("text-transform", "uppercase"), ("font-size", "0.76rem"), ("letter-spacing", "0.08em"), ("text-align", "center"), ("border-bottom", "0")]},
-        {"selector": "tbody td", "props": [("background-color", "#ffffff")]},
+        {"selector": "thead th.col_heading.level0", "props": [("background-color", "#163A59"), ("color", "white"), ("text-align", "center")]},
+        {"selector": "thead tr", "props": [("background-color", "#163A59")]},
+        {"selector": "tbody td", "props": [("background-color", "#ffffff"), ("text-align", "center")]},
     ])
     styled = styled.apply(lambda _: zebra, axis=None)
     styled = styled.apply(lambda s: [style_cell(s.name, v) for v in s], axis=0)
@@ -3011,7 +3073,15 @@ def render_selectable_analysis_table(
     raw_df = df.copy().reset_index(drop=True)
     display_df = format_table_display_dataframe(raw_df)
 
-    st.caption("Cliquez sur une ligne pour définir le focus analytique et mettre à jour les clients sous-jacents.")
+    st.markdown(
+        """
+        <div class='cm-analysis-hint-row'>
+            <div class='cm-analysis-hint-text'>Cliquez sur une ligne pour définir le focus analytique et mettre à jour les clients sous-jacents.</div>
+            <a class='cm-analysis-jump-btn' href='#clients-sous-jacents'>Voir les clients sous-jacents</a>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
 
     column_config: dict[str, object] = {}
     for col in display_df.columns:
@@ -3516,6 +3586,7 @@ def render_analysis_screen(portfolio: pd.DataFrame, indicators: pd.DataFrame) ->
         render_small_table(trend_table, bold_numbers=False)
 
     st.divider()
+    st.markdown("<div id='clients-sous-jacents'></div>", unsafe_allow_html=True)
     st.markdown('<h3 class="cm-section-title">Clients sous-jacents</h3>', unsafe_allow_html=True)
     active_row_value = st.session_state.get("analysis_focus_row_value")
     active_col_value = st.session_state.get("analysis_focus_col_value") if col_col else None
