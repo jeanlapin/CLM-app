@@ -2752,7 +2752,6 @@ def render_client_edd_tab(client_row: pd.Series, history_rows: pd.DataFrame) -> 
             ("Date prochaine revue", client_row.get("Date prochaine revue"), None),
             ("Justificatif complet", client_row.get("Flag justificatif complet"), None),
             ("Conclusion synthétique", client_row.get("Motifs"), None),
-            ("Référence justificatif principal", client_row.get("Référence justificatif principal"), None),
         ]
         render_info_cards(edd_items)
     with right:
