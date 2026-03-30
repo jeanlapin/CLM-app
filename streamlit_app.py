@@ -1959,8 +1959,12 @@ def build_review_simulation_working_table(df: pd.DataFrame) -> pd.DataFrame:
         scope[REVIEW_SIM_EST_LABEL] = ""
         scope["updated_at_utc"] = ""
 
-    scope["Explique moi"] = scope.get("Explique moi", "").fillna("").astype(str)
-    scope[REVIEW_SIM_EST_LABEL] = scope.get(REVIEW_SIM_EST_LABEL, "").fillna("").astype(str)
+    if "Explique moi" not in scope.columns:
+        scope["Explique moi"] = ""
+    scope["Explique moi"] = scope["Explique moi"].fillna("").astype(str)
+    if REVIEW_SIM_EST_LABEL not in scope.columns:
+        scope[REVIEW_SIM_EST_LABEL] = ""
+    scope[REVIEW_SIM_EST_LABEL] = scope[REVIEW_SIM_EST_LABEL].fillna("").astype(str)
     empty_expected = scope[REVIEW_SIM_EST_LABEL].str.strip().eq("")
     scope.loc[empty_expected, REVIEW_SIM_EST_LABEL] = scope.loc[empty_expected].apply(build_simulated_expected_vigilance, axis=1)
     scope[REVIEW_SIM_TREND_LABEL] = scope.apply(lambda row: build_review_trend(row.get(REVIEW_SIM_REAL_LABEL, ""), row.get(REVIEW_SIM_EST_LABEL, "")), axis=1)
