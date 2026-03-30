@@ -9,7 +9,10 @@ import json
 import re
 import hmac
 import shutil
+import unicodedata
+from urllib.error import HTTPError, URLError
 from urllib.parse import quote_plus
+from urllib.request import Request, urlopen
 
 import numpy as np
 import pandas as pd
@@ -83,6 +86,10 @@ REVIEW_TYPE_BY_VIGILANCE = {
 REVIEW_SIM_REAL_LABEL = "Statut de vigilance réel"
 REVIEW_SIM_EST_LABEL = "Statut de vigilance estimé après remédiation"
 REVIEW_SIM_TREND_LABEL = "Indicateur de tendance"
+GEMINI_MODEL_DEFAULT = "gemini-2.5-flash"
+GEMINI_MAX_BATCH_SIZE = 10
+GEMINI_API_TIMEOUT_SECONDS = 60
+REVIEW_SIM_GEMINI_KEY_STATE = "review_sim_gemini_api_key"
 VIGILANCE_RANK = {label: idx for idx, label in enumerate(VIGILANCE_ORDER)}
 REVIEW_OBJECTIVES_BY_VIGILANCE = {
     "Vigilance Critique": (
@@ -1734,6 +1741,19 @@ def persist_review_planning_settings(freq_map: dict[str, int], cap_map: dict[str
 
 
 
+def clear_review_simulation_ephemeral_state() -> None:
+    st.session_state.pop(REVIEW_SIM_GEMINI_KEY_STATE, None)
+
+
+def clear_ephemeral_state_if_view_changes(next_view: str) -> None:
+    target_view = str(next_view or "").strip()
+    current_view = str(st.session_state.get("cm_view", "portfolio") or "portfolio").strip()
+    if current_view == "client":
+        current_view = str(st.session_state.get("cm_previous_view", "portfolio") or "portfolio").strip()
+    if target_view and current_view != target_view:
+        clear_review_simulation_ephemeral_state()
+
+
 def load_review_simulation_store() -> pd.DataFrame:
     path = review_simulations_path()
     legacy_est_label = "Statut de vigilance espéré après remédiation"
@@ -1855,6 +1875,226 @@ def build_row_review_prompt(row: pd.Series) -> str:
 
 
 
+def normalize_text_for_matching(value: object) -> str:
+    text = str(value or "").strip().lower()
+    text = unicodedata.normalize("NFKD", text)
+    text = "".join(ch for ch in text if not unicodedata.combining(ch))
+    return re.sub(r"\s+", " ", text).strip()
+
+
+def canonical_vigilance_label(value: object) -> str:
+    raw_value = str(value or "").strip()
+    if raw_value in VIGILANCE_ORDER:
+        return raw_value
+    normalized = normalize_text_for_matching(raw_value)
+    for label in VIGILANCE_ORDER:
+        if normalize_text_for_matching(label) == normalized:
+            return label
+    return ""
+
+
+def gemini_review_response_schema() -> dict[str, object]:
+    return {
+        "type": "object",
+        "properties": {
+            "explique_moi": {
+                "type": "string",
+                "description": "Synthèse en français, exploitable telle quelle dans la colonne Explique moi.",
+            },
+            "statut_estime": {
+                "type": "string",
+                "enum": list(VIGILANCE_ORDER),
+                "description": "Statut de vigilance estimé après remédiation.",
+            },
+        },
+        "required": ["explique_moi", "statut_estime"],
+    }
+
+
+def format_review_prompt_template(prompt_template: str, row: pd.Series) -> str:
+    prompt = str(prompt_template or "").strip()
+    if not prompt:
+        return ""
+    alert_text = ", ".join(build_row_alert_labels(row)) or "Aucune alerte calculée active"
+    replacements = {
+        "{SIREN}": str(row.get("SIREN", "") or "").strip(),
+        "{DENOMINATION}": str(row.get("Dénomination", "") or "").strip(),
+        "{VIGILANCE}": str(row.get("Vigilance", row.get(REVIEW_SIM_REAL_LABEL, "")) or "").strip(),
+        "{RISQUE}": str(row.get("Risque", "") or "").strip(),
+        "{EDD}": str(row.get("Statut EDD", "") or "").strip(),
+        "{DATE_PROCHAINE_REVUE}": format_short_date(row.get("Date prochaine revue")) or "Non renseignée",
+        "{ALERTES}": alert_text,
+    }
+    for placeholder, replacement in replacements.items():
+        prompt = prompt.replace(placeholder, replacement)
+    return prompt
+
+
+def build_gemini_review_prompt(base_prompt: str, row: pd.Series) -> str:
+    prompt_parts: list[str] = []
+    generic_prompt = format_review_prompt_template(base_prompt, row)
+    if generic_prompt:
+        prompt_parts.append("Consignes générales à respecter :\n" + generic_prompt)
+    prompt_parts.append("Contexte détaillé du dossier :\n" + build_row_review_prompt(row))
+    prompt_parts.append(
+        "Réponds exclusivement avec un JSON valide conforme au schéma demandé.\n"
+        f"La valeur de 'statut_estime' doit être exactement l’une des suivantes : {', '.join(VIGILANCE_ORDER)}.\n"
+        "La valeur de 'explique_moi' doit être rédigée en français, sans markdown, directement exploitable dans une cellule, "
+        "et contenir un diagnostic synthétique, les actions prioritaires, les justificatifs à obtenir et les points de contrôle."
+    )
+    return "\n\n".join(prompt_parts)
+
+
+def extract_gemini_response_text(response_payload: dict[str, object]) -> str:
+    candidates = response_payload.get("candidates")
+    if not isinstance(candidates, list):
+        raise ValueError("Réponse Gemini sans candidat exploitable.")
+    for candidate in candidates:
+        if not isinstance(candidate, dict):
+            continue
+        content = candidate.get("content")
+        if not isinstance(content, dict):
+            continue
+        parts = content.get("parts")
+        if not isinstance(parts, list):
+            continue
+        for part in parts:
+            if isinstance(part, dict):
+                text = str(part.get("text", "") or "").strip()
+                if text:
+                    return text
+    raise ValueError("Réponse Gemini vide ou non textuelle.")
+
+
+def parse_gemini_http_error(exc: HTTPError) -> str:
+    try:
+        payload = json.loads(exc.read().decode("utf-8", errors="replace"))
+        if isinstance(payload, dict):
+            message = payload.get("error", {}).get("message")
+            if message:
+                return str(message)
+    except Exception:
+        pass
+    return f"Erreur HTTP {exc.code} lors de l’appel Gemini."
+
+
+def call_gemini_json(prompt: str, api_key: str, model: str = GEMINI_MODEL_DEFAULT) -> dict[str, object]:
+    api_key = str(api_key or "").strip()
+    if not api_key:
+        raise ValueError("La clé API Gemini est obligatoire.")
+
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
+    payload = {
+        "contents": [{"parts": [{"text": str(prompt or "")}]}],
+        "generationConfig": {
+            "responseMimeType": "application/json",
+            "responseJsonSchema": gemini_review_response_schema(),
+            "temperature": 0.2,
+        },
+    }
+    request = Request(
+        url=url,
+        data=json.dumps(payload).encode("utf-8"),
+        headers={
+            "Content-Type": "application/json",
+            "x-goog-api-key": api_key,
+        },
+        method="POST",
+    )
+
+    try:
+        with urlopen(request, timeout=GEMINI_API_TIMEOUT_SECONDS) as response:
+            response_payload = json.loads(response.read().decode("utf-8"))
+    except HTTPError as exc:
+        raise RuntimeError(parse_gemini_http_error(exc)) from exc
+    except URLError as exc:
+        raise RuntimeError(f"Impossible de joindre Gemini : {exc.reason}.") from exc
+    except Exception as exc:
+        raise RuntimeError(f"Erreur lors de l’appel Gemini : {exc}") from exc
+
+    if not isinstance(response_payload, dict):
+        raise ValueError("Réponse Gemini invalide.")
+    if response_payload.get("error"):
+        message = response_payload.get("error", {}).get("message")
+        raise RuntimeError(str(message or "Erreur Gemini inconnue."))
+
+    response_text = extract_gemini_response_text(response_payload)
+    try:
+        result = json.loads(response_text)
+    except json.JSONDecodeError as exc:
+        raise ValueError("Gemini n’a pas renvoyé un JSON valide.") from exc
+
+    if not isinstance(result, dict):
+        raise ValueError("Le JSON Gemini attendu doit être un objet.")
+    return result
+
+
+def run_gemini_review_simulation(row: pd.Series, api_key: str, base_prompt: str, model: str = GEMINI_MODEL_DEFAULT) -> tuple[str, str]:
+    result = call_gemini_json(build_gemini_review_prompt(base_prompt, row), api_key=api_key, model=model)
+    explanation = str(result.get("explique_moi", result.get("expliqueMoi", "")) or "").strip()
+    estimated_status = canonical_vigilance_label(result.get("statut_estime", result.get("statutEstime", "")))
+    if not explanation:
+        raise ValueError("Gemini a renvoyé un champ 'explique_moi' vide.")
+    if not estimated_status:
+        raise ValueError("Gemini a renvoyé un statut estimé invalide.")
+    return explanation, estimated_status
+
+
+def review_simulation_source_row(row: pd.Series, source_df: pd.DataFrame) -> pd.Series:
+    soc = normalize_societe_id(pd.Series([row.get(SOC_COL, "")])).iloc[0]
+    siren = normalize_siren(pd.Series([row.get("SIREN", "")])).iloc[0]
+    match = source_df[(source_df[SOC_COL] == soc) & (source_df["SIREN"] == siren)]
+    if match.empty:
+        return pd.Series({
+            SOC_COL: soc,
+            "SIREN": siren,
+            "Dénomination": row.get("Dénomination", ""),
+            "Vigilance": row.get(REVIEW_SIM_REAL_LABEL, row.get("Vigilance", "")),
+            "Risque": row.get("Risque", ""),
+            "Statut EDD": row.get("Statut EDD", ""),
+            "Date prochaine revue": row.get("Date prochaine revue"),
+        })
+    return match.iloc[0]
+
+
+def apply_gemini_review_simulation_batch(
+    working_df: pd.DataFrame,
+    selected_indices: list[int],
+    source_df: pd.DataFrame,
+    api_key: str,
+    base_prompt: str,
+    model: str = GEMINI_MODEL_DEFAULT,
+) -> tuple[pd.DataFrame, int, list[str]]:
+    result = working_df.copy()
+    batch_idx = [int(i) for i in selected_indices[:GEMINI_MAX_BATCH_SIZE] if 0 <= int(i) < len(result)]
+    if not batch_idx:
+        return result, 0, []
+
+    source = source_df.copy()
+    source[SOC_COL] = normalize_societe_id(source[SOC_COL])
+    source["SIREN"] = normalize_siren(source["SIREN"])
+
+    processed = 0
+    errors: list[str] = []
+    for idx in batch_idx:
+        row_label = result.index[idx]
+        row = result.iloc[idx]
+        try:
+            source_row = review_simulation_source_row(row, source)
+            explanation, estimated_status = run_gemini_review_simulation(source_row, api_key=api_key, base_prompt=base_prompt, model=model)
+            result.at[row_label, "Explique moi"] = explanation
+            result.at[row_label, REVIEW_SIM_EST_LABEL] = estimated_status
+            result.at[row_label, REVIEW_SIM_TREND_LABEL] = build_review_trend(
+                result.at[row_label, REVIEW_SIM_REAL_LABEL],
+                result.at[row_label, REVIEW_SIM_EST_LABEL],
+            )
+            processed += 1
+        except Exception as exc:
+            siren = str(row.get("SIREN", "") or "").strip() or f"ligne {idx + 1}"
+            errors.append(f"{siren} : {exc}")
+    return result, processed, errors
+
+
 def build_simulated_review_explanation(row: pd.Series) -> str:
     vigilance = str(row.get("Vigilance", "") or "").strip()
     review_type = review_type_for_vigilance(vigilance)
@@ -1939,14 +2179,15 @@ def review_trend_icon(trend_value: object) -> str:
 
 def apply_manual_estimated_status(working_df: pd.DataFrame, selected_indices: list[int], estimated_status: str) -> tuple[pd.DataFrame, int]:
     result = working_df.copy()
-    batch_idx = list(selected_indices)
+    batch_idx = [int(i) for i in selected_indices if 0 <= int(i) < len(result)]
     if not batch_idx:
         return result, 0
     for idx in batch_idx:
-        result.at[idx, REVIEW_SIM_EST_LABEL] = estimated_status
-        result.at[idx, REVIEW_SIM_TREND_LABEL] = build_review_trend(
-            result.at[idx, REVIEW_SIM_REAL_LABEL],
-            result.at[idx, REVIEW_SIM_EST_LABEL],
+        row_label = result.index[idx]
+        result.at[row_label, REVIEW_SIM_EST_LABEL] = estimated_status
+        result.at[row_label, REVIEW_SIM_TREND_LABEL] = build_review_trend(
+            result.at[row_label, REVIEW_SIM_REAL_LABEL],
+            result.at[row_label, REVIEW_SIM_EST_LABEL],
         )
     return result, len(batch_idx)
 
@@ -2011,9 +2252,17 @@ def build_review_simulation_working_table(df: pd.DataFrame) -> pd.DataFrame:
     return table.reset_index(drop=True)
 
 
-def persist_review_simulation_subset(edited_df: pd.DataFrame) -> None:
+def persist_review_simulation_subset(edited_df: pd.DataFrame, selected_indices: list[int] | None = None) -> None:
     if edited_df is None or edited_df.empty:
         return
+
+    target_df = edited_df.copy()
+    if selected_indices is not None:
+        valid_indices = [int(i) for i in selected_indices if 0 <= int(i) < len(target_df)]
+        if not valid_indices:
+            return
+        target_df = target_df.iloc[valid_indices].copy()
+
     store = load_review_simulation_store()
     if store.empty:
         store = pd.DataFrame(columns=KEY_COLUMNS + [
@@ -2021,7 +2270,12 @@ def persist_review_simulation_subset(edited_df: pd.DataFrame) -> None:
             REVIEW_SIM_EST_LABEL,
             "updated_at_utc",
         ])
-    subset = edited_df[[SOC_COL, "SIREN", "Explique moi", REVIEW_SIM_EST_LABEL]].copy()
+    subset = target_df[[SOC_COL, "SIREN", "Explique moi", REVIEW_SIM_EST_LABEL]].copy()
+    subset["Explique moi"] = subset["Explique moi"].fillna("").astype(str)
+    subset[REVIEW_SIM_EST_LABEL] = subset[REVIEW_SIM_EST_LABEL].fillna("").astype(str)
+    subset = subset[subset["Explique moi"].str.strip().ne("") | subset[REVIEW_SIM_EST_LABEL].str.strip().ne("")].copy()
+    if subset.empty:
+        return
     subset[SOC_COL] = normalize_societe_id(subset[SOC_COL])
     subset["SIREN"] = normalize_siren(subset["SIREN"])
     subset["updated_at_utc"] = datetime.now(timezone.utc).isoformat()
@@ -2033,7 +2287,7 @@ def persist_review_simulation_subset(edited_df: pd.DataFrame) -> None:
 
 def apply_review_simulation_batch(working_df: pd.DataFrame, selected_indices: list[int], source_df: pd.DataFrame) -> tuple[pd.DataFrame, int]:
     result = working_df.copy()
-    batch_idx = list(selected_indices[:10])
+    batch_idx = [int(i) for i in selected_indices[:10] if 0 <= int(i) < len(result)]
     if not batch_idx:
         return result, 0
 
@@ -2042,7 +2296,8 @@ def apply_review_simulation_batch(working_df: pd.DataFrame, selected_indices: li
     source["SIREN"] = normalize_siren(source["SIREN"])
 
     for idx in batch_idx:
-        row = result.loc[idx]
+        row_label = result.index[idx]
+        row = result.iloc[idx]
         soc = normalize_societe_id(pd.Series([row.get(SOC_COL, "")])).iloc[0]
         siren = normalize_siren(pd.Series([row.get("SIREN", "")])).iloc[0]
         match = source[(source[SOC_COL] == soc) & (source["SIREN"] == siren)]
@@ -2058,9 +2313,12 @@ def apply_review_simulation_batch(working_df: pd.DataFrame, selected_indices: li
             })
         else:
             source_row = match.iloc[0]
-        result.at[idx, "Explique moi"] = build_simulated_review_explanation(source_row)
-        result.at[idx, REVIEW_SIM_EST_LABEL] = build_simulated_expected_vigilance(source_row)
-        result.at[idx, REVIEW_SIM_TREND_LABEL] = build_review_trend(result.at[idx, REVIEW_SIM_REAL_LABEL], result.at[idx, REVIEW_SIM_EST_LABEL])
+        result.at[row_label, "Explique moi"] = build_simulated_review_explanation(source_row)
+        result.at[row_label, REVIEW_SIM_EST_LABEL] = build_simulated_expected_vigilance(source_row)
+        result.at[row_label, REVIEW_SIM_TREND_LABEL] = build_review_trend(
+            result.at[row_label, REVIEW_SIM_REAL_LABEL],
+            result.at[row_label, REVIEW_SIM_EST_LABEL],
+        )
     return result, len(batch_idx)
 
 
@@ -2314,9 +2572,17 @@ def render_review_simulations_screen(portfolio: pd.DataFrame, user: dict) -> Non
         )
     with top_right:
         st.markdown('<h3 class="cm-section-title">Revues &amp; Simulations</h3>', unsafe_allow_html=True)
-        st.caption("Écran dédié à la préparation des consignes de revue. Sélectionnez jusqu’à 10 SIREN, préparez un lot et exportez le résultat enrichi.")
-        st.text_area(
-            "Prompt prêt à l’emploi",
+        st.caption("Écran dédié à la préparation des consignes de revue. Sélectionnez jusqu’à 10 SIREN, lancez Gemini sur la sélection et exportez le résultat enrichi.")
+        gemini_api_key = st.text_input(
+            "Clé API Gemini",
+            type="password",
+            key=REVIEW_SIM_GEMINI_KEY_STATE,
+            placeholder="AIza...",
+            help="Clé éphémère : elle n’est pas sauvegardée et est effacée lorsque vous changez d’écran ou fermez l’application.",
+        ).strip()
+        st.caption(f"Modèle utilisé : {GEMINI_MODEL_DEFAULT}. La clé n’est conservée qu’en mémoire de session.")
+        base_prompt = st.text_area(
+            "Prompt Gemini prêt à l’emploi",
             value=prompt_value,
             height=190,
             key="review_sim_prompt_preview",
@@ -2360,6 +2626,8 @@ def render_review_simulations_screen(portfolio: pd.DataFrame, user: dict) -> Non
         working_df = working_df[working_df[REVIEW_SIM_REAL_LABEL].astype(str).isin(current_filter)].copy()
     else:
         working_df = working_df.iloc[0:0].copy()
+
+    working_df = working_df.reset_index(drop=True)
 
     if working_df.empty:
         st.info("Aucun SIREN ne correspond au filtre de statut de vigilance retenu.")
@@ -2417,7 +2685,7 @@ def render_review_simulations_screen(portfolio: pd.DataFrame, user: dict) -> Non
         )
         if st.button("Mettre à jour le statut estimé", type="secondary", key="review_sim_apply_manual_status", use_container_width=True, disabled=(selected_count == 0)):
             updated_df, updated_count = apply_manual_estimated_status(working_df, selected_rows, manual_status)
-            persist_review_simulation_subset(updated_df)
+            persist_review_simulation_subset(updated_df, selected_rows)
             st.session_state["review_sim_notice"] = f"{updated_count} SIREN mis à jour avec le statut estimé « {manual_status} »."
             st.rerun()
     with c2:
@@ -2425,19 +2693,42 @@ def render_review_simulations_screen(portfolio: pd.DataFrame, user: dict) -> Non
             f"<div class='cm-analysis-mode-note'><strong>{selected_count}</strong> ligne(s) sélectionnée(s)</div>",
             unsafe_allow_html=True,
         )
-        if st.button("Préparer le lot sélectionné (max 10)", type="primary", key="review_sim_generate_batch", use_container_width=True):
+        gemini_button_disabled = (selected_count == 0) or (not gemini_api_key)
+        if st.button(
+            f"Lancer Gemini sur la sélection (max {GEMINI_MAX_BATCH_SIZE})",
+            type="primary",
+            key="review_sim_generate_batch",
+            use_container_width=True,
+            disabled=gemini_button_disabled,
+        ):
             source_df = portfolio.copy()
             source_df[SOC_COL] = normalize_societe_id(source_df[SOC_COL])
             source_df["SIREN"] = normalize_siren(source_df["SIREN"])
-            updated_df, processed = apply_review_simulation_batch(working_df, selected_rows, source_df)
-            persist_review_simulation_subset(updated_df)
+            with st.spinner("Analyse Gemini en cours sur les lignes sélectionnées…"):
+                updated_df, processed, errors = apply_gemini_review_simulation_batch(
+                    working_df,
+                    selected_rows,
+                    source_df,
+                    api_key=gemini_api_key,
+                    base_prompt=base_prompt,
+                    model=GEMINI_MODEL_DEFAULT,
+                )
+            persist_review_simulation_subset(updated_df, selected_rows[:GEMINI_MAX_BATCH_SIZE])
             if processed == 0:
-                st.session_state["review_sim_notice"] = "Sélectionnez au moins un SIREN pour préparer un lot."
-            elif selected_count > 10:
-                st.session_state["review_sim_notice"] = "Seuls les 10 premiers SIREN sélectionnés ont été préparés."
+                st.session_state["review_sim_warning"] = errors[0] if errors else "Sélectionnez au moins un SIREN pour lancer Gemini."
             else:
-                st.session_state["review_sim_notice"] = f"{processed} SIREN ont été préparés dans le lot courant."
+                if selected_count > GEMINI_MAX_BATCH_SIZE:
+                    st.session_state["review_sim_notice"] = f"{processed} SIREN traités par Gemini. Seuls les {GEMINI_MAX_BATCH_SIZE} premiers SIREN sélectionnés ont été envoyés."
+                else:
+                    st.session_state["review_sim_notice"] = f"{processed} SIREN traités par Gemini dans le lot courant."
+                if errors:
+                    preview_errors = " | ".join(errors[:3])
+                    if len(errors) > 3:
+                        preview_errors += f" | +{len(errors) - 3} autre(s) erreur(s)"
+                    st.session_state["review_sim_warning"] = preview_errors
             st.rerun()
+        if not gemini_api_key:
+            st.caption("Saisissez la clé API Gemini en haut de l’écran pour activer le traitement du lot.")
     with c3:
         st.download_button(
             label="Exporter (.csv)",
@@ -2451,6 +2742,8 @@ def render_review_simulations_screen(portfolio: pd.DataFrame, user: dict) -> Non
 
     if st.session_state.get("review_sim_notice"):
         st.success(str(st.session_state.pop("review_sim_notice")))
+    if st.session_state.get("review_sim_warning"):
+        st.warning(str(st.session_state.pop("review_sim_warning")))
 
     st.divider()
     st.markdown("<div id='clients-sous-jacents'></div>", unsafe_allow_html=True)
@@ -3055,13 +3348,17 @@ def sync_view_state_from_query_params() -> None:
     siren = str(query_params.get("siren", "")).strip()
 
     if view == "analyse":
+        clear_ephemeral_state_if_view_changes("analysis")
         st.session_state["cm_view"] = "analysis"
     elif view in {"dates-revue", "dates_revue", "datesrevue", "planning"}:
+        clear_ephemeral_state_if_view_changes("review_dates")
         st.session_state["cm_view"] = "review_dates"
     elif view in {"revues-simulations", "revues_simulations", "review-simulations", "review_simulations", "simulations"}:
+        clear_ephemeral_state_if_view_changes("review_simulations")
         st.session_state["cm_view"] = "review_simulations"
 
     if view == "client" and societe_id and siren:
+        clear_ephemeral_state_if_view_changes("client")
         st.session_state["cm_view"] = "client"
         st.session_state["cm_client_societe"] = societe_id
         st.session_state["cm_client_siren"] = siren
@@ -3308,6 +3605,7 @@ def open_client_detail(societe_id: str, siren: str) -> None:
     current_view = st.session_state.get("cm_view", "portfolio")
     if current_view == "client":
         current_view = st.session_state.get("cm_previous_view", "portfolio")
+    clear_ephemeral_state_if_view_changes("client")
     st.session_state["cm_previous_view"] = current_view or "portfolio"
     st.session_state["cm_view"] = "client"
     st.session_state["cm_client_societe"] = societe_id
@@ -3315,7 +3613,9 @@ def open_client_detail(societe_id: str, siren: str) -> None:
 
 
 def return_from_client() -> None:
-    st.session_state["cm_view"] = st.session_state.get("cm_previous_view", "portfolio") or "portfolio"
+    target_view = st.session_state.get("cm_previous_view", "portfolio") or "portfolio"
+    clear_ephemeral_state_if_view_changes(str(target_view))
+    st.session_state["cm_view"] = target_view
     st.session_state.pop("cm_client_societe", None)
     st.session_state.pop("cm_client_siren", None)
     st.query_params.clear()
@@ -3723,21 +4023,25 @@ def render_primary_navigation(current_view: str) -> str:
 
 
 def open_analysis_view() -> None:
+    clear_ephemeral_state_if_view_changes("analysis")
     st.session_state["cm_view"] = "analysis"
     st.query_params.clear()
 
 
 def open_review_dates_view() -> None:
+    clear_ephemeral_state_if_view_changes("review_dates")
     st.session_state["cm_view"] = "review_dates"
     st.query_params.clear()
 
 
 def open_review_simulations_view() -> None:
+    clear_ephemeral_state_if_view_changes("review_simulations")
     st.session_state["cm_view"] = "review_simulations"
     st.query_params.clear()
 
 
 def open_portfolio_view() -> None:
+    clear_ephemeral_state_if_view_changes("portfolio")
     st.session_state["cm_view"] = "portfolio"
     st.query_params.clear()
 
