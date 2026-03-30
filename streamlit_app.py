@@ -3831,6 +3831,22 @@ def render_analysis_screen(portfolio: pd.DataFrame, indicators: pd.DataFrame) ->
         )
 
 
+def render_user_header(user: dict, selected_societies: list[str], total_societies: int) -> None:
+    manifest = load_manifest()
+    with st.sidebar:
+        st.markdown("### Session")
+        st.write("**Utilisateur :** {}".format(user["display_name"]))
+        st.write("**Rôle :** {}".format(user["role"]))
+        st.write("**Sociétés sélectionnées :** {} / {}".format(len(selected_societies), total_societies))
+        if manifest:
+            st.write(
+                "**Jeu actif :** {}".format(
+                    format_manifest_date(manifest.get("published_at_utc"))
+                )
+            )
+        logout_button()
+
+
 def main() -> None:
     st.set_page_config(page_title=PAGE_TITLE, layout="wide")
     inject_brand_theme()
