@@ -19,13 +19,32 @@ import numpy as np
 import pandas as pd
 import altair as alt
 import streamlit as st
-from reportlab.lib import colors
-from reportlab.lib.pagesizes import A4
-from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
-from reportlab.lib.units import mm
-from reportlab.pdfbase import pdfmetrics
-from reportlab.pdfbase.ttfonts import TTFont
-from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+
+REPORTLAB_AVAILABLE = True
+REPORTLAB_IMPORT_ERROR = ""
+try:
+    from reportlab.lib import colors
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
+    from reportlab.lib.units import mm
+    from reportlab.pdfbase import pdfmetrics
+    from reportlab.pdfbase.ttfonts import TTFont
+    from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+except Exception as exc:
+    REPORTLAB_AVAILABLE = False
+    REPORTLAB_IMPORT_ERROR = str(exc)
+    colors = None
+    A4 = None
+    ParagraphStyle = None
+    getSampleStyleSheet = None
+    mm = None
+    pdfmetrics = None
+    TTFont = None
+    Paragraph = None
+    SimpleDocTemplate = None
+    Spacer = None
+    Table = None
+    TableStyle = None
 
 PAGE_TITLE = "CLASSIFICATION MANAGEMENT"
 APP_SUBTITLE = "Pilotage du portefeuille, gouvernance des risques et supervision multi-société"
@@ -103,6 +122,10 @@ REVIEW_SIM_PDF_FONT_REGULAR = "CMDejaVuSans"
 REVIEW_SIM_PDF_FONT_BOLD = "CMDejaVuSans-Bold"
 GEMINI_BASE_SOURCE_PREFIX = "Base source :: "
 GEMINI_INDICATORS_SOURCE_PREFIX = "Indicateurs source :: "
+PDF_DEPENDENCY_ERROR_MESSAGE = (
+    "Génération PDF indisponible : la dépendance Python 'reportlab' n'est pas installée sur l'environnement de déploiement. "
+    "Ajoutez 'reportlab' dans requirements.txt puis redéployez l'application."
+)
 VIGILANCE_RANK = {label: idx for idx, label in enumerate(VIGILANCE_ORDER)}
 REVIEW_OBJECTIVES_BY_VIGILANCE = {
     "Vigilance Critique": (
@@ -2304,6 +2327,8 @@ def merge_review_row_with_source_data(row: pd.Series, source_df: pd.DataFrame | 
 def ensure_review_simulation_pdf_fonts() -> tuple[str, str]:
     regular_font = "Helvetica"
     bold_font = "Helvetica-Bold"
+    if not REPORTLAB_AVAILABLE or pdfmetrics is None or TTFont is None:
+        return regular_font, bold_font
     try:
         if REVIEW_SIM_PDF_FONT_REGULAR not in pdfmetrics.getRegisteredFontNames():
             pdfmetrics.registerFont(TTFont(REVIEW_SIM_PDF_FONT_REGULAR, "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"))
@@ -2317,6 +2342,8 @@ def ensure_review_simulation_pdf_fonts() -> tuple[str, str]:
 
 
 def review_simulation_pdf_styles() -> dict[str, ParagraphStyle]:
+    if not REPORTLAB_AVAILABLE or colors is None or getSampleStyleSheet is None or ParagraphStyle is None:
+        raise ModuleNotFoundError(PDF_DEPENDENCY_ERROR_MESSAGE)
     regular_font, bold_font = ensure_review_simulation_pdf_fonts()
     base_styles = getSampleStyleSheet()
     primary_color = colors.HexColor(PRIMARY_COLOR)
@@ -2551,6 +2578,8 @@ def write_review_simulation_pdf(
     source_df: pd.DataFrame | None = None,
     prompt_template: str = "",
 ) -> Path | None:
+    if not REPORTLAB_AVAILABLE:
+        raise ModuleNotFoundError(PDF_DEPENDENCY_ERROR_MESSAGE)
     explain_text = str(row.get("Explique moi", "") or "").strip()
     if not explain_text:
         return None
@@ -2604,6 +2633,8 @@ def sync_review_simulation_pdfs(
 ) -> tuple[int, list[str]]:
     if rows_df is None or rows_df.empty:
         return 0, []
+    if not REPORTLAB_AVAILABLE:
+        return 0, [PDF_DEPENDENCY_ERROR_MESSAGE]
 
     generated = 0
     errors: list[str] = []
@@ -3335,8 +3366,11 @@ def render_review_simulations_screen(portfolio: pd.DataFrame, user: dict) -> Non
     if st.session_state.get("review_sim_warning"):
         st.warning(str(st.session_state.pop("review_sim_warning")))
 
+    if not REPORTLAB_AVAILABLE:
+        st.info(PDF_DEPENDENCY_ERROR_MESSAGE)
+
     pdf_items = review_simulation_available_pdfs(working_df, selected_rows)
-    if pdf_items:
+    if REPORTLAB_AVAILABLE and pdf_items:
         with st.expander("PDF structurés disponibles pour la sélection", expanded=False):
             st.caption("Chaque PDF est régénéré automatiquement quand la colonne « Explique moi » est renseignée ou mise à jour pour le SIREN concerné.")
             if len(pdf_items) > 1:
