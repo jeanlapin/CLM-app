@@ -615,6 +615,18 @@ def inject_brand_theme() -> None:
             text-align: center;
         }}
 
+
+        .cm-analysis-main-table thead th.cm-calculated-col {{
+            background: linear-gradient(135deg, #7A5A00, #A97610);
+            color: #FFFFFF;
+        }}
+
+        .cm-analysis-main-table tbody td.cm-calculated-col {{
+            background: rgba(255, 244, 214, 0.96);
+            color: #7A5A00;
+            font-weight: 600;
+        }}
+
         .cm-analysis-params {{
             background: rgba(255,255,255,0.72);
             border: 1px solid var(--cm-border);
@@ -2912,7 +2924,7 @@ def build_analysis_main_table(
         "EDD_ouvertes": "EDD ouvertes",
         "Sans_prochaine_revue": "Sans prochaine revue",
         "Justificatifs_incomplets": "Justificatifs incomplets",
-        "Ecarts_gouvernance": "Écarts gouvernance",
+        "Ecarts_gouvernance": "Alertes de gouvernance (calculé)",
     })
 
     if measure_key in {"clients", "share"}:
@@ -2925,7 +2937,7 @@ def build_analysis_main_table(
             "EDD ouvertes",
             "Sans prochaine revue",
             "Justificatifs incomplets",
-            "Écarts gouvernance",
+            "Alertes de gouvernance (calculé)",
         ]].copy()
         sort_col = "Clients" if sort_desc else line_label
         ascending = False if sort_desc else True
@@ -2945,7 +2957,7 @@ def build_analysis_main_table(
         "EDD ouvertes",
         "Sans prochaine revue",
         "Justificatifs incomplets",
-        "Écarts gouvernance",
+        "Alertes de gouvernance (calculé)",
     ]].copy()
     sort_col = safe_measure_label if sort_desc else line_label
     ascending = False if sort_desc else True
@@ -3439,7 +3451,7 @@ def render_analysis_kpis(df: pd.DataFrame) -> None:
     c2.metric("Vigilance renforcée", vigilance_renforcee)
     c3.metric("Risque avéré", risque_avere)
     c4.metric("EDD concernées", edd_concernees)
-    c5.metric("Écarts gouvernance", ecarts_gouvernance)
+    c5.metric("Alertes de gouvernance (calculé)", ecarts_gouvernance)
     c6.metric("Historique disponible", historique_disponible)
 
     if total and "Vigilance Date de mise à jour" in df.columns:
@@ -3478,7 +3490,11 @@ def render_analysis_main_table(df: pd.DataFrame) -> None:
     display_df = format_table_for_display(df)
     html = ["<div class='cm-analysis-main-wrap'><table class='cm-analysis-main-table'><thead><tr>"]
     for col in display_df.columns:
-        html.append(f"<th>{escape(str(col))}</th>")
+        header_classes = []
+        if str(col) == "Alertes de gouvernance (calculé)":
+            header_classes.append("cm-calculated-col")
+        header_class_attr = f" class='{" ".join(header_classes)}'" if header_classes else ""
+        html.append(f"<th{header_class_attr}>{escape(str(col))}</th>")
     html.append("</tr></thead><tbody>")
 
     for row_idx, row in display_df.iterrows():
@@ -3489,6 +3505,8 @@ def render_analysis_main_table(df: pd.DataFrame) -> None:
             original_value = df.iloc[row_idx][col] if col in df.columns else value
             if idx == 0:
                 classes.append("cm-first-col")
+            if str(col) == "Alertes de gouvernance (calculé)":
+                classes.append("cm-calculated-col")
             if isinstance(original_value, (int, float, np.integer, np.floating)) and not isinstance(original_value, bool):
                 classes.append("cm-number")
             class_attr = f" class='{' '.join(classes)}'" if classes else ""
