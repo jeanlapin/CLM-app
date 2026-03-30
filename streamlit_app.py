@@ -3141,37 +3141,20 @@ def render_review_simulations_screen(portfolio: pd.DataFrame, user: dict) -> Non
         st.info("Aucun SIREN disponible pour préparer une revue sur le périmètre courant.")
         return
 
-    review_types = ["Tous"] + list(dict.fromkeys(REVIEW_TYPE_BY_VIGILANCE.values()))
-    type_to_vigilance = {v: k for k, v in REVIEW_TYPE_BY_VIGILANCE.items()}
-    if st.session_state.get("review_sim_type") not in review_types:
-        st.session_state["review_sim_type"] = "Tous"
+    objective_1 = "Préparer les consignes de revue adaptées au niveau de vigilance, aux alertes actives et au statut EDD."
+    objective_2 = "Conserver pour chaque SIREN une synthèse exploitable, une tendance, un statut estimé après remédiation et un PDF structuré."
+    prompt_value = (
+        "Tu es un analyste conformité. Pour chaque SIREN sélectionné, prépare les consignes de revue en analysant l’ensemble des données "
+        "de base source, l’ensemble des indicateurs source, ainsi que le contexte de simulation (statut de vigilance réel, alertes calculées, "
+        "risque, statut EDD et dates de revue). La réponse doit contenir : diagnostic, actions prioritaires, justificatifs à demander, "
+        "points de contrôle, et statut de vigilance estimé après remédiation."
+    )
 
     top_left, top_right = st.columns([2.25, 3.75])
     with top_left:
-        selected_review_type = st.selectbox(
-            "Type de revue",
-            options=review_types,
-            key="review_sim_type",
-            help="Le type de revue dépend du régime de vigilance. Sélectionnez un type pour concentrer la préparation sur les dossiers concernés.",
-        )
-        if selected_review_type == "Tous":
-            objective_1 = "Préparer les consignes de revue adaptées au niveau de vigilance, aux alertes actives et au statut EDD."
-            objective_2 = "Conserver pour chaque SIREN une synthèse exploitable, une tendance et un statut de vigilance estimé après remédiation."
-            prompt_value = (
-                "Tu es un analyste conformité. Pour chaque SIREN sélectionné, prépare les consignes de revue en analysant l’ensemble des données "
-                "de base source, l’ensemble des indicateurs source, ainsi que le contexte de simulation (statut de vigilance réel, alertes calculées, "
-                "risque, statut EDD et dates de revue). La réponse doit contenir : diagnostic, actions prioritaires, justificatifs à demander, "
-                "points de contrôle, et statut de vigilance estimé après remédiation."
-            )
-            kicker = "Tous les types"
-        else:
-            selected_vigilance_for_prompt = type_to_vigilance.get(selected_review_type, "Vigilance Modérée")
-            objective_1, objective_2 = review_objectives_for_vigilance(selected_vigilance_for_prompt)
-            prompt_value = build_generic_review_prompt(selected_vigilance_for_prompt)
-            kicker = selected_review_type
         st.markdown(
             "<div class='cm-analysis-mode-shell'>"
-            f"<div class='cm-analysis-mode-kicker'>{escape(kicker)}</div>"
+            "<div class='cm-analysis-mode-kicker'>Préparation multi-dossiers</div>"
             "<div class='cm-analysis-mode-title'>Objectifs de la revue</div>"
             f"<div class='cm-analysis-mode-note'>1. {escape(objective_1)}<br>2. {escape(objective_2)}</div>"
             "</div>",
@@ -3202,8 +3185,6 @@ def render_review_simulations_screen(portfolio: pd.DataFrame, user: dict) -> Non
     ).strip()
 
     working_df = base_df.copy()
-    if selected_review_type != "Tous":
-        working_df = working_df[working_df["Type de revue"].astype(str).eq(selected_review_type)].copy()
     if search_term:
         mask = (
             working_df["SIREN"].astype(str).str.contains(search_term, case=False, na=False)
@@ -3213,7 +3194,7 @@ def render_review_simulations_screen(portfolio: pd.DataFrame, user: dict) -> Non
         working_df = working_df[mask].copy()
 
     if working_df.empty:
-        st.info("Aucun SIREN ne correspond au type de revue et au critère de recherche retenus.")
+        st.info("Aucun SIREN ne correspond au critère de recherche retenu.")
         return
 
     render_review_status_gauges(working_df)
@@ -3240,26 +3221,13 @@ def render_review_simulations_screen(portfolio: pd.DataFrame, user: dict) -> Non
         st.info("Aucun SIREN ne correspond au filtre de statut de vigilance retenu.")
         return
 
-    hint_cols = st.columns([6.0, 2.4, 2.0])
-    with hint_cols[0]:
-        st.markdown(
-            "<div class='cm-analysis-hint-text'>Sélectionnez une ou plusieurs lignes du tableau pour préparer un lot, modifier le statut estimé et piloter les clients sous-jacents. La tendance est matérialisée par une icône colorée : 🔴 ▲ aggravation, 🟠 • stabilité, 🟢 ▼ amélioration.</div>",
-            unsafe_allow_html=True,
-        )
-    with hint_cols[1]:
-        st.markdown(
-            "<div class='cm-analysis-hint-action'><a class='cm-analysis-jump-btn' href='#clients-sous-jacents'>Voir les clients sous-jacents</a></div>",
-            unsafe_allow_html=True,
-        )
-    with hint_cols[2]:
-        st.markdown("<div style='height:0.15rem'></div>", unsafe_allow_html=True)
-        if st.button("Effacer la sélection", key="review_sim_clear_selection", type="secondary", use_container_width=True):
-            st.session_state["review_sim_selected_keys"] = []
-            st.session_state["review_sim_table_version"] = int(st.session_state.get("review_sim_table_version", 0)) + 1
-            st.rerun()
+    st.markdown(
+        "<div class='cm-analysis-hint-text'>Sélectionnez une ou plusieurs lignes du tableau pour préparer un lot, modifier le statut estimé, piloter les clients sous-jacents et récupérer les PDF. La tendance est matérialisée par une icône colorée : 🔴 ▲ aggravation, 🟠 • stabilité, 🟢 ▼ amélioration.</div>",
+        unsafe_allow_html=True,
+    )
 
     table_version = int(st.session_state.get("review_sim_table_version", 0))
-    table_selected_rows = render_review_simulation_table(working_df, key=f"review_sim_table_{selected_review_type}_{table_version}")
+    table_selected_rows = render_review_simulation_table(working_df, key=f"review_sim_table_{table_version}")
 
     if table_selected_rows:
         st.session_state["review_sim_selected_keys"] = review_sim_selection_keys(working_df, table_selected_rows)
@@ -3267,30 +3235,86 @@ def render_review_simulations_screen(portfolio: pd.DataFrame, user: dict) -> Non
         st.session_state["review_sim_selected_keys"] = []
 
     selected_keys = st.session_state.get("review_sim_selected_keys", [])
+    has_saved_selection = bool(selected_keys)
     selected_rows = review_sim_rows_from_selection(working_df, selected_keys)
     selected_count = len(selected_rows)
+    selected_df = working_df.iloc[selected_rows].copy() if selected_rows else working_df.iloc[0:0].copy()
+    pdf_items = review_simulation_available_pdfs(working_df, selected_rows)
 
-    c1, c2, c3 = st.columns([3.1, 2.2, 1.5])
-    with c1:
-        st.caption("Le statut de vigilance estimé peut être ajusté pour toutes les lignes sélectionnées. Les jauges estimées se recalculent après chaque mise à jour.")
-        status_options = list(VIGILANCE_ORDER)
-        default_value = "Vigilance Modérée"
-        if selected_rows:
-            current_values = working_df.iloc[selected_rows][REVIEW_SIM_EST_LABEL].astype(str).dropna().unique().tolist()
-            if len(current_values) == 1 and current_values[0] in status_options:
-                default_value = current_values[0]
-            else:
-                first_value = str(working_df.iloc[selected_rows[0]][REVIEW_SIM_EST_LABEL]).strip()
-                if first_value in status_options:
-                    default_value = first_value
+    status_options = list(VIGILANCE_ORDER)
+    default_value = "Vigilance Modérée"
+    if selected_rows:
+        current_values = working_df.iloc[selected_rows][REVIEW_SIM_EST_LABEL].astype(str).dropna().unique().tolist()
+        if len(current_values) == 1 and current_values[0] in status_options:
+            default_value = current_values[0]
+        else:
+            first_value = str(working_df.iloc[selected_rows[0]][REVIEW_SIM_EST_LABEL]).strip()
+            if first_value in status_options:
+                default_value = first_value
+
+    st.markdown('<h3 class="cm-section-title">Centre d’actions de la sélection</h3>', unsafe_allow_html=True)
+    if selected_count:
+        preview_labels = []
+        for _, row in selected_df[["SIREN", "Dénomination"]].head(3).iterrows():
+            preview_labels.append(f"{row.get('SIREN', '')} - {row.get('Dénomination', '')}")
+        preview_text = " • ".join(preview_labels)
+        if selected_count > 3:
+            preview_text += f" • +{selected_count - 3} autre(s)"
+        st.caption(
+            f"{selected_count} ligne(s) sélectionnée(s). PDF disponibles : {len(pdf_items)}. "
+            f"Sélection courante : {preview_text}"
+        )
+    elif has_saved_selection:
+        st.caption("La sélection mémorisée n’est plus visible avec les filtres courants. Effacez-la ou ajustez les filtres pour réactiver les actions sur ces SIREN.")
+    else:
+        st.caption("Aucune ligne sélectionnée. Sélectionnez au moins un SIREN pour activer les actions ci-dessous.")
+
+    action_nav_col, action_clear_col, action_csv_col = st.columns([1.8, 1.3, 1.4])
+    with action_nav_col:
+        st.markdown(
+            "<div class='cm-analysis-hint-action'><a class='cm-analysis-jump-btn' href='#clients-sous-jacents'>Voir les clients sous-jacents</a></div>",
+            unsafe_allow_html=True,
+        )
+    with action_clear_col:
+        if st.button(
+            "Effacer la sélection",
+            key="review_sim_clear_selection",
+            type="secondary",
+            use_container_width=True,
+            disabled=(not has_saved_selection),
+        ):
+            st.session_state["review_sim_selected_keys"] = []
+            st.session_state["review_sim_table_version"] = int(st.session_state.get("review_sim_table_version", 0)) + 1
+            st.rerun()
+    with action_csv_col:
+        st.download_button(
+            label="Exporter le CSV",
+            data=dataframe_to_csv_bytes(build_review_simulation_export_dataframe(working_df)),
+            file_name="revues_et_simulations.csv",
+            mime="text/csv",
+            type="secondary",
+            use_container_width=True,
+            key="review_sim_export_csv",
+        )
+
+    status_col, status_button_col = st.columns([3.2, 1.5])
+    with status_col:
         manual_status = st.selectbox(
             "Statut de vigilance estimé à appliquer aux lignes sélectionnées",
             options=status_options,
             index=status_options.index(default_value),
-            key=f"review_sim_manual_status_{selected_review_type}",
+            key="review_sim_manual_status",
             disabled=(selected_count == 0),
         )
-        if st.button("Mettre à jour le statut estimé", type="secondary", key="review_sim_apply_manual_status", use_container_width=True, disabled=(selected_count == 0)):
+    with status_button_col:
+        st.markdown("<div style='height:1.85rem'></div>", unsafe_allow_html=True)
+        if st.button(
+            "Mettre à jour le statut estimé",
+            type="secondary",
+            key="review_sim_apply_manual_status",
+            use_container_width=True,
+            disabled=(selected_count == 0),
+        ):
             updated_df, updated_count = apply_manual_estimated_status(working_df, selected_rows, manual_status)
             pdf_count, pdf_errors = persist_review_simulation_subset(updated_df, selected_rows)
             notice = f"{updated_count} SIREN mis à jour avec le statut estimé « {manual_status} »."
@@ -3300,11 +3324,9 @@ def render_review_simulations_screen(portfolio: pd.DataFrame, user: dict) -> Non
             if pdf_errors:
                 st.session_state["review_sim_warning"] = " | ".join(pdf_errors[:3])
             st.rerun()
-    with c2:
-        st.markdown(
-            f"<div class='cm-analysis-mode-note'><strong>{selected_count}</strong> ligne(s) sélectionnée(s)</div>",
-            unsafe_allow_html=True,
-        )
+
+    gemini_col, single_pdf_col, zip_pdf_col = st.columns([2.4, 1.5, 1.5])
+    with gemini_col:
         gemini_button_disabled = (selected_count == 0) or (not gemini_api_key)
         if st.button(
             f"Lancer Gemini sur la sélection (max {GEMINI_MAX_BATCH_SIZE})",
@@ -3349,53 +3371,52 @@ def render_review_simulations_screen(portfolio: pd.DataFrame, user: dict) -> Non
                     st.session_state["review_sim_warning"] = preview_errors
             st.rerun()
         if not gemini_api_key:
-            st.caption("Saisissez la clé API Gemini en haut de l’écran pour activer le traitement du lot.")
-    with c3:
-        st.download_button(
-            label="Exporter (.csv)",
-            data=dataframe_to_csv_bytes(build_review_simulation_export_dataframe(working_df)),
-            file_name="revues_et_simulations.csv",
-            mime="text/csv",
-            type="secondary",
-            use_container_width=True,
-            key="review_sim_export_csv",
-        )
+            st.caption("Saisissez la clé API Gemini en haut de l’écran pour activer cette action.")
+    with single_pdf_col:
+        if REPORTLAB_AVAILABLE and len(pdf_items) == 1:
+            pdf_item = pdf_items[0]
+            pdf_path = pdf_item.get("path")
+            if isinstance(pdf_path, Path) and pdf_path.exists():
+                st.download_button(
+                    label="Récupérer le PDF",
+                    data=pdf_path.read_bytes(),
+                    file_name=str(pdf_item.get("download_name", "revue_simulation.pdf")),
+                    mime="application/pdf",
+                    type="secondary",
+                    use_container_width=True,
+                    key="review_sim_single_pdf",
+                )
+            else:
+                st.button("Récupérer le PDF", disabled=True, use_container_width=True, key="review_sim_single_pdf_disabled")
+        else:
+            st.button("Récupérer le PDF", disabled=True, use_container_width=True, key="review_sim_single_pdf_placeholder")
+            if selected_count != 1:
+                st.caption("Sélectionnez un seul SIREN avec un PDF disponible.")
+            elif REPORTLAB_AVAILABLE:
+                st.caption("Le PDF sera disponible après une simulation renseignant « Explique moi ».")
+    with zip_pdf_col:
+        if REPORTLAB_AVAILABLE and pdf_items:
+            st.download_button(
+                label="Exporter les PDF",
+                data=review_simulation_pdfs_zip_bytes(pdf_items),
+                file_name="revues_simulations_selection.zip",
+                mime="application/zip",
+                type="secondary",
+                use_container_width=True,
+                key="review_sim_pdf_zip",
+            )
+        else:
+            st.button("Exporter les PDF", disabled=True, use_container_width=True, key="review_sim_pdf_zip_placeholder")
+            if REPORTLAB_AVAILABLE:
+                st.caption("Aucun PDF disponible sur la sélection courante.")
+
+    if not REPORTLAB_AVAILABLE:
+        st.info(PDF_DEPENDENCY_ERROR_MESSAGE)
 
     if st.session_state.get("review_sim_notice"):
         st.success(str(st.session_state.pop("review_sim_notice")))
     if st.session_state.get("review_sim_warning"):
         st.warning(str(st.session_state.pop("review_sim_warning")))
-
-    if not REPORTLAB_AVAILABLE:
-        st.info(PDF_DEPENDENCY_ERROR_MESSAGE)
-
-    pdf_items = review_simulation_available_pdfs(working_df, selected_rows)
-    if REPORTLAB_AVAILABLE and pdf_items:
-        with st.expander("PDF structurés disponibles pour la sélection", expanded=False):
-            st.caption("Chaque PDF est régénéré automatiquement quand la colonne « Explique moi » est renseignée ou mise à jour pour le SIREN concerné.")
-            if len(pdf_items) > 1:
-                st.download_button(
-                    label="Télécharger tous les PDF sélectionnés (.zip)",
-                    data=review_simulation_pdfs_zip_bytes(pdf_items),
-                    file_name="revues_simulations_selection.zip",
-                    mime="application/zip",
-                    type="secondary",
-                    use_container_width=True,
-                    key=f"review_sim_pdf_zip_{selected_review_type}",
-                )
-            for idx, item in enumerate(pdf_items):
-                path = item.get("path")
-                if not isinstance(path, Path) or not path.exists():
-                    continue
-                st.download_button(
-                    label=f"Télécharger {item.get('label', 'PDF')}",
-                    data=path.read_bytes(),
-                    file_name=str(item.get("download_name", "revue_simulation.pdf")),
-                    mime="application/pdf",
-                    type="secondary",
-                    use_container_width=True,
-                    key=f"review_sim_pdf_{selected_review_type}_{idx}",
-                )
 
     st.divider()
     st.markdown("<div id='clients-sous-jacents'></div>", unsafe_allow_html=True)
@@ -3413,9 +3434,8 @@ def render_review_simulations_screen(portfolio: pd.DataFrame, user: dict) -> Non
             detail_df,
             height=460,
             hide_index=True,
-            key_prefix="review_sim_detail_clients",
+            key="review_sim_detail_table",
         )
-
 
 def build_dataset_cache_signature() -> str:
     manifest = load_manifest() or {}
