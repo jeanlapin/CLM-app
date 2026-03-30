@@ -90,6 +90,8 @@ GEMINI_MODEL_DEFAULT = "gemini-2.5-flash"
 GEMINI_MAX_BATCH_SIZE = 10
 GEMINI_API_TIMEOUT_SECONDS = 60
 REVIEW_SIM_GEMINI_KEY_STATE = "review_sim_gemini_api_key"
+GEMINI_BASE_SOURCE_PREFIX = "Base source :: "
+GEMINI_INDICATORS_SOURCE_PREFIX = "Indicateurs source :: "
 VIGILANCE_RANK = {label: idx for idx, label in enumerate(VIGILANCE_ORDER)}
 REVIEW_OBJECTIVES_BY_VIGILANCE = {
     "Vigilance Critique": (
@@ -1816,6 +1818,144 @@ def format_short_date(value) -> str:
 
 
 
+def prompt_json_value(value: object) -> object:
+    if isinstance(value, dict):
+        return {str(k): prompt_json_value(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple, set)):
+        return [prompt_json_value(v) for v in value]
+    if value is None:
+        return None
+    if isinstance(value, np.generic):
+        value = value.item()
+    if isinstance(value, (pd.Timestamp, datetime)):
+        if pd.isna(value):
+            return None
+        ts = pd.Timestamp(value)
+        return ts.strftime("%Y-%m-%d") if ts.time() == datetime.min.time() else ts.isoformat()
+    try:
+        if pd.isna(value):
+            return None
+    except Exception:
+        pass
+    if isinstance(value, str):
+        compact = re.sub(r"\s+", " ", value).strip()
+        return compact or None
+    return value
+
+
+
+def row_payload_from_prefix(row: pd.Series, prefix: str) -> dict[str, object]:
+    payload: dict[str, object] = {}
+    for col in row.index:
+        name = str(col)
+        if not name.startswith(prefix):
+            continue
+        payload[name[len(prefix):]] = prompt_json_value(row.get(col))
+    return payload
+
+
+
+def row_payload_from_columns(row: pd.Series, columns: list[str]) -> dict[str, object]:
+    payload: dict[str, object] = {}
+    for col in columns:
+        if col in row.index:
+            payload[str(col)] = prompt_json_value(row.get(col))
+    return payload
+
+
+
+def build_gemini_source_payload(row: pd.Series) -> dict[str, object]:
+    context_columns = [
+        SOC_COL,
+        "SIREN",
+        "Dénomination",
+        "Type de revue",
+        REVIEW_SIM_REAL_LABEL,
+        "Vigilance",
+        "Risque",
+        "Statut EDD",
+        "Date dernière revue",
+        "Date prochaine revue",
+        "Alertes actives",
+        "Motifs",
+        "Nb historique",
+        "Score priorité",
+    ]
+    base_source_payload = row_payload_from_prefix(row, GEMINI_BASE_SOURCE_PREFIX)
+    if not base_source_payload:
+        base_source_payload = row_payload_from_columns(
+            row,
+            [
+                SOC_COL,
+                "SIREN",
+                "Dénomination",
+                "Pays de résidence",
+                "Segment",
+                "Produit(service) principal",
+                "Canal d’opérations principal 12 mois",
+                "Statut EDD",
+                "Flag justificatif complet",
+                "Analyste",
+                "Valideur",
+                "Date dernière revue",
+                "Date prochaine revue",
+                "Risque",
+            ],
+        )
+    indicators_source_payload = row_payload_from_prefix(row, GEMINI_INDICATORS_SOURCE_PREFIX)
+    if not indicators_source_payload:
+        indicators_source_payload = row_payload_from_columns(
+            row,
+            [
+                SOC_COL,
+                "SIREN",
+                "Vigilance Date de mise à jour",
+                "Cash intensité Statut",
+                "Nb Risque avéré",
+                "Nb Risque potentiel",
+                "Nb Risque mitigé",
+                "Nb Risque levé",
+                "Nb Non calculable",
+            ],
+        )
+    return {
+        "contexte_simulation": row_payload_from_columns(row, context_columns),
+        "alertes_calculees_actives": build_row_alert_labels(row),
+        "donnees_base_source": base_source_payload,
+        "indicateurs_source": indicators_source_payload,
+    }
+
+
+
+def build_review_simulation_source_dataset(
+    portfolio_df: pd.DataFrame,
+    base_source_df: pd.DataFrame,
+    indicators_source_df: pd.DataFrame,
+) -> pd.DataFrame:
+    portfolio_source = portfolio_df.copy()
+    portfolio_source[SOC_COL] = normalize_societe_id(portfolio_source[SOC_COL])
+    portfolio_source["SIREN"] = normalize_siren(portfolio_source["SIREN"])
+
+    base_source = base_source_df.copy()
+    base_source[SOC_COL] = normalize_societe_id(base_source[SOC_COL])
+    base_source["SIREN"] = normalize_siren(base_source["SIREN"])
+    base_source = base_source.rename(
+        columns={col: f"{GEMINI_BASE_SOURCE_PREFIX}{col}" for col in base_source.columns if col not in KEY_COLUMNS}
+    )
+
+    indicators_source = indicators_source_df.copy()
+    indicators_source[SOC_COL] = normalize_societe_id(indicators_source[SOC_COL])
+    indicators_source["SIREN"] = normalize_siren(indicators_source["SIREN"])
+    indicators_source = indicators_source.rename(
+        columns={col: f"{GEMINI_INDICATORS_SOURCE_PREFIX}{col}" for col in indicators_source.columns if col not in KEY_COLUMNS}
+    )
+
+    merged = portfolio_source.merge(base_source, how="left", on=KEY_COLUMNS)
+    merged = merged.merge(indicators_source, how="left", on=KEY_COLUMNS)
+    return merged
+
+
+
 def build_row_alert_labels(row: pd.Series) -> list[str]:
     labels: list[str] = []
     if int(row.get("Alerte justificatif incomplet", 0) or 0) == 1:
@@ -1847,10 +1987,10 @@ def build_generic_review_prompt(vigilance: str) -> str:
         f"Tu es un analyste conformité. Prépare les consignes de revue pour un dossier classé '{vigilance}'.\n"
         f"Type de revue : {review_type}.\n"
         f"Objectifs : 1) {objective_1} 2) {objective_2}\n\n"
-        "Pour le SIREN {SIREN}, à partir des informations suivantes : dénomination, vigilance, risque, EDD, "
-        "date de prochaine revue et alertes calculées actives, rédige des consignes opérationnelles de revue.\n"
-        "La réponse doit contenir : diagnostic bref, actions prioritaires, justificatifs à demander, points de contrôle, "
-        "et statut de vigilance estimé après remédiation."
+        "Pour le SIREN {SIREN}, analyse l’ensemble des données transmises : toutes les données de base source, "
+        "tous les indicateurs source, ainsi que le contexte de simulation (vigilance, risque, EDD, alertes actives, dates de revue).\n"
+        "Rédige ensuite des consignes opérationnelles de revue. La réponse doit contenir : diagnostic bref, actions prioritaires, "
+        "justificatifs à demander, points de contrôle, et statut de vigilance estimé après remédiation."
     )
 
 
@@ -1937,10 +2077,16 @@ def build_gemini_review_prompt(base_prompt: str, row: pd.Series) -> str:
         prompt_parts.append("Consignes générales à respecter :\n" + generic_prompt)
     prompt_parts.append("Contexte détaillé du dossier :\n" + build_row_review_prompt(row))
     prompt_parts.append(
+        "Données source complètes du SIREN (analyse exhaustivement toutes les colonnes des objets JSON ci-dessous avant de conclure) :\n"
+        + json.dumps(build_gemini_source_payload(row), ensure_ascii=False, indent=2)
+    )
+    prompt_parts.append(
         "Réponds exclusivement avec un JSON valide conforme au schéma demandé.\n"
         f"La valeur de 'statut_estime' doit être exactement l’une des suivantes : {', '.join(VIGILANCE_ORDER)}.\n"
         "La valeur de 'explique_moi' doit être rédigée en français, sans markdown, directement exploitable dans une cellule, "
-        "et contenir un diagnostic synthétique, les actions prioritaires, les justificatifs à obtenir et les points de contrôle."
+        "et contenir un diagnostic synthétique, les actions prioritaires, les justificatifs à obtenir et les points de contrôle.\n"
+        "Le diagnostic et le statut estimé doivent être déterminés à partir de l’ensemble des données de base source, "
+        "de l’ensemble des indicateurs source et des alertes calculées, et pas uniquement à partir de leur synthèse."
     )
     return "\n\n".join(prompt_parts)
 
@@ -2053,6 +2199,12 @@ def review_simulation_source_row(row: pd.Series, source_df: pd.DataFrame) -> pd.
             "Risque": row.get("Risque", ""),
             "Statut EDD": row.get("Statut EDD", ""),
             "Date prochaine revue": row.get("Date prochaine revue"),
+            f"{GEMINI_BASE_SOURCE_PREFIX}Dénomination": row.get("Dénomination", ""),
+            f"{GEMINI_BASE_SOURCE_PREFIX}Statut EDD": row.get("Statut EDD", ""),
+            f"{GEMINI_BASE_SOURCE_PREFIX}Date prochaine revue": row.get("Date prochaine revue"),
+            f"{GEMINI_INDICATORS_SOURCE_PREFIX}Vigilance statut": row.get(REVIEW_SIM_REAL_LABEL, row.get("Vigilance", "")),
+            f"{GEMINI_INDICATORS_SOURCE_PREFIX}Vigilance Date de mise à jour": row.get("Vigilance Date de mise à jour"),
+            f"{GEMINI_INDICATORS_SOURCE_PREFIX}Cash intensité Statut": row.get("Cash intensité Statut"),
         })
     return match.iloc[0]
 
@@ -2552,9 +2704,10 @@ def render_review_simulations_screen(portfolio: pd.DataFrame, user: dict) -> Non
             objective_1 = "Préparer les consignes de revue adaptées au niveau de vigilance, aux alertes actives et au statut EDD."
             objective_2 = "Conserver pour chaque SIREN une synthèse exploitable, une tendance et un statut de vigilance estimé après remédiation."
             prompt_value = (
-                "Tu es un analyste conformité. Pour chaque SIREN sélectionné, prépare les consignes de revue à partir du statut de vigilance réel, "
-                "des alertes calculées actives, du risque, du statut EDD et de la date prochaine revue. La réponse doit contenir : diagnostic, "
-                "actions prioritaires, justificatifs à demander, points de contrôle, et statut de vigilance estimé après remédiation."
+                "Tu es un analyste conformité. Pour chaque SIREN sélectionné, prépare les consignes de revue en analysant l’ensemble des données "
+                "de base source, l’ensemble des indicateurs source, ainsi que le contexte de simulation (statut de vigilance réel, alertes calculées, "
+                "risque, statut EDD et dates de revue). La réponse doit contenir : diagnostic, actions prioritaires, justificatifs à demander, "
+                "points de contrôle, et statut de vigilance estimé après remédiation."
             )
             kicker = "Tous les types"
         else:
@@ -2701,9 +2854,8 @@ def render_review_simulations_screen(portfolio: pd.DataFrame, user: dict) -> Non
             use_container_width=True,
             disabled=gemini_button_disabled,
         ):
-            source_df = portfolio.copy()
-            source_df[SOC_COL] = normalize_societe_id(source_df[SOC_COL])
-            source_df["SIREN"] = normalize_siren(source_df["SIREN"])
+            base_source_df, indicators_source_df, _ = load_source_data()
+            source_df = build_review_simulation_source_dataset(portfolio, base_source_df, indicators_source_df)
             with st.spinner("Analyse Gemini en cours sur les lignes sélectionnées…"):
                 updated_df, processed, errors = apply_gemini_review_simulation_batch(
                     working_df,
