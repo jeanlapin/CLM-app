@@ -2098,6 +2098,9 @@ def render_review_status_gauges(df: pd.DataFrame) -> None:
     real_statuses = ["Vigilance Critique", "Vigilance Élevée", "Vigilance Modérée", "Vigilance Allégée"]
     estimated_statuses = ["Vigilance Critique", "Vigilance Élevée"]
 
+    def format_pct(value: float) -> str:
+        return f"{value * 100:.1f}".replace(".", ",") + " %"
+
     def build_card(status_label: str, count: int, total_count: int, kicker: str) -> str:
         pct = (count / total_count) if total_count else 0.0
         bg, fg = status_palette(status_label, "vigilance")
