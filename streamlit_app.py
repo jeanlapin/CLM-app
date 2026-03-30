@@ -3183,7 +3183,7 @@ def render_selectable_analysis_table(
     *,
     key_prefix: str,
     height: int = 420,
-) -> tuple[str, pd.Series | None]:
+) -> tuple[str, list[dict[str, object]] | None]:
     if df is None or df.empty:
         st.info("Aucune donnée à afficher.")
         return "empty", None
@@ -3194,7 +3194,7 @@ def render_selectable_analysis_table(
     hint_left, hint_right, hint_clear = st.columns([6.0, 2.3, 1.5])
     with hint_left:
         st.markdown(
-            "<div class='cm-analysis-hint-text'>Cliquez directement sur une ligne du tableau pour définir le focus analytique et mettre à jour les clients sous-jacents.</div>",
+            "<div class='cm-analysis-hint-text'>Cliquez directement sur une ou plusieurs lignes du tableau pour définir le focus analytique et mettre à jour les clients sous-jacents.</div>",
             unsafe_allow_html=True,
         )
     with hint_right:
@@ -3229,7 +3229,7 @@ def render_selectable_analysis_table(
         column_order=list(display_df.columns),
         column_config=column_config,
         on_select="rerun",
-        selection_mode="single-row",
+        selection_mode="multi-row",
         row_height=40,
         key=f"cm_analysis_select_{key_prefix}_{table_version}",
     )
@@ -3242,9 +3242,13 @@ def render_selectable_analysis_table(
             selected_rows = []
 
     if selected_rows:
-        selected_idx = selected_rows[0]
-        if 0 <= selected_idx < len(raw_df):
-            return "selected", raw_df.iloc[selected_idx]
+        valid_rows = [i for i in selected_rows if 0 <= i < len(raw_df)]
+        if valid_rows:
+            selected_records = raw_df.iloc[valid_rows].to_dict(orient="records")
+            return "selected", selected_records
+
+    if event is not None and "analysis_focus_selection" in st.session_state:
+        return "cleared", None
     return "unchanged", None
 
 
@@ -3875,24 +3879,44 @@ def apply_unified_analysis_table_controls(df: pd.DataFrame) -> pd.DataFrame:
 
 def build_analysis_focus_dataset_from_selection(
     df: pd.DataFrame,
-    selection: dict[str, object] | None,
+    selection: list[dict[str, object]] | dict[str, object] | None,
 ) -> tuple[pd.DataFrame, list[str]]:
     if not selection:
         return pd.DataFrame(), []
 
-    detail = df.copy()
+    selections = selection if isinstance(selection, list) else [selection]
+    base = df.copy()
+    detail_frames: list[pd.DataFrame] = []
     focus_parts: list[str] = []
-    for label, source in ANALYSIS_FILTER_COLUMNS:
-        if label not in selection:
-            continue
-        value = "Non renseigné" if pd.isna(selection[label]) or str(selection[label]).strip() == "" else str(selection[label])
-        detail = detail[
-            normalize_analysis_category(detail.get(source, pd.Series(index=detail.index, dtype="object"))) == value
-        ]
-        focus_parts.append(f"{label} = {value}")
 
-    detail = detail.copy()
-    detail["Motif de présence"] = " | ".join(focus_parts) if focus_parts else "Périmètre filtré"
+    for item in selections:
+        row_mask = pd.Series(True, index=base.index)
+        local_parts: list[str] = []
+        for label, source in ANALYSIS_FILTER_COLUMNS:
+            if label not in item:
+                continue
+            raw_value = item.get(label)
+            value = "Non renseigné" if pd.isna(raw_value) or str(raw_value).strip() == "" else str(raw_value)
+            row_mask = row_mask & (
+                normalize_analysis_category(base.get(source, pd.Series(index=base.index, dtype="object"))) == value
+            )
+            local_parts.append(f"{label} = {value}")
+
+        if not row_mask.any():
+            continue
+
+        motif = " | ".join(local_parts) if local_parts else "Périmètre filtré"
+        row_detail = base.loc[row_mask].copy()
+        row_detail["Motif de présence"] = motif
+        detail_frames.append(row_detail)
+        focus_parts.append(motif)
+
+    if not detail_frames:
+        return pd.DataFrame(), []
+
+    detail = pd.concat(detail_frames, ignore_index=True)
+    detail["cm_client_key"] = detail[SOC_COL].astype(str) + "|" + detail["SIREN"].astype(str)
+
     detail_columns = [
         "SIREN",
         "Dénomination",
@@ -3910,6 +3934,15 @@ def build_analysis_focus_dataset_from_selection(
         "Motif de présence",
     ]
     detail_columns = [c for c in detail_columns if c in detail.columns]
+
+    aggregate = {col: "first" for col in detail_columns if col != "Motif de présence"}
+    aggregate["Motif de présence"] = lambda s: " || ".join(pd.unique([str(v) for v in s if pd.notna(v) and str(v).strip()]))
+    detail = (
+        detail[["cm_client_key"] + detail_columns]
+        .groupby("cm_client_key", as_index=False)
+        .agg(aggregate)
+        .drop(columns=["cm_client_key"], errors="ignore")
+    )
     return detail[detail_columns], focus_parts
 
 
@@ -3977,11 +4010,12 @@ def render_analysis_screen(portfolio: pd.DataFrame, indicators: pd.DataFrame) ->
     display_analysis_table = apply_unified_analysis_table_controls(analysis_table)
     main_action, selected_main = render_selectable_analysis_table(display_analysis_table, key_prefix="analysis_main", height=520)
 
-    if main_action == "selected" and selected_main is not None:
-        st.session_state["analysis_focus_selection"] = selected_main.to_dict()
+    if main_action == "selected" and selected_main:
+        st.session_state["analysis_focus_selection"] = selected_main
     elif main_action == "cleared":
-        st.session_state.pop("analysis_focus_selection", None)
-        st.rerun()
+        if "analysis_focus_selection" in st.session_state:
+            st.session_state.pop("analysis_focus_selection", None)
+            st.rerun()
 
     if analysis_table.empty:
         st.info("Aucun résultat à afficher pour les paramètres sélectionnés.")
@@ -3993,7 +4027,7 @@ def render_analysis_screen(portfolio: pd.DataFrame, indicators: pd.DataFrame) ->
     indicator_table = build_indicator_analysis_table(filtered, indicators)
     render_indicator_contribution_chart(indicator_table)
 
-    st.markdown('<h3 class="cm-section-title">Jalons temporels</h3>', unsafe_allow_html=True)
+    st.markdown('<h3 class="cm-section-title">Jalons temporels des revues de diligence renforcée (EDD)</h3>', unsafe_allow_html=True)
     trend_df = build_analysis_trend_table(filtered)
     render_analysis_trend_chart(trend_df)
 
@@ -4007,9 +4041,15 @@ def render_analysis_screen(portfolio: pd.DataFrame, indicators: pd.DataFrame) ->
     focus_bar_left, focus_bar_right = st.columns([6.0, 1.2])
     with focus_bar_left:
         if focus_parts:
-            st.caption("Focus actif : " + " | ".join(focus_parts))
+            if len(focus_parts) == 1:
+                st.caption("Focus actif : " + focus_parts[0])
+            else:
+                preview = " ; ".join(focus_parts[:2])
+                if len(focus_parts) > 2:
+                    preview += f" ; +{len(focus_parts) - 2} autre(s) ligne(s)"
+                st.caption(f"Focus actif : {len(focus_parts)} lignes sélectionnées — " + preview)
         else:
-            st.caption("Cliquez sur une ligne du tableau d’analyse pour afficher automatiquement les clients sous-jacents correspondants.")
+            st.caption("Cliquez sur une ou plusieurs lignes du tableau d’analyse pour afficher automatiquement les clients sous-jacents correspondants.")
     with focus_bar_right:
         if focus_parts and st.button("Effacer le focus", type="secondary", key="analysis_clear_focus"):
             clear_analysis_focus()
