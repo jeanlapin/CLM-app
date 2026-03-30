@@ -2866,34 +2866,27 @@ def build_analysis_main_table(
     line_col: str,
     line_label: str,
     measure_key: str,
-    column_col: str | None = None,
+    measure_label: str,
     sort_desc: bool = True,
 ) -> tuple[pd.DataFrame, str]:
+    if df.empty:
+        return pd.DataFrame(columns=[line_label, "Clients", "% portefeuille"]), ""
+
     work = df.copy()
     work[line_col] = work.get(line_col).fillna("Non renseigné").astype(str).replace({"": "Non renseigné"})
-    if column_col:
-        work[column_col] = work.get(column_col).fillna("Non renseigné").astype(str).replace({"": "Non renseigné"})
     work["cm_client_key"] = work[SOC_COL].astype(str) + "|" + work["SIREN"].astype(str)
-    measure_series = compute_measure_series(work, measure_key)
-    work["cm_measure"] = measure_series.astype(float)
-    total_clients = int(work["cm_client_key"].nunique())
-    total_measure = float(work["cm_measure"].sum())
+    work["cm_measure"] = compute_measure_series(work, measure_key).astype(float)
+    work["cm_edd_open"] = work.get("Statut EDD", pd.Series(index=work.index, dtype="string")).astype("string").fillna("").str.lower().str.contains("ouvrir|ouverte|ouvert|cours", regex=True).astype(int)
+    work["cm_without_next_review"] = work.get("Date prochaine revue", pd.Series(index=work.index, dtype="datetime64[ns]")).isna().astype(int)
+    work["cm_missing_docs"] = work.get("Flag justificatif complet", pd.Series(index=work.index, dtype="string")).astype("string").fillna("").ne("Oui").astype(int)
+    work["cm_gov_gap"] = (
+        work.get("Alerte justificatif incomplet", pd.Series(0, index=work.index)).fillna(0).astype(int)
+        + work.get("Alerte revue trop ancienne", pd.Series(0, index=work.index)).fillna(0).astype(int)
+        + work.get("Alerte sans prochaine revue", pd.Series(0, index=work.index)).fillna(0).astype(int)
+    )
 
-    if column_col:
-        pivot = pd.pivot_table(
-            work,
-            index=line_col,
-            columns=column_col,
-            values="cm_measure",
-            aggfunc="sum",
-            fill_value=0,
-        ).reset_index()
-        pivot.columns = [line_label] + [display_value(c) for c in pivot.columns[1:]]
-        numeric_cols = [c for c in pivot.columns if c != line_label]
-        if numeric_cols:
-            pivot["Total"] = pivot[numeric_cols].sum(axis=1)
-            pivot = pivot.sort_values("Total", ascending=not sort_desc, kind="stable")
-        return pivot.reset_index(drop=True), "Base client distincte filtrée ; la mesure affichée est agrégée par croisement de dimensions."
+    total_clients = max(int(work["cm_client_key"].nunique()), 1)
+    total_measure = float(work["cm_measure"].sum())
 
     grouped = (
         work.groupby(line_col, dropna=False)
@@ -2902,29 +2895,62 @@ def build_analysis_main_table(
             Mesure=("cm_measure", "sum"),
             Vigilance_renforcee=("Vigilance", lambda s: s.isin(CRITICAL_VIGILANCE).sum()),
             Risques_averes=("Risque", lambda s: s.eq("Risque avéré").sum()),
-            EDD_ouvertes=("Statut EDD", lambda s: s.astype("string").str.lower().str.contains("ouvrir|ouverte|ouvert|cours", regex=True).sum()),
-            Sans_revue=("Date prochaine revue", lambda s: s.isna().sum()),
-            Justif_incomplets=("Flag justificatif complet", lambda s: s.ne("Oui").sum()),
-            Historique=("Nb historique", lambda s: s.fillna(0).gt(0).sum()),
+            EDD_ouvertes=("cm_edd_open", "sum"),
+            Sans_prochaine_revue=("cm_without_next_review", "sum"),
+            Justificatifs_incomplets=("cm_missing_docs", "sum"),
+            Ecarts_gouvernance=("cm_gov_gap", "sum"),
         )
         .reset_index()
         .rename(columns={line_col: line_label})
     )
-    grouped["% portf."] = grouped["Clients"].div(total_clients).fillna(0)
-    grouped["% mesure"] = grouped["Mesure"].div(total_measure).fillna(0) if total_measure else 0.0
-    grouped["Rang"] = grouped["Mesure"].rank(method="dense", ascending=False).astype(int)
-    sort_col = "Mesure" if sort_desc else line_label
-    ascending = False if sort_desc else True
-    grouped = grouped.sort_values(sort_col, ascending=ascending, kind="stable")
+    grouped["% portefeuille"] = grouped["Clients"].div(total_clients).fillna(0)
+    grouped["% indicateur"] = grouped["Mesure"].div(total_measure).fillna(0) if total_measure else 0.0
+
     grouped = grouped.rename(columns={
-        "Vigilance_renforcee": "Vigil. renf.",
+        "Vigilance_renforcee": "Vigilance renforcée",
         "Risques_averes": "Risques avérés",
         "EDD_ouvertes": "EDD ouvertes",
-        "Sans_revue": "Sans revue",
-        "Justif_incomplets": "Justif. inc.",
-        "Historique": "Hist. indics",
+        "Sans_prochaine_revue": "Sans prochaine revue",
+        "Justificatifs_incomplets": "Justificatifs incomplets",
+        "Ecarts_gouvernance": "Écarts gouvernance",
     })
-    return grouped.reset_index(drop=True), "Base client distincte filtrée ; les pourcentages sont calculés sur le périmètre courant."
+
+    if measure_key in {"clients", "share"}:
+        result = grouped[[
+            line_label,
+            "Clients",
+            "% portefeuille",
+            "Vigilance renforcée",
+            "Risques avérés",
+            "EDD ouvertes",
+            "Sans prochaine revue",
+            "Justificatifs incomplets",
+            "Écarts gouvernance",
+        ]].copy()
+        sort_col = "Clients" if sort_desc else line_label
+        ascending = False if sort_desc else True
+        result = result.sort_values(sort_col, ascending=ascending, kind="stable")
+        return result.reset_index(drop=True), f"Lecture du portefeuille par {line_label.lower()} sur le périmètre filtré."
+
+    safe_measure_label = measure_label if measure_label not in grouped.columns else f"{measure_label} (indicateur)"
+    grouped = grouped.rename(columns={"Mesure": safe_measure_label})
+    result = grouped[[
+        line_label,
+        "Clients",
+        "% portefeuille",
+        safe_measure_label,
+        "% indicateur",
+        "Vigilance renforcée",
+        "Risques avérés",
+        "EDD ouvertes",
+        "Sans prochaine revue",
+        "Justificatifs incomplets",
+        "Écarts gouvernance",
+    ]].copy()
+    sort_col = safe_measure_label if sort_desc else line_label
+    ascending = False if sort_desc else True
+    result = result.sort_values(sort_col, ascending=ascending, kind="stable")
+    return result.reset_index(drop=True), f"Lecture du portefeuille par {line_label.lower()} avec l’indicateur « {measure_label} »."
 
 
 def build_analysis_trend_table(df: pd.DataFrame) -> pd.DataFrame:
@@ -3405,22 +3431,20 @@ def render_analysis_screen(portfolio: pd.DataFrame, indicators: pd.DataFrame) ->
     top_left, top_right = st.columns([5.8, 1.2])
     with top_left:
         st.markdown('<h3 class="cm-section-title">Pilotage de l’analyse</h3>', unsafe_allow_html=True)
-        st.caption("Un seul bandeau pour filtrer le périmètre et paramétrer la vue d’analyse.")
+        st.caption("Un seul tableau d’analyse, piloté par les filtres et la vue choisie.")
     with top_right:
         if st.button("Réinitialiser", type="secondary", key="analysis_reset_all"):
             reset_filters()
             for key in [
                 "analysis_row_dimension",
-                "analysis_col_dimension",
                 "analysis_measure",
                 "analysis_sort",
                 "analysis_focus_row_label",
                 "analysis_focus_row_value",
-                "analysis_focus_col_label",
-                "analysis_focus_col_value",
-                "analysis_focus_source",
+                "analysis_selected_idx_analysis_main",
             ]:
                 st.session_state.pop(key, None)
+            clear_analysis_focus()
             st.rerun()
 
     filter_labels = list(FILTER_MAPPING.keys())
@@ -3454,48 +3478,37 @@ def render_analysis_screen(portfolio: pd.DataFrame, indicators: pd.DataFrame) ->
         """
         <div class="cm-analysis-mode-shell">
             <div class="cm-analysis-mode-kicker">Paramètres d’analyse</div>
-            <div class="cm-analysis-mode-title">Structurez la lecture du portefeuille</div>
-            <div class="cm-analysis-mode-note">Choisissez l’angle principal, l’éventuel niveau d’affinage, l’indicateur à lire et le classement.</div>
+            <div class="cm-analysis-mode-title">Structurez une lecture claire du portefeuille</div>
+            <div class="cm-analysis-mode-note">Choisissez la vue principale, l’indicateur métier à lire et le classement du tableau.</div>
         </div>
         """,
         unsafe_allow_html=True,
     )
 
-    analysis_cols = st.columns([1.25, 1.15, 1.05, 0.9])
+    analysis_cols = st.columns([1.45, 1.15, 1.0])
     with analysis_cols[0]:
         row_dimension_label = st.selectbox(
-            "Vue principale",
+            "Vue d’analyse",
             options=row_options,
             index=row_options.index(st.session_state.get("analysis_row_dimension", default_row)),
             key="analysis_row_dimension",
-            help="Dimension principale de lecture de l’analyse.",
-        )
-    col_options = ["Aucun"] + [opt for opt in row_options if opt != row_dimension_label]
-    if st.session_state.get("analysis_col_dimension") not in col_options:
-        st.session_state["analysis_col_dimension"] = "Aucun"
-    with analysis_cols[1]:
-        column_dimension_label = st.selectbox(
-            "Vue secondaire",
-            options=col_options,
-            index=col_options.index(st.session_state.get("analysis_col_dimension", "Aucun")),
-            key="analysis_col_dimension",
-            help="Découpe complémentaire pour affiner la vue principale.",
+            help="Dimension principale de lecture du tableau d’analyse.",
         )
     measure_options = list(measure_map.keys())
     if st.session_state.get("analysis_measure") not in measure_options:
         st.session_state["analysis_measure"] = measure_options[0]
-    with analysis_cols[2]:
+    with analysis_cols[1]:
         measure_label = st.selectbox(
             "Indicateur",
             options=measure_options,
             index=measure_options.index(st.session_state.get("analysis_measure", measure_options[0])),
             key="analysis_measure",
-            help="Mesure affichée dans les tableaux d’analyse.",
+            help="Indicateur affiché dans le tableau d’analyse.",
         )
     sort_options = ["Indicateur décroissant", "Libellé A → Z"]
     if st.session_state.get("analysis_sort") not in sort_options:
         st.session_state["analysis_sort"] = sort_options[0]
-    with analysis_cols[3]:
+    with analysis_cols[2]:
         sort_choice = st.selectbox(
             "Classement",
             options=sort_options,
@@ -3508,90 +3521,32 @@ def render_analysis_screen(portfolio: pd.DataFrame, indicators: pd.DataFrame) ->
     render_analysis_kpis(filtered)
 
     row_col = dimension_map[row_dimension_label]
-    col_col = None if column_dimension_label == "Aucun" else dimension_map[column_dimension_label]
     measure_key = measure_map[measure_label]
     sort_desc = sort_choice == "Indicateur décroissant"
-    validate_analysis_focus(filtered, row_col, row_dimension_label, col_col, None if column_dimension_label == "Aucun" else column_dimension_label)
+    validate_analysis_focus(filtered, row_col, row_dimension_label, None, None)
 
-    primary_table, primary_caption = build_analysis_group_table(
+    analysis_table, analysis_caption = build_analysis_main_table(
         filtered,
         row_col,
         row_dimension_label,
         measure_key,
         measure_label,
         sort_desc=sort_desc,
-        top_n=12,
     )
-    secondary_table = pd.DataFrame()
-    secondary_caption = ""
-    if col_col:
-        secondary_table, secondary_caption = build_analysis_group_table(
-            filtered,
-            col_col,
-            column_dimension_label,
-            measure_key,
-            measure_label,
-            sort_desc=sort_desc,
-            top_n=12,
-        )
 
-    primary_action, selected_primary = "idle", None
-    secondary_action, selected_secondary = "idle", None
-    if col_col:
-        left, right = st.columns(2)
-        with left:
-            render_analysis_panel_header("Analyse principale", primary_caption)
-            primary_action, selected_primary = render_selectable_analysis_table(primary_table, key_prefix="analysis_primary", height=430)
-        with right:
-            render_analysis_panel_header("Analyse secondaire", secondary_caption)
-            secondary_action, selected_secondary = render_selectable_analysis_table(secondary_table, key_prefix="analysis_secondary", height=430)
-    else:
-        render_analysis_panel_header("Analyse principale", primary_caption)
-        primary_action, selected_primary = render_selectable_analysis_table(primary_table, key_prefix="analysis_primary", height=470)
+    render_analysis_panel_header("Tableau d’analyse", analysis_caption)
+    main_action, selected_main = render_selectable_analysis_table(analysis_table, key_prefix="analysis_main", height=500)
 
-    if primary_action == "selected" and selected_primary is not None:
+    if main_action == "selected" and selected_main is not None:
         set_analysis_focus(
             row_label=row_dimension_label,
-            row_value=str(selected_primary.get(row_dimension_label, "")),
-            source="primary",
+            row_value=str(selected_main.get(row_dimension_label, "")),
+            source="main",
         )
-    elif primary_action == "cleared":
-        st.session_state.pop("analysis_focus_row_label", None)
-        st.session_state.pop("analysis_focus_row_value", None)
-        if not col_col:
-            st.session_state.pop("analysis_focus_col_label", None)
-            st.session_state.pop("analysis_focus_col_value", None)
+    elif main_action == "cleared":
+        clear_analysis_focus()
 
-    if col_col and secondary_action == "selected" and selected_secondary is not None:
-        set_analysis_focus(
-            col_label=column_dimension_label,
-            col_value=str(selected_secondary.get(column_dimension_label, "")),
-            source="secondary",
-        )
-    elif col_col and secondary_action == "cleared":
-        st.session_state.pop("analysis_focus_col_label", None)
-        st.session_state.pop("analysis_focus_col_value", None)
-
-    cross_table = pd.DataFrame()
-    cross_caption = ""
-    if col_col:
-        cross_table, cross_caption = build_analysis_cross_table(
-            filtered,
-            row_col,
-            row_dimension_label,
-            col_col,
-            column_dimension_label,
-            measure_key,
-            measure_label,
-            sort_desc=sort_desc,
-            top_n=14,
-            focus_row_value=st.session_state.get("analysis_focus_row_value"),
-            focus_col_value=st.session_state.get("analysis_focus_col_value"),
-        )
-        render_analysis_panel_header("Analyse croisée", cross_caption)
-        render_small_table(cross_table, bold_numbers=False)
-
-    if primary_table.empty:
+    if analysis_table.empty:
         st.info("Aucun résultat à afficher pour les paramètres sélectionnés.")
         return
 
@@ -3620,20 +3575,17 @@ def render_analysis_screen(portfolio: pd.DataFrame, indicators: pd.DataFrame) ->
     st.markdown("<div id='clients-sous-jacents'></div>", unsafe_allow_html=True)
     st.markdown('<h3 class="cm-section-title">Clients sous-jacents</h3>', unsafe_allow_html=True)
     active_row_value = st.session_state.get("analysis_focus_row_value")
-    active_col_value = st.session_state.get("analysis_focus_col_value") if col_col else None
 
     focus_parts = []
     if active_row_value not in {None, "", "Tous"}:
         focus_parts.append(f"{row_dimension_label} = {active_row_value}")
-    if col_col and active_col_value not in {None, "", "Tous"}:
-        focus_parts.append(f"{column_dimension_label} = {active_col_value}")
 
     focus_bar_left, focus_bar_right = st.columns([6.0, 1.2])
     with focus_bar_left:
         if focus_parts:
             st.caption("Focus actif : " + " | ".join(focus_parts))
         else:
-            st.caption("Cliquez sur une ligne d’un tableau d’analyse pour afficher automatiquement les clients sous-jacents correspondants.")
+            st.caption("Cliquez sur une ligne du tableau d’analyse pour afficher automatiquement les clients sous-jacents correspondants.")
     with focus_bar_right:
         if focus_parts and st.button("Effacer le focus", type="secondary", key="analysis_clear_focus"):
             clear_analysis_focus()
@@ -3644,9 +3596,9 @@ def render_analysis_screen(portfolio: pd.DataFrame, indicators: pd.DataFrame) ->
         row_col=row_col,
         row_value=active_row_value,
         row_label=row_dimension_label,
-        column_col=col_col,
-        column_value=active_col_value,
-        column_label=None if column_dimension_label == "Aucun" else column_dimension_label,
+        column_col=None,
+        column_value=None,
+        column_label=None,
     ) if focus_parts else pd.DataFrame()
 
     if detail_df.empty:
@@ -3661,9 +3613,10 @@ def render_analysis_screen(portfolio: pd.DataFrame, indicators: pd.DataFrame) ->
             key_prefix="analysis_detail_clients",
         )
 
+    export_base = detail_df if not detail_df.empty else filtered[[c for c in DISPLAY_COLUMNS if c in filtered.columns]]
     st.download_button(
         label="Exporter la vue Analyse (.csv)",
-        data=dataframe_to_csv_bytes(detail_df if not detail_df.empty else filtered[[c for c in DISPLAY_COLUMNS if c in filtered.columns]]),
+        data=dataframe_to_csv_bytes(export_base),
         file_name="tableau2_analyse.csv",
         mime="text/csv",
         type="primary",
