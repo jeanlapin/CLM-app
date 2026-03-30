@@ -3222,12 +3222,17 @@ def render_review_simulations_screen(portfolio: pd.DataFrame, user: dict) -> Non
         return
 
     st.markdown(
-        "<div class='cm-analysis-hint-text'>Sélectionnez une ou plusieurs lignes du tableau pour préparer un lot, modifier le statut estimé, piloter les clients sous-jacents et récupérer les PDF. La tendance est matérialisée par une icône colorée : 🔴 ▲ aggravation, 🟠 • stabilité, 🟢 ▼ amélioration.</div>",
+        "<div class='cm-analysis-hint-text'>Sélectionnez une ou plusieurs lignes du tableau ci-dessous pour alimenter le menu d’actions placé au-dessus. La tendance est matérialisée par une icône colorée : 🔴 ▲ aggravation, 🟠 • stabilité, 🟢 ▼ amélioration.</div>",
         unsafe_allow_html=True,
     )
 
+    action_menu_placeholder = st.empty()
+    table_placeholder = st.empty()
+
     table_version = int(st.session_state.get("review_sim_table_version", 0))
-    table_selected_rows = render_review_simulation_table(working_df, key=f"review_sim_table_{table_version}")
+    with table_placeholder.container():
+        st.markdown('<h3 class="cm-section-title">Sociétés du lot à traiter</h3>', unsafe_allow_html=True)
+        table_selected_rows = render_review_simulation_table(working_df, key=f"review_sim_table_{table_version}")
 
     if table_selected_rows:
         st.session_state["review_sim_selected_keys"] = review_sim_selection_keys(working_df, table_selected_rows)
@@ -3252,164 +3257,269 @@ def render_review_simulations_screen(portfolio: pd.DataFrame, user: dict) -> Non
             if first_value in status_options:
                 default_value = first_value
 
-    st.markdown('<h3 class="cm-section-title">Centre d’actions de la sélection</h3>', unsafe_allow_html=True)
+    preview_text = ""
     if selected_count:
         preview_labels = []
         for _, row in selected_df[["SIREN", "Dénomination"]].head(3).iterrows():
-            preview_labels.append(f"{row.get('SIREN', '')} - {row.get('Dénomination', '')}")
+            preview_labels.append(f"{row.get('SIREN', '')} — {row.get('Dénomination', '')}")
         preview_text = " • ".join(preview_labels)
         if selected_count > 3:
             preview_text += f" • +{selected_count - 3} autre(s)"
-        st.caption(
-            f"{selected_count} ligne(s) sélectionnée(s). PDF disponibles : {len(pdf_items)}. "
-            f"Sélection courante : {preview_text}"
-        )
-    elif has_saved_selection:
-        st.caption("La sélection mémorisée n’est plus visible avec les filtres courants. Effacez-la ou ajustez les filtres pour réactiver les actions sur ces SIREN.")
-    else:
-        st.caption("Aucune ligne sélectionnée. Sélectionnez au moins un SIREN pour activer les actions ci-dessous.")
 
-    action_nav_col, action_clear_col, action_csv_col = st.columns([1.8, 1.3, 1.4])
-    with action_nav_col:
+    with action_menu_placeholder.container():
         st.markdown(
-            "<div class='cm-analysis-hint-action'><a class='cm-analysis-jump-btn' href='#clients-sous-jacents'>Voir les clients sous-jacents</a></div>",
+            """
+            <style>
+            .review-action-menu-shell {
+                margin: 0.2rem 0 0.85rem 0;
+                padding: 0.95rem 1rem 0.8rem 1rem;
+                border-radius: 20px;
+                border: 1px solid rgba(22, 58, 89, 0.12);
+                background: linear-gradient(135deg, rgba(255,255,255,0.96), rgba(232,241,251,0.92));
+                box-shadow: 0 12px 30px rgba(22, 58, 89, 0.08);
+            }
+            .review-action-menu-kicker {
+                font-family: 'Sora', sans-serif;
+                font-size: 0.76rem;
+                font-weight: 800;
+                letter-spacing: 0.08em;
+                text-transform: uppercase;
+                color: #2F6B9E;
+                margin-bottom: 0.18rem;
+            }
+            .review-action-menu-title {
+                font-family: 'Montserrat', sans-serif;
+                font-size: 1.02rem;
+                font-weight: 800;
+                color: #163A59;
+                margin-bottom: 0.2rem;
+            }
+            .review-action-menu-note {
+                color: #5B7084;
+                font-size: 0.84rem;
+                line-height: 1.45;
+                margin-bottom: 0.55rem;
+            }
+            .review-action-pill-row {
+                display: flex;
+                flex-wrap: wrap;
+                gap: 0.45rem;
+                margin-bottom: 0.4rem;
+            }
+            .review-action-pill {
+                display: inline-flex;
+                align-items: center;
+                gap: 0.32rem;
+                padding: 0.28rem 0.6rem;
+                border-radius: 999px;
+                background: rgba(22, 58, 89, 0.08);
+                color: #163A59;
+                font-size: 0.79rem;
+                font-weight: 700;
+            }
+            .review-action-preview {
+                color: #40607B;
+                font-size: 0.83rem;
+                line-height: 1.42;
+                margin-bottom: 0.2rem;
+            }
+            a.review-action-link {
+                display: inline-flex;
+                align-items: center;
+                justify-content: center;
+                width: 100%;
+                min-height: 2.65rem;
+                padding: 0.62rem 0.85rem;
+                border-radius: 14px;
+                background: linear-gradient(135deg, #163A59, #2F6B9E);
+                color: #FFFFFF !important;
+                text-decoration: none !important;
+                font-family: 'Sora', sans-serif;
+                font-size: 0.81rem;
+                font-weight: 800;
+                text-align: center;
+                box-shadow: 0 10px 20px rgba(22, 58, 89, 0.16);
+            }
+            </style>
+            """,
             unsafe_allow_html=True,
         )
-    with action_clear_col:
-        if st.button(
-            "Effacer la sélection",
-            key="review_sim_clear_selection",
-            type="secondary",
-            use_container_width=True,
-            disabled=(not has_saved_selection),
-        ):
-            st.session_state["review_sim_selected_keys"] = []
-            st.session_state["review_sim_table_version"] = int(st.session_state.get("review_sim_table_version", 0)) + 1
-            st.rerun()
-    with action_csv_col:
-        st.download_button(
-            label="Exporter le CSV",
-            data=dataframe_to_csv_bytes(build_review_simulation_export_dataframe(working_df)),
-            file_name="revues_et_simulations.csv",
-            mime="text/csv",
-            type="secondary",
-            use_container_width=True,
-            key="review_sim_export_csv",
+
+        summary_badges = [
+            f"<span class='review-action-pill'>🏷️ {selected_count} société(s) sélectionnée(s)</span>",
+            f"<span class='review-action-pill'>📄 {len(pdf_items)} PDF disponible(s)</span>",
+            f"<span class='review-action-pill'>📊 {len(working_df)} société(s) visibles dans le tableau</span>",
+        ]
+        if selected_count:
+            summary_note = "Le menu pilote directement la sélection courante du tableau des sociétés."
+        elif has_saved_selection:
+            summary_note = "La sélection mémorisée n’est plus visible avec les filtres courants. Ajustez les filtres ou effacez la sélection pour réactiver les actions." 
+        else:
+            summary_note = "Sélectionnez au moins un SIREN dans le tableau pour activer Gemini, le statut estimé et les exports PDF liés à la sélection."
+
+        st.markdown(
+            "<div class='review-action-menu-shell'>"
+            "<div class='review-action-menu-kicker'>Menu d’actions</div>"
+            "<div class='review-action-menu-title'>Actions groupées sur les sociétés sélectionnées</div>"
+            f"<div class='review-action-menu-note'>{escape(summary_note)}</div>"
+            f"<div class='review-action-pill-row'>{''.join(summary_badges)}</div>"
+            + (f"<div class='review-action-preview'><strong>Sélection courante :</strong> {escape(preview_text)}</div>" if preview_text else "")
+            + "</div>",
+            unsafe_allow_html=True,
         )
 
-    status_col, status_button_col = st.columns([3.2, 1.5])
-    with status_col:
-        manual_status = st.selectbox(
-            "Statut de vigilance estimé à appliquer aux lignes sélectionnées",
-            options=status_options,
-            index=status_options.index(default_value),
-            key="review_sim_manual_status",
-            disabled=(selected_count == 0),
-        )
-    with status_button_col:
-        st.markdown("<div style='height:1.85rem'></div>", unsafe_allow_html=True)
-        if st.button(
-            "Mettre à jour le statut estimé",
-            type="secondary",
-            key="review_sim_apply_manual_status",
-            use_container_width=True,
-            disabled=(selected_count == 0),
-        ):
-            updated_df, updated_count = apply_manual_estimated_status(working_df, selected_rows, manual_status)
-            pdf_count, pdf_errors = persist_review_simulation_subset(updated_df, selected_rows)
-            notice = f"{updated_count} SIREN mis à jour avec le statut estimé « {manual_status} »."
-            if pdf_count:
-                notice += f" {pdf_count} PDF structuré(s) généré(s) ou mis à jour."
-            st.session_state["review_sim_notice"] = notice
-            if pdf_errors:
-                st.session_state["review_sim_warning"] = " | ".join(pdf_errors[:3])
-            st.rerun()
-
-    gemini_col, single_pdf_col, zip_pdf_col = st.columns([2.4, 1.5, 1.5])
-    with gemini_col:
-        gemini_button_disabled = (selected_count == 0) or (not gemini_api_key)
-        if st.button(
-            f"Lancer Gemini sur la sélection (max {GEMINI_MAX_BATCH_SIZE})",
-            type="primary",
-            key="review_sim_generate_batch",
-            use_container_width=True,
-            disabled=gemini_button_disabled,
-        ):
-            base_source_df, indicators_source_df, _ = load_source_data()
-            source_df = build_review_simulation_source_dataset(portfolio, base_source_df, indicators_source_df)
-            with st.spinner("Analyse Gemini en cours sur les lignes sélectionnées…"):
-                updated_df, processed, errors = apply_gemini_review_simulation_batch(
-                    working_df,
-                    selected_rows,
-                    source_df,
-                    api_key=gemini_api_key,
-                    base_prompt=base_prompt,
-                    model=GEMINI_MODEL_DEFAULT,
-                )
-            pdf_count, pdf_errors = persist_review_simulation_subset(
-                updated_df,
-                selected_rows[:GEMINI_MAX_BATCH_SIZE],
-                pdf_source_df=source_df,
-                prompt_template=base_prompt,
+        row1_clients_col, row1_clear_col, row1_status_col, row1_apply_col, row1_gemini_col = st.columns([1.45, 1.2, 1.9, 1.15, 1.9])
+        with row1_clients_col:
+            st.markdown(
+                "<div style='padding-top:0.08rem'></div>"
+                "<a class='review-action-link' href='#clients-sous-jacents' title='Afficher les clients sous-jacents liés à la sélection courante'>👁 Clients sous-jacents</a>",
+                unsafe_allow_html=True,
             )
-            combined_errors = list(errors)
-            combined_errors.extend(pdf_errors)
-            if processed == 0:
-                st.session_state["review_sim_warning"] = combined_errors[0] if combined_errors else "Sélectionnez au moins un SIREN pour lancer Gemini."
-            else:
-                if selected_count > GEMINI_MAX_BATCH_SIZE:
-                    notice = f"{processed} SIREN traités par Gemini. Seuls les {GEMINI_MAX_BATCH_SIZE} premiers SIREN sélectionnés ont été envoyés."
-                else:
-                    notice = f"{processed} SIREN traités par Gemini dans le lot courant."
+        with row1_clear_col:
+            if st.button(
+                "🗑 Effacer",
+                key="review_sim_clear_selection",
+                type="secondary",
+                use_container_width=True,
+                disabled=(not has_saved_selection),
+                help="Vide la sélection mémorisée du tableau des sociétés.",
+            ):
+                st.session_state["review_sim_selected_keys"] = []
+                st.session_state["review_sim_table_version"] = int(st.session_state.get("review_sim_table_version", 0)) + 1
+                st.rerun()
+        with row1_status_col:
+            manual_status = st.selectbox(
+                "✏️ Statut estimé",
+                options=status_options,
+                index=status_options.index(default_value),
+                key="review_sim_manual_status",
+                disabled=(selected_count == 0),
+                help="Choisissez le statut estimé à appliquer à toutes les lignes sélectionnées.",
+            )
+        with row1_apply_col:
+            st.markdown("<div style='height:1.85rem'></div>", unsafe_allow_html=True)
+            if st.button(
+                "✅ Appliquer",
+                type="secondary",
+                key="review_sim_apply_manual_status",
+                use_container_width=True,
+                disabled=(selected_count == 0),
+                help="Met à jour le statut estimé des sociétés sélectionnées.",
+            ):
+                updated_df, updated_count = apply_manual_estimated_status(working_df, selected_rows, manual_status)
+                pdf_count, pdf_errors = persist_review_simulation_subset(updated_df, selected_rows)
+                notice = f"{updated_count} SIREN mis à jour avec le statut estimé « {manual_status} »."
                 if pdf_count:
                     notice += f" {pdf_count} PDF structuré(s) généré(s) ou mis à jour."
                 st.session_state["review_sim_notice"] = notice
-                if combined_errors:
-                    preview_errors = " | ".join(combined_errors[:3])
-                    if len(combined_errors) > 3:
-                        preview_errors += f" | +{len(combined_errors) - 3} autre(s) erreur(s)"
-                    st.session_state["review_sim_warning"] = preview_errors
-            st.rerun()
-        if not gemini_api_key:
-            st.caption("Saisissez la clé API Gemini en haut de l’écran pour activer cette action.")
-    with single_pdf_col:
-        if REPORTLAB_AVAILABLE and len(pdf_items) == 1:
-            pdf_item = pdf_items[0]
-            pdf_path = pdf_item.get("path")
-            if isinstance(pdf_path, Path) and pdf_path.exists():
+                if pdf_errors:
+                    st.session_state["review_sim_warning"] = " | ".join(pdf_errors[:3])
+                st.rerun()
+        with row1_gemini_col:
+            st.markdown("<div style='height:1.85rem'></div>", unsafe_allow_html=True)
+            gemini_button_disabled = (selected_count == 0) or (not gemini_api_key)
+            if st.button(
+                f"✨ Lancer Gemini",
+                type="primary",
+                key="review_sim_generate_batch",
+                use_container_width=True,
+                disabled=gemini_button_disabled,
+                help=f"Analyse la sélection courante avec Gemini (maximum {GEMINI_MAX_BATCH_SIZE} SIREN envoyés).",
+            ):
+                base_source_df, indicators_source_df, _ = load_source_data()
+                source_df = build_review_simulation_source_dataset(portfolio, base_source_df, indicators_source_df)
+                with st.spinner("Analyse Gemini en cours sur les lignes sélectionnées…"):
+                    updated_df, processed, errors = apply_gemini_review_simulation_batch(
+                        working_df,
+                        selected_rows,
+                        source_df,
+                        api_key=gemini_api_key,
+                        base_prompt=base_prompt,
+                        model=GEMINI_MODEL_DEFAULT,
+                    )
+                pdf_count, pdf_errors = persist_review_simulation_subset(
+                    updated_df,
+                    selected_rows[:GEMINI_MAX_BATCH_SIZE],
+                    pdf_source_df=source_df,
+                    prompt_template=base_prompt,
+                )
+                combined_errors = list(errors)
+                combined_errors.extend(pdf_errors)
+                if processed == 0:
+                    st.session_state["review_sim_warning"] = combined_errors[0] if combined_errors else "Sélectionnez au moins un SIREN pour lancer Gemini."
+                else:
+                    if selected_count > GEMINI_MAX_BATCH_SIZE:
+                        notice = f"{processed} SIREN traités par Gemini. Seuls les {GEMINI_MAX_BATCH_SIZE} premiers SIREN sélectionnés ont été envoyés."
+                    else:
+                        notice = f"{processed} SIREN traités par Gemini dans le lot courant."
+                    if pdf_count:
+                        notice += f" {pdf_count} PDF structuré(s) généré(s) ou mis à jour."
+                    st.session_state["review_sim_notice"] = notice
+                    if combined_errors:
+                        preview_errors = " | ".join(combined_errors[:3])
+                        if len(combined_errors) > 3:
+                            preview_errors += f" | +{len(combined_errors) - 3} autre(s) erreur(s)"
+                        st.session_state["review_sim_warning"] = preview_errors
+                st.rerun()
+
+        row2_pdf_col, row2_zip_col, row2_csv_col = st.columns([1.25, 1.25, 1.4])
+        with row2_pdf_col:
+            if REPORTLAB_AVAILABLE and len(pdf_items) == 1:
+                pdf_item = pdf_items[0]
+                pdf_path = pdf_item.get("path")
+                if isinstance(pdf_path, Path) and pdf_path.exists():
+                    st.download_button(
+                        label="📄 Récupérer le PDF",
+                        data=pdf_path.read_bytes(),
+                        file_name=str(pdf_item.get("download_name", "revue_simulation.pdf")),
+                        mime="application/pdf",
+                        type="secondary",
+                        use_container_width=True,
+                        key="review_sim_single_pdf",
+                        help="Télécharge le PDF du SIREN sélectionné lorsque la sélection contient une seule société.",
+                    )
+                else:
+                    st.button("📄 Récupérer le PDF", disabled=True, use_container_width=True, key="review_sim_single_pdf_disabled")
+            else:
+                st.button("📄 Récupérer le PDF", disabled=True, use_container_width=True, key="review_sim_single_pdf_placeholder")
+        with row2_zip_col:
+            if REPORTLAB_AVAILABLE and pdf_items:
                 st.download_button(
-                    label="Récupérer le PDF",
-                    data=pdf_path.read_bytes(),
-                    file_name=str(pdf_item.get("download_name", "revue_simulation.pdf")),
-                    mime="application/pdf",
+                    label="🗂 Exporter les PDF",
+                    data=review_simulation_pdfs_zip_bytes(pdf_items),
+                    file_name="revues_simulations_selection.zip",
+                    mime="application/zip",
                     type="secondary",
                     use_container_width=True,
-                    key="review_sim_single_pdf",
+                    key="review_sim_pdf_zip",
+                    help="Télécharge tous les PDF disponibles sur la sélection courante dans un fichier ZIP.",
                 )
             else:
-                st.button("Récupérer le PDF", disabled=True, use_container_width=True, key="review_sim_single_pdf_disabled")
-        else:
-            st.button("Récupérer le PDF", disabled=True, use_container_width=True, key="review_sim_single_pdf_placeholder")
-            if selected_count != 1:
-                st.caption("Sélectionnez un seul SIREN avec un PDF disponible.")
-            elif REPORTLAB_AVAILABLE:
-                st.caption("Le PDF sera disponible après une simulation renseignant « Explique moi ».")
-    with zip_pdf_col:
-        if REPORTLAB_AVAILABLE and pdf_items:
+                st.button("🗂 Exporter les PDF", disabled=True, use_container_width=True, key="review_sim_pdf_zip_placeholder")
+        with row2_csv_col:
             st.download_button(
-                label="Exporter les PDF",
-                data=review_simulation_pdfs_zip_bytes(pdf_items),
-                file_name="revues_simulations_selection.zip",
-                mime="application/zip",
+                label="📤 Exporter le CSV",
+                data=dataframe_to_csv_bytes(build_review_simulation_export_dataframe(working_df)),
+                file_name="revues_et_simulations.csv",
+                mime="text/csv",
                 type="secondary",
                 use_container_width=True,
-                key="review_sim_pdf_zip",
+                key="review_sim_export_csv",
+                help="Exporte le tableau Revues & Simulations visible, y compris la colonne « Explique moi ».",
             )
-        else:
-            st.button("Exporter les PDF", disabled=True, use_container_width=True, key="review_sim_pdf_zip_placeholder")
-            if REPORTLAB_AVAILABLE:
-                st.caption("Aucun PDF disponible sur la sélection courante.")
 
+        helper_notes: list[str] = []
+        if not gemini_api_key:
+            helper_notes.append("✨ Saisissez la clé API Gemini en haut de l’écran pour activer l’analyse automatique.")
+        if REPORTLAB_AVAILABLE:
+            if selected_count != 1:
+                helper_notes.append("📄 Le bouton de récupération unitaire du PDF s’active uniquement quand une seule société est sélectionnée.")
+            elif len(pdf_items) != 1:
+                helper_notes.append("📄 Le PDF devient téléchargeable après une simulation ayant renseigné « Explique moi » pour ce SIREN.")
+            if not pdf_items:
+                helper_notes.append("🗂 L’export ZIP s’active dès qu’au moins un PDF existe sur la sélection courante.")
+        for note in helper_notes[:3]:
+            st.caption(note)
     if not REPORTLAB_AVAILABLE:
         st.info(PDF_DEPENDENCY_ERROR_MESSAGE)
 
