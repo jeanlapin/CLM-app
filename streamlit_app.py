@@ -79,6 +79,11 @@ REVIEW_TYPE_BY_VIGILANCE = {
     "Vigilance Allégée": "Revue allégée de mise à jour",
     "Vigilance Aucune": "Revue standard",
 }
+
+REVIEW_SIM_REAL_LABEL = "Statut de vigilance réel"
+REVIEW_SIM_EST_LABEL = "Statut de vigilance estimé après remédiation"
+REVIEW_SIM_TREND_LABEL = "Indicateur de tendance"
+VIGILANCE_RANK = {label: idx for idx, label in enumerate(VIGILANCE_ORDER)}
 REVIEW_OBJECTIVES_BY_VIGILANCE = {
     "Vigilance Critique": (
         "Sécuriser immédiatement le dossier et confirmer ou infirmer les alertes majeures.",
@@ -1879,13 +1884,62 @@ def build_simulated_review_explanation(row: pd.Series) -> str:
 
 
 
+def build_simulated_expected_vigilance(row: pd.Series) -> str:
+    current = str(review_vigilance_regime(row)[0] or "Vigilance Modérée").strip()
+    alerts = set(build_row_alert_labels(row))
+    if not alerts:
+        if current == "Vigilance Critique":
+            return "Vigilance Élevée"
+        if current == "Vigilance Élevée":
+            return "Vigilance Modérée"
+        if current == "Vigilance Modérée":
+            return "Vigilance Allégée"
+        if current == "Vigilance Allégée":
+            return "Vigilance Aucune"
+        return current
+
+    major_alerts = {"Risque avéré", "Cross-border élevé", "Cash intensité élevée"}
+    if alerts & major_alerts:
+        if current in {"Vigilance Critique", "Vigilance Élevée"}:
+            return current
+        return "Vigilance Élevée"
+
+    if current == "Vigilance Critique":
+        return "Vigilance Élevée"
+    if current == "Vigilance Élevée":
+        return "Vigilance Modérée"
+    if current == "Vigilance Modérée":
+        return "Vigilance Allégée"
+    if current == "Vigilance Allégée":
+        return "Vigilance Allégée"
+    return current
+
+
+def build_review_trend(real_status: object, estimated_status: object) -> str:
+    real_rank = VIGILANCE_RANK.get(str(real_status).strip(), 99)
+    estimated_rank = VIGILANCE_RANK.get(str(estimated_status).strip(), 99)
+    if estimated_rank < real_rank:
+        return "S’aggrave"
+    if estimated_rank > real_rank:
+        return "S’améliore"
+    return "Stable"
+
+
 def build_review_simulation_working_table(df: pd.DataFrame) -> pd.DataFrame:
+    base_columns = [
+        SOC_COL,
+        "SIREN",
+        "Dénomination",
+        REVIEW_SIM_REAL_LABEL,
+        "Explique moi",
+        REVIEW_SIM_TREND_LABEL,
+        REVIEW_SIM_EST_LABEL,
+        "Type de revue",
+        "Date prochaine revue",
+        "Alertes actives",
+    ]
     if df is None or df.empty:
-        return pd.DataFrame(columns=[
-            "Sélection", SOC_COL, "SIREN", "Dénomination", "Régime de vigilance", "Type de revue",
-            "Date prochaine revue", "Alertes actives", "Explique moi",
-            "Statut de vigilance espéré après remédiation",
-        ])
+        return pd.DataFrame(columns=base_columns)
 
     scope = df.copy()
     scope["Date prochaine revue"] = pd.to_datetime(
@@ -1893,8 +1947,8 @@ def build_review_simulation_working_table(df: pd.DataFrame) -> pd.DataFrame:
         errors="coerce",
         dayfirst=True,
     )
-    scope["Régime de vigilance"] = scope.apply(lambda row: review_vigilance_regime(row)[0], axis=1)
-    scope["Type de revue"] = scope["Régime de vigilance"].apply(review_type_for_vigilance)
+    scope[REVIEW_SIM_REAL_LABEL] = scope.apply(lambda row: review_vigilance_regime(row)[0], axis=1)
+    scope["Type de revue"] = scope[REVIEW_SIM_REAL_LABEL].apply(review_type_for_vigilance)
     scope["Alertes actives"] = scope.apply(lambda row: ", ".join(build_row_alert_labels(row)) or "Aucune", axis=1)
 
     store = load_review_simulation_store()
@@ -1902,31 +1956,29 @@ def build_review_simulation_working_table(df: pd.DataFrame) -> pd.DataFrame:
         scope = scope.merge(store, on=KEY_COLUMNS, how="left")
     else:
         scope["Explique moi"] = ""
-        scope["Statut de vigilance espéré après remédiation"] = ""
+        scope[REVIEW_SIM_EST_LABEL] = ""
         scope["updated_at_utc"] = ""
 
     scope["Explique moi"] = scope.get("Explique moi", "").fillna("").astype(str)
-    scope["Statut de vigilance espéré après remédiation"] = (
-        scope.get("Statut de vigilance espéré après remédiation", "").fillna("").astype(str)
-    )
-    empty_expected = scope["Statut de vigilance espéré après remédiation"].str.strip().eq("")
-    scope.loc[empty_expected, "Statut de vigilance espéré après remédiation"] = scope.loc[empty_expected, "Régime de vigilance"].astype(str)
+    scope[REVIEW_SIM_EST_LABEL] = scope.get(REVIEW_SIM_EST_LABEL, "").fillna("").astype(str)
+    empty_expected = scope[REVIEW_SIM_EST_LABEL].str.strip().eq("")
+    scope.loc[empty_expected, REVIEW_SIM_EST_LABEL] = scope.loc[empty_expected].apply(build_simulated_expected_vigilance, axis=1)
+    scope[REVIEW_SIM_TREND_LABEL] = scope.apply(lambda row: build_review_trend(row.get(REVIEW_SIM_REAL_LABEL, ""), row.get(REVIEW_SIM_EST_LABEL, "")), axis=1)
 
     table = pd.DataFrame({
-        "Sélection": False,
         SOC_COL: scope[SOC_COL],
         "SIREN": scope["SIREN"],
         "Dénomination": scope.get("Dénomination", pd.Series("", index=scope.index)),
-        "Régime de vigilance": scope["Régime de vigilance"],
+        REVIEW_SIM_REAL_LABEL: scope[REVIEW_SIM_REAL_LABEL],
+        "Explique moi": scope["Explique moi"],
+        REVIEW_SIM_TREND_LABEL: scope[REVIEW_SIM_TREND_LABEL],
+        REVIEW_SIM_EST_LABEL: scope[REVIEW_SIM_EST_LABEL],
         "Type de revue": scope["Type de revue"],
         "Date prochaine revue": scope.get("Date prochaine revue", pd.Series(pd.NaT, index=scope.index)),
         "Alertes actives": scope["Alertes actives"],
-        "Explique moi": scope["Explique moi"],
-        "Statut de vigilance espéré après remédiation": scope["Statut de vigilance espéré après remédiation"],
     })
-    table = table.sort_values(["Date prochaine revue", "Régime de vigilance", "Dénomination"], kind="stable", na_position="last")
+    table = table.sort_values(["Date prochaine revue", REVIEW_SIM_REAL_LABEL, "Dénomination"], kind="stable", na_position="last")
     return table.reset_index(drop=True)
-
 
 
 def persist_review_simulation_subset(edited_df: pd.DataFrame) -> None:
@@ -1936,10 +1988,10 @@ def persist_review_simulation_subset(edited_df: pd.DataFrame) -> None:
     if store.empty:
         store = pd.DataFrame(columns=KEY_COLUMNS + [
             "Explique moi",
-            "Statut de vigilance espéré après remédiation",
+            REVIEW_SIM_EST_LABEL,
             "updated_at_utc",
         ])
-    subset = edited_df[[SOC_COL, "SIREN", "Explique moi", "Statut de vigilance espéré après remédiation"]].copy()
+    subset = edited_df[[SOC_COL, "SIREN", "Explique moi", REVIEW_SIM_EST_LABEL]].copy()
     subset[SOC_COL] = normalize_societe_id(subset[SOC_COL])
     subset["SIREN"] = normalize_siren(subset["SIREN"])
     subset["updated_at_utc"] = datetime.now(timezone.utc).isoformat()
@@ -1949,11 +2001,9 @@ def persist_review_simulation_subset(edited_df: pd.DataFrame) -> None:
     save_review_simulation_store(combined)
 
 
-
-def apply_review_simulation_batch(edited_df: pd.DataFrame, source_df: pd.DataFrame) -> tuple[pd.DataFrame, int]:
-    result = edited_df.copy()
-    selected_idx = list(result.index[result["Sélection"].fillna(False).astype(bool)])
-    batch_idx = selected_idx[:10]
+def apply_review_simulation_batch(working_df: pd.DataFrame, selected_indices: list[int], source_df: pd.DataFrame) -> tuple[pd.DataFrame, int]:
+    result = working_df.copy()
+    batch_idx = list(selected_indices[:10])
     if not batch_idx:
         return result, 0
 
@@ -1971,7 +2021,7 @@ def apply_review_simulation_batch(edited_df: pd.DataFrame, source_df: pd.DataFra
                 SOC_COL: soc,
                 "SIREN": siren,
                 "Dénomination": row.get("Dénomination", ""),
-                "Vigilance": row.get("Régime de vigilance", ""),
+                "Vigilance": row.get(REVIEW_SIM_REAL_LABEL, ""),
                 "Risque": "",
                 "Statut EDD": "",
                 "Date prochaine revue": row.get("Date prochaine revue"),
@@ -1979,11 +2029,9 @@ def apply_review_simulation_batch(edited_df: pd.DataFrame, source_df: pd.DataFra
         else:
             source_row = match.iloc[0]
         result.at[idx, "Explique moi"] = build_simulated_review_explanation(source_row)
-        current_expected = str(result.at[idx, "Statut de vigilance espéré après remédiation"] or "").strip()
-        if not current_expected:
-            result.at[idx, "Statut de vigilance espéré après remédiation"] = str(row.get("Régime de vigilance", "") or "")
+        result.at[idx, REVIEW_SIM_EST_LABEL] = build_simulated_expected_vigilance(source_row)
+        result.at[idx, REVIEW_SIM_TREND_LABEL] = build_review_trend(result.at[idx, REVIEW_SIM_REAL_LABEL], result.at[idx, REVIEW_SIM_EST_LABEL])
     return result, len(batch_idx)
-
 
 
 def build_review_simulation_export_dataframe(df: pd.DataFrame) -> pd.DataFrame:
@@ -1994,48 +2042,138 @@ def build_review_simulation_export_dataframe(df: pd.DataFrame) -> pd.DataFrame:
         SOC_COL,
         "SIREN",
         "Dénomination",
-        "Régime de vigilance",
+        REVIEW_SIM_REAL_LABEL,
         "Type de revue",
         "Date prochaine revue",
         "Alertes actives",
         "Explique moi",
-        "Statut de vigilance espéré après remédiation",
+        REVIEW_SIM_TREND_LABEL,
+        REVIEW_SIM_EST_LABEL,
     ]
     return export_df[[c for c in keep_cols if c in export_df.columns]].copy()
 
 
+def style_review_simulation_table(display_df: pd.DataFrame) -> pd.io.formats.style.Styler:
+    def style_cell(column_name: str, value: object) -> str:
+        base = "padding: 0.42rem 0.55rem; text-align: center; vertical-align: middle; border-bottom: 1px solid rgba(22,58,89,0.08);"
+        if column_name == "SIREN":
+            return base + "color: #163A59; font-weight: 800;"
+        if column_name == "Dénomination":
+            return base + "font-weight: 700; color: #163A59; text-align:left;"
+        if column_name in {REVIEW_SIM_REAL_LABEL, REVIEW_SIM_EST_LABEL}:
+            bg, fg = status_palette(value, "vigilance")
+            return base + f"background-color:{bg}; color:{fg}; font-weight:700; border-radius:999px;"
+        if column_name == REVIEW_SIM_TREND_LABEL:
+            text = str(value).strip()
+            if text == "S’aggrave":
+                return base + "background-color: rgba(217,45,32,0.10); color:#B42318; font-weight:700;"
+            if text == "S’améliore":
+                return base + "background-color: rgba(18,183,106,0.10); color:#027A48; font-weight:700;"
+            return base + "background-color: rgba(22,58,89,0.08); color:#163A59; font-weight:700;"
+        if column_name in {"Explique moi", "Alertes actives"}:
+            return base + "text-align:left; white-space:normal;"
+        return base
 
-def render_review_simulation_editor(df: pd.DataFrame, key: str) -> pd.DataFrame:
-    display_df = df.copy()
+    zebra = pd.DataFrame("", index=display_df.index, columns=display_df.columns)
+    zebra.iloc[1::2, :] = "background-color: rgba(22,58,89,0.025);"
+    styled = display_df.style
+    styled = styled.set_table_styles([
+        {"selector": "thead th", "props": [("background-color", "#163A59"), ("color", "white"), ("font-weight", "700"), ("text-transform", "uppercase"), ("font-size", "0.76rem"), ("letter-spacing", "0.08em"), ("text-align", "center"), ("border-bottom", "0")]},
+        {"selector": "thead tr", "props": [("background-color", "#163A59")]},
+        {"selector": "tbody td", "props": [("background-color", "#ffffff"), ("text-align", "center")]},
+    ])
+    styled = styled.apply(lambda _: zebra, axis=None)
+    styled = styled.apply(lambda s: [style_cell(s.name, v) for v in s], axis=0)
+    return styled
+
+
+def render_review_status_gauges(df: pd.DataFrame) -> None:
+    if df is None or df.empty:
+        return
+    total = max(int(df["SIREN"].nunique()), 1)
+    real_statuses = ["Vigilance Critique", "Vigilance Élevée", "Vigilance Modérée", "Vigilance Allégée"]
+    estimated_statuses = ["Vigilance Critique", "Vigilance Élevée"]
+
+    def build_card(status_label: str, count: int, total_count: int, kicker: str) -> str:
+        pct = (count / total_count) if total_count else 0.0
+        bg, fg = status_palette(status_label, "vigilance")
+        width = round(pct * 100) if count else 0
+        return (
+            "<div style='background:#FFFFFF; border:1px solid rgba(22,58,89,0.08); border-radius:18px; padding:0.9rem 1rem; box-shadow:0 10px 24px rgba(22,58,89,0.05);'>"
+            f"<div style='font-size:0.72rem; text-transform:uppercase; letter-spacing:0.08em; color:#5B7084; margin-bottom:0.25rem;'>{escape(kicker)}</div>"
+            f"<div style='display:inline-flex; padding:0.22rem 0.55rem; border-radius:999px; background:{bg}; color:{fg}; font-weight:700; font-size:0.78rem; margin-bottom:0.55rem;'>{escape(status_label)}</div>"
+            f"<div style='font-size:1.55rem; font-weight:800; color:#163A59; line-height:1.1;'>{count}</div>"
+            f"<div style='font-size:0.82rem; color:#5B7084; margin-top:0.15rem;'>{count} société(s) • {format_pct(pct)}</div>"
+            f"<div style='margin-top:0.7rem; height:8px; border-radius:999px; background:#EAF2FB; overflow:hidden;'><div style='width:{width}%; min-width:{'6px' if count else '0'}; height:100%; background:{bg};'></div></div>"
+            "</div>"
+        )
+
+    real_cards = []
+    for label in real_statuses:
+        count = int(df.loc[df[REVIEW_SIM_REAL_LABEL].astype(str).eq(label), "SIREN"].nunique())
+        real_cards.append(build_card(label, count, total, "Statuts réels"))
+    est_cards = []
+    for label in estimated_statuses:
+        count = int(df.loc[df[REVIEW_SIM_EST_LABEL].astype(str).eq(label), "SIREN"].nunique())
+        est_cards.append(build_card(label, count, total, "Statuts estimés"))
+
+    st.markdown("<div style='display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:0.85rem; margin:0.2rem 0 0.8rem 0;'>" + ''.join(real_cards) + "</div>", unsafe_allow_html=True)
+    st.markdown("<div style='display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:0.85rem; margin:0.15rem 0 0.95rem 0;'>" + ''.join(est_cards) + "</div>", unsafe_allow_html=True)
+
+
+def render_review_simulation_table(df: pd.DataFrame, key: str) -> list[int]:
+    raw_df = df.copy().reset_index(drop=True)
+    display_df = raw_df.copy()
     display_df["Date prochaine revue"] = display_df["Date prochaine revue"].apply(format_short_date)
-    edited = st.data_editor(
-        display_df,
+    display_df["Explique moi"] = display_df["Explique moi"].fillna("")
+    display_df["Alertes actives"] = display_df["Alertes actives"].fillna("")
+
+    column_order = [
+        SOC_COL,
+        "SIREN",
+        "Dénomination",
+        REVIEW_SIM_REAL_LABEL,
+        "Explique moi",
+        REVIEW_SIM_TREND_LABEL,
+        REVIEW_SIM_EST_LABEL,
+        "Type de revue",
+        "Date prochaine revue",
+        "Alertes actives",
+    ]
+    display_df = display_df[[c for c in column_order if c in display_df.columns]].copy()
+
+    column_config = {
+        SOC_COL: st.column_config.TextColumn("Société", width="small"),
+        "SIREN": st.column_config.TextColumn("SIREN", width="small"),
+        "Dénomination": st.column_config.TextColumn("Dénomination", width="medium"),
+        REVIEW_SIM_REAL_LABEL: st.column_config.TextColumn(REVIEW_SIM_REAL_LABEL, width="medium"),
+        "Explique moi": st.column_config.TextColumn("Explique moi", width="large"),
+        REVIEW_SIM_TREND_LABEL: st.column_config.TextColumn(REVIEW_SIM_TREND_LABEL, width="small"),
+        REVIEW_SIM_EST_LABEL: st.column_config.TextColumn(REVIEW_SIM_EST_LABEL, width="medium"),
+        "Type de revue": st.column_config.TextColumn("Type de revue", width="medium"),
+        "Date prochaine revue": st.column_config.TextColumn("Date prochaine revue", width="small"),
+        "Alertes actives": st.column_config.TextColumn("Alertes actives", width="large"),
+    }
+
+    event = st.dataframe(
+        style_review_simulation_table(display_df),
+        width="stretch",
+        height=min(660, 240 + 38 * max(len(display_df), 1)),
         hide_index=True,
-        use_container_width=True,
-        num_rows="fixed",
-        height=min(620, 210 + 35 * max(len(display_df), 1)),
-        column_config={
-            "Sélection": st.column_config.CheckboxColumn("Sélection", width="small"),
-            SOC_COL: st.column_config.TextColumn("Société", width="small"),
-            "SIREN": st.column_config.TextColumn("SIREN", width="small"),
-            "Dénomination": st.column_config.TextColumn("Dénomination", width="medium"),
-            "Régime de vigilance": st.column_config.TextColumn("Régime de vigilance", width="medium"),
-            "Type de revue": st.column_config.TextColumn("Type de revue", width="medium"),
-            "Date prochaine revue": st.column_config.TextColumn("Date prochaine revue", width="small"),
-            "Alertes actives": st.column_config.TextColumn("Alertes actives", width="large"),
-            "Explique moi": st.column_config.TextColumn("Explique moi", width="large"),
-            "Statut de vigilance espéré après remédiation": st.column_config.SelectboxColumn(
-                "Statut de vigilance espéré après remédiation",
-                options=VIGILANCE_ORDER,
-                width="medium",
-            ),
-        },
-        disabled=[SOC_COL, "SIREN", "Dénomination", "Régime de vigilance", "Type de revue", "Date prochaine revue", "Alertes actives"],
+        column_order=list(display_df.columns),
+        column_config=column_config,
+        on_select="rerun",
+        selection_mode="multi-row",
+        row_height=42,
         key=key,
     )
-    edited["Date prochaine revue"] = pd.to_datetime(edited["Date prochaine revue"], errors="coerce", dayfirst=True)
-    return edited
-
+    selected_rows: list[int] = []
+    if event is not None:
+        try:
+            selected_rows = [int(i) for i in event.selection.get("rows", [])]
+        except Exception:
+            selected_rows = []
+    return selected_rows
 
 
 def render_review_simulations_screen(portfolio: pd.DataFrame, user: dict) -> None:
@@ -2061,7 +2199,7 @@ def render_review_simulations_screen(portfolio: pd.DataFrame, user: dict) -> Non
     if st.session_state.get("review_sim_type") not in review_types:
         st.session_state["review_sim_type"] = "Tous"
 
-    top_left, top_right = st.columns([2.2, 3.8])
+    top_left, top_right = st.columns([2.25, 3.75])
     with top_left:
         selected_review_type = st.selectbox(
             "Type de revue",
@@ -2070,10 +2208,10 @@ def render_review_simulations_screen(portfolio: pd.DataFrame, user: dict) -> Non
             help="Le type de revue dépend du régime de vigilance. Sélectionnez un type pour concentrer la préparation sur les dossiers concernés.",
         )
         if selected_review_type == "Tous":
-            objective_1 = "Préparer les consignes de revue adaptées au niveau de vigilance, aux alertes actives et à l’EDD."
-            objective_2 = "Conserver pour chaque SIREN une synthèse exploitable et un niveau de vigilance espéré après remédiation."
+            objective_1 = "Préparer les consignes de revue adaptées au niveau de vigilance, aux alertes actives et au statut EDD."
+            objective_2 = "Conserver pour chaque SIREN une synthèse exploitable, une tendance et un statut de vigilance estimé après remédiation."
             prompt_value = (
-                "Tu es un analyste conformité. Pour chaque SIREN sélectionné, prépare les consignes de revue à partir du régime de vigilance, "
+                "Tu es un analyste conformité. Pour chaque SIREN sélectionné, prépare les consignes de revue à partir du statut de vigilance réel, "
                 "des alertes calculées actives, du risque, du statut EDD et de la date prochaine revue. La réponse doit contenir : diagnostic, "
                 "actions prioritaires, justificatifs à demander, points de contrôle, et statut de vigilance estimé après remédiation."
             )
@@ -2093,7 +2231,7 @@ def render_review_simulations_screen(portfolio: pd.DataFrame, user: dict) -> Non
         )
     with top_right:
         st.markdown('<h3 class="cm-section-title">Revues &amp; Simulations</h3>', unsafe_allow_html=True)
-        st.caption("Écran dédié à la préparation des consignes de revue. Sélectionnez jusqu’à 10 SIREN, renseignez les colonnes métier et exportez le lot enrichi.")
+        st.caption("Écran dédié à la préparation des consignes de revue. Sélectionnez jusqu’à 10 SIREN, préparez un lot et exportez le résultat enrichi.")
         st.text_area(
             "Prompt prêt à l’emploi",
             value=prompt_value,
@@ -2122,13 +2260,32 @@ def render_review_simulations_screen(portfolio: pd.DataFrame, user: dict) -> Non
         st.info("Aucun SIREN ne correspond au type de revue et au critère de recherche retenus.")
         return
 
-    edited_df = render_review_simulation_editor(working_df, key=f"review_sim_editor_{selected_review_type}")
-    persist_review_simulation_subset(edited_df)
+    render_review_status_gauges(working_df)
 
-    selected_count = int(edited_df["Sélection"].fillna(False).astype(bool).sum())
+    hint_cols = st.columns([6.0, 2.4, 2.0])
+    with hint_cols[0]:
+        st.markdown(
+            "<div class='cm-analysis-hint-text'>Cliquez sur une ou plusieurs lignes du tableau pour préparer un lot de revue. Les statuts de vigilance sont colorés et l’indicateur de tendance compare le statut réel au statut estimé.</div>",
+            unsafe_allow_html=True,
+        )
+    with hint_cols[1]:
+        st.markdown(
+            "<div class='cm-analysis-hint-action'><a class='cm-analysis-jump-btn' href='#clients-sous-jacents'>Voir les clients sous-jacents</a></div>",
+            unsafe_allow_html=True,
+        )
+    with hint_cols[2]:
+        st.markdown("<div style='height:0.15rem'></div>", unsafe_allow_html=True)
+        if st.button("Effacer la sélection", key="review_sim_clear_selection", type="secondary", use_container_width=True):
+            st.session_state["review_sim_table_version"] = int(st.session_state.get("review_sim_table_version", 0)) + 1
+            st.rerun()
+
+    table_version = int(st.session_state.get("review_sim_table_version", 0))
+    selected_rows = render_review_simulation_table(working_df, key=f"review_sim_table_{selected_review_type}_{table_version}")
+
+    selected_count = len(selected_rows)
     c1, c2, c3 = st.columns([2.8, 2.2, 1.4])
     with c1:
-        st.caption("Sélectionnez jusqu’à 10 SIREN dans la colonne « Sélection ». La colonne « Explique moi » stocke pour l’instant une simulation locale avant branchement Gemini.")
+        st.caption("Sélectionnez jusqu’à 10 SIREN directement dans le tableau. La colonne « Explique moi » stocke pour l’instant une simulation locale avant branchement Gemini.")
     with c2:
         st.markdown(
             f"<div class='cm-analysis-mode-note'><strong>{selected_count}</strong> ligne(s) sélectionnée(s)</div>",
@@ -2138,7 +2295,7 @@ def render_review_simulations_screen(portfolio: pd.DataFrame, user: dict) -> Non
             source_df = portfolio.copy()
             source_df[SOC_COL] = normalize_societe_id(source_df[SOC_COL])
             source_df["SIREN"] = normalize_siren(source_df["SIREN"])
-            updated_df, processed = apply_review_simulation_batch(edited_df, source_df)
+            updated_df, processed = apply_review_simulation_batch(working_df, selected_rows, source_df)
             persist_review_simulation_subset(updated_df)
             if processed == 0:
                 st.session_state["review_sim_notice"] = "Sélectionnez au moins un SIREN pour préparer un lot."
@@ -2150,7 +2307,7 @@ def render_review_simulations_screen(portfolio: pd.DataFrame, user: dict) -> Non
     with c3:
         st.download_button(
             label="Exporter (.csv)",
-            data=dataframe_to_csv_bytes(build_review_simulation_export_dataframe(edited_df)),
+            data=dataframe_to_csv_bytes(build_review_simulation_export_dataframe(working_df)),
             file_name="revues_et_simulations.csv",
             mime="text/csv",
             type="secondary",
@@ -2161,9 +2318,8 @@ def render_review_simulations_screen(portfolio: pd.DataFrame, user: dict) -> Non
     if st.session_state.get("review_sim_notice"):
         st.success(str(st.session_state.pop("review_sim_notice")))
 
-    selected_rows = edited_df[edited_df["Sélection"].fillna(False).astype(bool)].copy()
-    if not selected_rows.empty:
-        first = selected_rows.iloc[0]
+    if selected_rows:
+        first = working_df.iloc[selected_rows[0]]
         source_df = portfolio.copy()
         source_df[SOC_COL] = normalize_societe_id(source_df[SOC_COL])
         source_df["SIREN"] = normalize_siren(source_df["SIREN"])
@@ -2174,7 +2330,7 @@ def render_review_simulations_screen(portfolio: pd.DataFrame, user: dict) -> Non
             SOC_COL: soc,
             "SIREN": siren,
             "Dénomination": first.get("Dénomination", ""),
-            "Vigilance": first.get("Régime de vigilance", ""),
+            "Vigilance": first.get(REVIEW_SIM_REAL_LABEL, ""),
             "Risque": "",
             "Statut EDD": "",
             "Date prochaine revue": first.get("Date prochaine revue"),
