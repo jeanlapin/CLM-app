@@ -3268,98 +3268,192 @@ def render_review_simulations_screen(portfolio: pd.DataFrame, user: dict) -> Non
 
     with action_menu_placeholder.container():
         st.markdown(
-            """
+            f"""
             <style>
-            .review-toolbar-shell {
+            .review-toolbar-shell {{
                 margin: 0.2rem 0 0.8rem 0;
-                padding: 0.95rem 1.05rem 0.85rem 1.05rem;
+                padding: 1rem 1.08rem 0.92rem 1.08rem;
                 border-radius: 20px;
                 border: 1px solid rgba(22, 58, 89, 0.12);
                 background: linear-gradient(180deg, rgba(255,255,255,0.98), rgba(243,247,252,0.96));
                 box-shadow: 0 10px 24px rgba(22, 58, 89, 0.06);
-            }
-            .review-toolbar-kicker {
+            }}
+            .review-toolbar-kicker {{
                 font-family: 'Sora', sans-serif;
                 font-size: 0.74rem;
                 font-weight: 800;
                 letter-spacing: 0.08em;
                 text-transform: uppercase;
-                color: #2F6B9E;
+                color: {PRIMARY_COLOR};
                 margin-bottom: 0.18rem;
-            }
-            .review-toolbar-title {
+            }}
+            .review-toolbar-title {{
                 font-family: 'Montserrat', sans-serif;
                 font-size: 1.02rem;
                 font-weight: 800;
-                color: #163A59;
+                color: {PRIMARY_COLOR};
                 margin-bottom: 0.2rem;
-            }
-            .review-toolbar-note {
+            }}
+            .review-toolbar-note {{
                 color: #5B7084;
                 font-size: 0.84rem;
                 line-height: 1.45;
-                margin-bottom: 0.6rem;
-            }
-            .review-toolbar-band {
+                margin-bottom: 0.65rem;
+            }}
+            .review-toolbar-band {{
                 display: flex;
                 flex-wrap: wrap;
                 gap: 0.5rem;
                 margin-bottom: 0.45rem;
-            }
-            .review-toolbar-chip {
+            }}
+            .review-toolbar-chip {{
                 display: inline-flex;
                 align-items: center;
                 gap: 0.42rem;
                 padding: 0.34rem 0.72rem;
                 border-radius: 999px;
                 background: rgba(22, 58, 89, 0.07);
-                color: #163A59;
+                color: {PRIMARY_COLOR};
                 font-size: 0.8rem;
                 font-weight: 700;
                 border: 1px solid rgba(22, 58, 89, 0.08);
-            }
-            .review-toolbar-chip strong {
+            }}
+            .review-toolbar-chip strong {{
                 font-weight: 800;
-            }
-            .review-toolbar-preview {
+            }}
+            .review-toolbar-preview {{
                 color: #40607B;
                 font-size: 0.82rem;
                 line-height: 1.42;
                 margin-top: 0.05rem;
-            }
-            .review-toolbar-group-title {
+            }}
+            .review-toolbar-group-title {{
                 font-family: 'Sora', sans-serif;
                 font-size: 0.79rem;
                 font-weight: 800;
                 letter-spacing: 0.05em;
                 text-transform: uppercase;
-                color: #163A59;
-                margin: 0.12rem 0 0.18rem 0;
-            }
-            .review-toolbar-group-note {
+                color: {PRIMARY_COLOR};
+                margin: 0 0 0.18rem 0;
+            }}
+            .review-toolbar-group-note {{
                 color: #5B7084;
                 font-size: 0.78rem;
                 line-height: 1.42;
-                margin-bottom: 0.55rem;
+                margin-bottom: 0.2rem;
                 min-height: 2.2rem;
-            }
-            a.review-toolbar-link {
+            }}
+            .review-toolbar-link {{
                 display: inline-flex;
                 align-items: center;
                 justify-content: center;
                 width: 100%;
-                min-height: 2.6rem;
-                padding: 0.58rem 0.82rem;
-                border-radius: 12px;
+                min-height: 2.9rem;
+                padding: 0 0.95rem;
+                border-radius: 14px;
                 background: #FFFFFF;
-                color: #163A59 !important;
+                color: {PRIMARY_COLOR} !important;
                 text-decoration: none !important;
-                border: 1px solid rgba(22, 58, 89, 0.16);
-                box-shadow: 0 4px 12px rgba(22, 58, 89, 0.05);
-                font-size: 0.9rem;
+                border: 1.5px solid rgba(22, 58, 89, 0.18);
+                font-family: 'Sora', sans-serif;
+                font-size: 0.82rem;
                 font-weight: 700;
                 text-align: center;
-            }
+                line-height: 1.15;
+                box-shadow: none;
+                transition: background 0.18s ease, border-color 0.18s ease, transform 0.18s ease;
+            }}
+            .review-toolbar-link:hover {{
+                background: #F4F8FC;
+                border-color: rgba(22, 58, 89, 0.28);
+                color: {PRIMARY_COLOR} !important;
+                transform: translateY(-1px);
+            }}
+            div[data-testid="stVerticalBlock"]:has(.review-toolbar-actions-scope) {{
+                gap: 0.8rem;
+            }}
+            div[data-testid="stVerticalBlock"]:has(.review-toolbar-group-scope) {{
+                background: rgba(255, 255, 255, 0.98);
+                border: 1px solid rgba(22, 58, 89, 0.12);
+                border-radius: 18px;
+                padding: 0.92rem 0.92rem 1rem 0.92rem;
+                box-shadow: 0 8px 18px rgba(22, 58, 89, 0.05);
+                height: 100%;
+            }}
+            div[data-testid="stVerticalBlock"]:has(.review-toolbar-group-scope) > div {{
+                gap: 0.62rem;
+            }}
+            div[data-testid="stVerticalBlock"]:has(.review-toolbar-group-scope) .stButton > button,
+            div[data-testid="stVerticalBlock"]:has(.review-toolbar-group-scope) .stDownloadButton > button {{
+                min-height: 2.9rem !important;
+                height: 2.9rem !important;
+                border-radius: 14px !important;
+                font-family: 'Sora', sans-serif !important;
+                font-size: 0.82rem !important;
+                font-weight: 700 !important;
+                letter-spacing: 0.01em !important;
+                box-shadow: none !important;
+                white-space: nowrap !important;
+                padding: 0 0.95rem !important;
+                justify-content: center !important;
+            }}
+            div[data-testid="stVerticalBlock"]:has(.review-toolbar-group-scope) .stButton > button[kind="secondary"],
+            div[data-testid="stVerticalBlock"]:has(.review-toolbar-group-scope) .stDownloadButton > button[kind="secondary"] {{
+                background: #FFFFFF !important;
+                color: {PRIMARY_COLOR} !important;
+                border: 1.5px solid rgba(22, 58, 89, 0.18) !important;
+            }}
+            div[data-testid="stVerticalBlock"]:has(.review-toolbar-group-scope) .stButton > button[kind="secondary"]:hover,
+            div[data-testid="stVerticalBlock"]:has(.review-toolbar-group-scope) .stDownloadButton > button[kind="secondary"]:hover {{
+                background: #F4F8FC !important;
+                color: {PRIMARY_COLOR} !important;
+                border-color: rgba(22, 58, 89, 0.28) !important;
+                filter: none !important;
+            }}
+            div[data-testid="stVerticalBlock"]:has(.review-toolbar-group-scope) .stButton > button[kind="primary"],
+            div[data-testid="stVerticalBlock"]:has(.review-toolbar-group-scope) .stDownloadButton > button[kind="primary"] {{
+                background: linear-gradient(135deg, {PRIMARY_COLOR}, #245782) !important;
+                color: #FFFFFF !important;
+                border: 1px solid {PRIMARY_COLOR} !important;
+            }}
+            div[data-testid="stVerticalBlock"]:has(.review-toolbar-group-scope) .stButton > button:disabled,
+            div[data-testid="stVerticalBlock"]:has(.review-toolbar-group-scope) .stDownloadButton > button:disabled {{
+                background: #F5F8FB !important;
+                color: #8CA1B4 !important;
+                border: 1px solid #D8E3EE !important;
+                box-shadow: none !important;
+                filter: none !important;
+                transform: none !important;
+            }}
+            div[data-testid="stVerticalBlock"]:has(.review-toolbar-group-scope) .stButton > button:hover,
+            div[data-testid="stVerticalBlock"]:has(.review-toolbar-group-scope) .stDownloadButton > button:hover {{
+                transform: translateY(-1px);
+            }}
+            div[data-testid="stVerticalBlock"]:has(.review-toolbar-group-scope) .stSelectbox label,
+            div[data-testid="stVerticalBlock"]:has(.review-toolbar-group-scope) .stDownloadButton label {{
+                font-family: 'Sora', sans-serif !important;
+                font-size: 0.76rem !important;
+                font-weight: 700 !important;
+                color: {PRIMARY_COLOR} !important;
+                letter-spacing: 0.02em !important;
+            }}
+            div[data-testid="stVerticalBlock"]:has(.review-toolbar-group-scope) div[data-baseweb="select"] > div {{
+                min-height: 2.9rem;
+                border-radius: 14px;
+                border: 1.5px solid rgba(22, 58, 89, 0.18);
+                box-shadow: none;
+                background: #FFFFFF;
+            }}
+            div[data-testid="stVerticalBlock"]:has(.review-toolbar-group-scope) div[data-baseweb="select"] > div:hover {{
+                border-color: rgba(22, 58, 89, 0.28);
+            }}
+            div[data-testid="stVerticalBlock"]:has(.review-toolbar-group-scope) div[data-baseweb="select"] span,
+            div[data-testid="stVerticalBlock"]:has(.review-toolbar-group-scope) div[data-baseweb="select"] svg {{
+                color: {PRIMARY_COLOR} !important;
+                font-family: 'Sora', sans-serif !important;
+                font-size: 0.84rem !important;
+                font-weight: 700 !important;
+            }}
             </style>
             """,
             unsafe_allow_html=True,
@@ -3391,48 +3485,51 @@ def render_review_simulations_screen(portfolio: pd.DataFrame, user: dict) -> Non
             unsafe_allow_html=True,
         )
 
-        group_selection_col, group_treatment_col, group_documents_col = st.columns([1.1, 1.45, 1.2])
+        st.markdown("<div class='review-toolbar-actions-scope'></div>", unsafe_allow_html=True)
+        group_selection_col, group_treatment_col, group_documents_col = st.columns([1, 1.08, 1.08], gap="medium")
 
         with group_selection_col:
-            st.markdown(
-                "<div class='review-toolbar-group-title'>Sélection</div>"
-                "<div class='review-toolbar-group-note'>Navigation vers les clients sous-jacents et remise à zéro de la sélection courante.</div>",
-                unsafe_allow_html=True,
-            )
-            st.markdown(
-                "<a class='review-toolbar-link' href='#clients-sous-jacents' title='Afficher les clients sous-jacents liés à la sélection courante'>Voir les clients sous-jacents</a>",
-                unsafe_allow_html=True,
-            )
-            if st.button(
-                "Effacer la sélection",
-                key="review_sim_clear_selection",
-                type="secondary",
-                use_container_width=True,
-                disabled=(not has_saved_selection),
-                help="Vide la sélection mémorisée du tableau des sociétés.",
-            ):
-                st.session_state["review_sim_selected_keys"] = []
-                st.session_state["review_sim_table_version"] = int(st.session_state.get("review_sim_table_version", 0)) + 1
-                st.rerun()
+            with st.container():
+                st.markdown(
+                    "<div class='review-toolbar-group-scope'></div>"
+                    "<div class='review-toolbar-group-title'>Sélection</div>"
+                    "<div class='review-toolbar-group-note'>Navigation vers les clients sous-jacents et remise à zéro de la sélection courante.</div>",
+                    unsafe_allow_html=True,
+                )
+                st.markdown(
+                    "<a class='review-toolbar-link' href='#clients-sous-jacents' title='Afficher les clients sous-jacents liés à la sélection courante'>Voir les clients sous-jacents</a>",
+                    unsafe_allow_html=True,
+                )
+                if st.button(
+                    "Effacer la sélection",
+                    key="review_sim_clear_selection",
+                    type="secondary",
+                    use_container_width=True,
+                    disabled=(not has_saved_selection),
+                    help="Vide la sélection mémorisée du tableau des sociétés.",
+                ):
+                    st.session_state["review_sim_selected_keys"] = []
+                    st.session_state["review_sim_table_version"] = int(st.session_state.get("review_sim_table_version", 0)) + 1
+                    st.rerun()
 
         with group_treatment_col:
-            st.markdown(
-                "<div class='review-toolbar-group-title'>Traitement</div>"
-                "<div class='review-toolbar-group-note'>Mise à jour du statut estimé ou lancement de Gemini sur la sélection courante.</div>",
-                unsafe_allow_html=True,
-            )
-            manual_status = st.selectbox(
-                "Statut estimé",
-                options=status_options,
-                index=status_options.index(default_value),
-                key="review_sim_manual_status",
-                disabled=(selected_count == 0),
-                help="Choisissez le statut estimé à appliquer à toutes les lignes sélectionnées.",
-            )
-            treatment_action_col, gemini_action_col = st.columns([1, 1.15])
-            with treatment_action_col:
+            with st.container():
+                st.markdown(
+                    "<div class='review-toolbar-group-scope'></div>"
+                    "<div class='review-toolbar-group-title'>Traitement</div>"
+                    "<div class='review-toolbar-group-note'>Mise à jour du statut estimé ou lancement de Gemini sur la sélection courante.</div>",
+                    unsafe_allow_html=True,
+                )
+                manual_status = st.selectbox(
+                    "Statut estimé",
+                    options=status_options,
+                    index=status_options.index(default_value),
+                    key="review_sim_manual_status",
+                    disabled=(selected_count == 0),
+                    help="Choisissez le statut estimé à appliquer à toutes les lignes sélectionnées.",
+                )
                 if st.button(
-                    "Appliquer",
+                    "Appliquer le statut",
                     type="secondary",
                     key="review_sim_apply_manual_status",
                     use_container_width=True,
@@ -3448,7 +3545,7 @@ def render_review_simulations_screen(portfolio: pd.DataFrame, user: dict) -> Non
                     if pdf_errors:
                         st.session_state["review_sim_warning"] = " | ".join(pdf_errors[:3])
                     st.rerun()
-            with gemini_action_col:
+
                 gemini_button_disabled = (selected_count == 0) or (not gemini_api_key)
                 if st.button(
                     "Lancer Gemini",
@@ -3495,54 +3592,56 @@ def render_review_simulations_screen(portfolio: pd.DataFrame, user: dict) -> Non
                     st.rerun()
 
         with group_documents_col:
-            st.markdown(
-                "<div class='review-toolbar-group-title'>Documents</div>"
-                "<div class='review-toolbar-group-note'>Téléchargement unitaire du PDF, export groupé des PDF et export du tableau visible.</div>",
-                unsafe_allow_html=True,
-            )
-            if REPORTLAB_AVAILABLE and len(pdf_items) == 1:
-                pdf_item = pdf_items[0]
-                pdf_path = pdf_item.get("path")
-                if isinstance(pdf_path, Path) and pdf_path.exists():
+            with st.container():
+                st.markdown(
+                    "<div class='review-toolbar-group-scope'></div>"
+                    "<div class='review-toolbar-group-title'>Documents</div>"
+                    "<div class='review-toolbar-group-note'>Téléchargement du PDF, export groupé des PDF et export du tableau visible.</div>",
+                    unsafe_allow_html=True,
+                )
+                if REPORTLAB_AVAILABLE and len(pdf_items) == 1:
+                    pdf_item = pdf_items[0]
+                    pdf_path = pdf_item.get("path")
+                    if isinstance(pdf_path, Path) and pdf_path.exists():
+                        st.download_button(
+                            label="Récupérer le PDF",
+                            data=pdf_path.read_bytes(),
+                            file_name=str(pdf_item.get("download_name", "revue_simulation.pdf")),
+                            mime="application/pdf",
+                            type="secondary",
+                            use_container_width=True,
+                            key="review_sim_single_pdf",
+                            help="Télécharge le PDF du SIREN sélectionné lorsque la sélection contient une seule société.",
+                        )
+                    else:
+                        st.button("Récupérer le PDF", disabled=True, type="secondary", use_container_width=True, key="review_sim_single_pdf_disabled")
+                else:
+                    st.button("Récupérer le PDF", disabled=True, type="secondary", use_container_width=True, key="review_sim_single_pdf_placeholder")
+
+                if REPORTLAB_AVAILABLE and pdf_items:
                     st.download_button(
-                        label="Récupérer le PDF",
-                        data=pdf_path.read_bytes(),
-                        file_name=str(pdf_item.get("download_name", "revue_simulation.pdf")),
-                        mime="application/pdf",
+                        label="Exporter les PDF",
+                        data=review_simulation_pdfs_zip_bytes(pdf_items),
+                        file_name="revues_simulations_selection.zip",
+                        mime="application/zip",
                         type="secondary",
                         use_container_width=True,
-                        key="review_sim_single_pdf",
-                        help="Télécharge le PDF du SIREN sélectionné lorsque la sélection contient une seule société.",
+                        key="review_sim_pdf_zip",
+                        help="Télécharge tous les PDF disponibles sur la sélection courante dans un fichier ZIP.",
                     )
                 else:
-                    st.button("Récupérer le PDF", disabled=True, use_container_width=True, key="review_sim_single_pdf_disabled")
-            else:
-                st.button("Récupérer le PDF", disabled=True, use_container_width=True, key="review_sim_single_pdf_placeholder")
+                    st.button("Exporter les PDF", disabled=True, type="secondary", use_container_width=True, key="review_sim_pdf_zip_placeholder")
 
-            if REPORTLAB_AVAILABLE and pdf_items:
                 st.download_button(
-                    label="Exporter les PDF",
-                    data=review_simulation_pdfs_zip_bytes(pdf_items),
-                    file_name="revues_simulations_selection.zip",
-                    mime="application/zip",
+                    label="Exporter le CSV",
+                    data=dataframe_to_csv_bytes(build_review_simulation_export_dataframe(working_df)),
+                    file_name="revues_et_simulations.csv",
+                    mime="text/csv",
                     type="secondary",
                     use_container_width=True,
-                    key="review_sim_pdf_zip",
-                    help="Télécharge tous les PDF disponibles sur la sélection courante dans un fichier ZIP.",
+                    key="review_sim_export_csv",
+                    help="Exporte le tableau Revues & Simulations visible, y compris la colonne « Explique moi ».",
                 )
-            else:
-                st.button("Exporter les PDF", disabled=True, use_container_width=True, key="review_sim_pdf_zip_placeholder")
-
-            st.download_button(
-                label="Exporter le CSV",
-                data=dataframe_to_csv_bytes(build_review_simulation_export_dataframe(working_df)),
-                file_name="revues_et_simulations.csv",
-                mime="text/csv",
-                type="secondary",
-                use_container_width=True,
-                key="review_sim_export_csv",
-                help="Exporte le tableau Revues & Simulations visible, y compris la colonne « Explique moi ».",
-            )
 
         if not gemini_api_key:
             st.caption("Saisissez la clé API Gemini en haut de l’écran pour activer l’analyse automatique.")
