@@ -3477,7 +3477,7 @@ def render_analysis_trend_chart(trend_df: pd.DataFrame) -> None:
 
     color_scale = alt.Scale(
         domain=metric_cols,
-        range=[PRIMARY_COLOR, SECONDARY_COLOR, "#8FB8E8"],
+        range=["#0F4C81", "#F28C28", "#2E8B57"],
     )
 
     base = alt.Chart(melted).encode(
@@ -3525,7 +3525,7 @@ def render_analysis_trend_chart(trend_df: pd.DataFrame) -> None:
     )
 
     st.altair_chart(chart, use_container_width=True)
-    st.caption("Lecture mensuelle des mises à jour vigilance, dernières revues et prochaines revues.")
+    st.caption("Lecture mensuelle : bleu = mises à jour vigilance, orange = dernières revues, vert = prochaines revues.")
 
 
 def normalize_analysis_category(series: pd.Series) -> pd.Series:
