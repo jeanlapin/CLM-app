@@ -2051,41 +2051,51 @@ def render_review_simulations_screen(portfolio: pd.DataFrame, user: dict) -> Non
         open_review_simulations_view()
         st.rerun()
 
-    top_left, top_right = st.columns([5.2, 1.2])
-    with top_left:
-        st.markdown('<h3 class="cm-section-title">Revues &amp; Simulations</h3>', unsafe_allow_html=True)
-        st.caption(
-            "Choisissez un type de revue, préparez un lot de 10 SIREN maximum et exportez les consignes simulées."
-        )
-    with top_right:
-        if st.button("Réinitialiser", type="secondary", key="review_sim_reset"):
-            for label in ["Vigilance", "Risque", "EDD", "Segment", "Pays", "Produit", "Canal", "Analyste", "Valideur"]:
-                st.session_state.pop("review_sim_filter_" + label, None)
-            st.session_state.pop("review_sim_type", None)
-            st.rerun()
+    base_df = build_review_simulation_working_table(portfolio, "")
+    if base_df.empty:
+        st.info("Aucun SIREN disponible pour préparer une revue sur ce périmètre.")
+        return
 
     review_types = ["Tous"] + list(dict.fromkeys(REVIEW_TYPE_BY_VIGILANCE.values()))
     type_to_vigilance = {v: k for k, v in REVIEW_TYPE_BY_VIGILANCE.items()}
+    if st.session_state.get("review_sim_type") not in review_types:
+        st.session_state["review_sim_type"] = "Tous"
+    selected_review_type = st.selectbox(
+        "Type de revue",
+        options=review_types,
+        key="review_sim_type",
+        help="Le type de revue dépend du régime de vigilance. Choisissez un type pour préparer le lot correspondant.",
+    )
 
-    review_type_col, review_objectives_col = st.columns([2.1, 3.9])
-    with review_type_col:
-        if st.session_state.get("review_sim_type") not in review_types:
-            st.session_state["review_sim_type"] = "Tous"
-        selected_review_type = st.selectbox(
-            "Type de revue",
-            options=review_types,
-            key="review_sim_type",
-            help="Le type de revue est déduit du régime de vigilance. Vous pouvez concentrer l'écran sur un seul type ou garder tous les dossiers.",
+    working_df = base_df.copy()
+    if selected_review_type != "Tous":
+        working_df = working_df[working_df["Type de revue"].astype(str).eq(selected_review_type)].copy()
+
+    search_term = st.text_input(
+        "Rechercher un SIREN ou une dénomination",
+        key="review_sim_search",
+        placeholder="Ex. 123456789 ou NOM CLIENT",
+    ).strip()
+    if search_term:
+        mask = (
+            working_df["SIREN"].astype(str).str.contains(search_term, case=False, na=False)
+            | working_df["Dénomination"].astype(str).str.contains(search_term, case=False, na=False)
+            | working_df["Alertes actives"].astype(str).str.contains(search_term, case=False, na=False)
         )
+        working_df = working_df[mask].copy()
+
+    if working_df.empty:
+        st.info("Aucun SIREN n’est à traiter pour le type de revue retenu.")
+        return
 
     selected_vigilance_for_prompt = type_to_vigilance.get(selected_review_type, "Vigilance Modérée")
     if selected_review_type == "Tous":
-        objective_1 = "Cibler les dossiers à traiter, préparer les consignes et répartir la charge de revue."
+        objective_1 = "Préparer les consignes de revue adaptées au niveau de vigilance, aux alertes actives et à l’EDD."
         objective_2 = "Conserver pour chaque SIREN une synthèse exploitable et un niveau de vigilance espéré après remédiation."
         prompt_value = (
-            "Tu es un analyste conformité. Prépare des consignes de revue adaptées au type de revue du dossier, "
-            "au régime de vigilance, aux alertes calculées actives et au statut EDD. La sortie doit contenir : "
-            "diagnostic, actions prioritaires, justificatifs à obtenir, et statut de vigilance estimé après remédiation."
+            "Tu es un analyste conformité. Pour chaque SIREN sélectionné, prépare les consignes de revue à partir du régime de vigilance, "
+            "des alertes calculées actives, du risque, du statut EDD et de la date prochaine revue. La réponse doit contenir : "
+            "diagnostic, actions prioritaires, justificatifs à demander, points de contrôle, et statut de vigilance estimé après remédiation."
         )
         kicker = "Tous les types"
     else:
@@ -2093,7 +2103,19 @@ def render_review_simulations_screen(portfolio: pd.DataFrame, user: dict) -> Non
         prompt_value = build_generic_review_prompt(selected_vigilance_for_prompt)
         kicker = selected_review_type
 
-    with review_objectives_col:
+    top_left, top_right = st.columns([4.2, 2.4])
+    with top_left:
+        st.markdown('<h3 class="cm-section-title">Revues &amp; Simulations</h3>', unsafe_allow_html=True)
+        st.caption("Préparez un lot de 10 SIREN maximum, stockez les consignes de revue et exportez le résultat enrichi.")
+    with top_right:
+        if st.button("Réinitialiser l’écran", type="secondary", key="review_sim_reset", use_container_width=True):
+            st.session_state.pop("review_sim_type", None)
+            st.session_state.pop("review_sim_search", None)
+            st.session_state.pop("review_sim_notice", None)
+            st.rerun()
+
+    info_col, prompt_col = st.columns([2.3, 3.7])
+    with info_col:
         st.markdown(
             "<div class='cm-analysis-mode-shell'>"
             f"<div class='cm-analysis-mode-kicker'>{escape(kicker)}</div>"
@@ -2102,38 +2124,19 @@ def render_review_simulations_screen(portfolio: pd.DataFrame, user: dict) -> Non
             "</div>",
             unsafe_allow_html=True,
         )
+        due_count = int(pd.to_datetime(working_df["Date prochaine revue"], errors="coerce", dayfirst=True).notna().sum())
+        missing_count = int(pd.to_datetime(working_df["Date prochaine revue"], errors="coerce", dayfirst=True).isna().sum())
+        kpi_a, kpi_b, kpi_c = st.columns(3)
+        kpi_a.metric("SIREN à traiter", format_int_fr(len(working_df)))
+        kpi_b.metric("Avec date revue", format_int_fr(due_count))
+        kpi_c.metric("Sans date revue", format_int_fr(missing_count))
+    with prompt_col:
         st.text_area(
             "Prompt prêt à l’emploi",
             value=prompt_value,
-            height=190,
+            height=210,
             key="review_sim_prompt_preview",
         )
-
-    filter_labels = ["Vigilance", "Risque", "EDD", "Segment", "Pays", "Produit", "Canal", "Analyste", "Valideur"]
-    selections: dict[str, str] = {}
-    filter_cols = st.columns(5)
-    for idx, label in enumerate(filter_labels):
-        column = FILTER_MAPPING[label]
-        options = ["Tous"] + non_empty_sorted(portfolio[column].unique()) if column in portfolio.columns else ["Tous"]
-        state_key = "review_sim_filter_" + label
-        if st.session_state.get(state_key) not in options:
-            st.session_state[state_key] = "Tous"
-        with filter_cols[idx % 5]:
-            selections[label] = st.selectbox(label, options=options, key=state_key)
-        if idx % 5 == 4 and idx < len(filter_labels) - 1:
-            filter_cols = st.columns(5)
-
-    filtered = apply_filters(portfolio, selections)
-    if filtered.empty:
-        st.warning("Aucun client ne correspond au périmètre société + filtres sélectionnés.")
-        return
-
-    working_df = build_review_simulation_working_table(filtered, "")
-    if selected_review_type != "Tous":
-        working_df = working_df[working_df["Type de revue"].astype(str).eq(selected_review_type)].copy()
-    if working_df.empty:
-        st.info("Aucun SIREN n’est à traiter pour le type de revue retenu sur ce périmètre.")
-        return
 
     metadata_cols = KEY_COLUMNS + [
         "Risque",
@@ -2145,7 +2148,7 @@ def render_review_simulations_screen(portfolio: pd.DataFrame, user: dict) -> Non
         "Alerte cash intensité élevée",
         "Date prochaine revue",
     ]
-    meta = filtered[[c for c in metadata_cols if c in filtered.columns]].copy()
+    meta = portfolio[[c for c in metadata_cols if c in portfolio.columns]].copy()
     work_for_editor = working_df.merge(
         meta,
         on=KEY_COLUMNS + (["Date prochaine revue"] if "Date prochaine revue" in working_df.columns and "Date prochaine revue" in meta.columns else []),
@@ -2155,17 +2158,14 @@ def render_review_simulations_screen(portfolio: pd.DataFrame, user: dict) -> Non
         work_for_editor = working_df.merge(meta, on=KEY_COLUMNS, how="left")
 
     st.divider()
-    stats_col, action_col, export_col = st.columns([3.4, 2.2, 1.4])
-    with stats_col:
-        st.caption(
-            "Sélectionnez jusqu’à 10 SIREN dans la colonne 'Sélection' pour préparer le lot. "
-            "La colonne 'Explique moi' stocke la simulation avant branchement de Gemini."
-        )
-
+    st.caption(
+        "Sélectionnez jusqu’à 10 SIREN dans la colonne ‘Sélection’. La colonne ‘Explique moi’ conserve le texte de préparation de revue."
+    )
     edited_df = render_review_simulation_editor(work_for_editor, key=f"review_sim_editor_{selected_review_type}")
     persist_review_simulation_subset(edited_df)
 
     selected_count = int(edited_df["Sélection"].fillna(False).astype(bool).sum())
+    action_col, export_col = st.columns([2.4, 1.2])
     with action_col:
         st.markdown(
             f"<div class='cm-analysis-mode-note'><strong>{selected_count}</strong> ligne(s) sélectionnée(s)</div>",
