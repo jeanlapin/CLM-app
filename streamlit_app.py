@@ -1736,9 +1736,10 @@ def persist_review_planning_settings(freq_map: dict[str, int], cap_map: dict[str
 
 def load_review_simulation_store() -> pd.DataFrame:
     path = review_simulations_path()
+    legacy_est_label = "Statut de vigilance espéré après remédiation"
     columns = KEY_COLUMNS + [
         "Explique moi",
-        "Statut de vigilance espéré après remédiation",
+        REVIEW_SIM_EST_LABEL,
         "updated_at_utc",
     ]
     if not path.exists():
@@ -1747,12 +1748,14 @@ def load_review_simulation_store() -> pd.DataFrame:
         df = read_csv_semicolon(path)
     except Exception:
         return pd.DataFrame(columns=columns)
+    if legacy_est_label in df.columns and REVIEW_SIM_EST_LABEL not in df.columns:
+        df[REVIEW_SIM_EST_LABEL] = df[legacy_est_label]
     for col in columns:
         if col not in df.columns:
             df[col] = ""
     df[SOC_COL] = normalize_societe_id(df[SOC_COL])
     df["SIREN"] = normalize_siren(df["SIREN"])
-    for col in ["Explique moi", "Statut de vigilance espéré après remédiation", "updated_at_utc"]:
+    for col in ["Explique moi", REVIEW_SIM_EST_LABEL, "updated_at_utc"]:
         df[col] = df[col].fillna("").astype(str)
     return df[columns].dropna(subset=KEY_COLUMNS).drop_duplicates(subset=KEY_COLUMNS, keep="last")
 
@@ -1762,7 +1765,7 @@ def save_review_simulation_store(df: pd.DataFrame) -> None:
     path = review_simulations_path()
     path.parent.mkdir(parents=True, exist_ok=True)
     save_df = df.copy()
-    for col in KEY_COLUMNS + ["Explique moi", "Statut de vigilance espéré après remédiation", "updated_at_utc"]:
+    for col in KEY_COLUMNS + ["Explique moi", REVIEW_SIM_EST_LABEL, "updated_at_utc"]:
         if col not in save_df.columns:
             save_df[col] = ""
     save_df[SOC_COL] = normalize_societe_id(save_df[SOC_COL])
@@ -1923,6 +1926,29 @@ def build_review_trend(real_status: object, estimated_status: object) -> str:
     if estimated_rank > real_rank:
         return "S’améliore"
     return "Stable"
+
+
+def review_trend_icon(trend_value: object) -> str:
+    trend = str(trend_value or "").strip()
+    if trend == "S’aggrave":
+        return "▲"
+    if trend == "S’améliore":
+        return "▼"
+    return "•"
+
+
+def apply_manual_estimated_status(working_df: pd.DataFrame, selected_indices: list[int], estimated_status: str) -> tuple[pd.DataFrame, int]:
+    result = working_df.copy()
+    batch_idx = list(selected_indices)
+    if not batch_idx:
+        return result, 0
+    for idx in batch_idx:
+        result.at[idx, REVIEW_SIM_EST_LABEL] = estimated_status
+        result.at[idx, REVIEW_SIM_TREND_LABEL] = build_review_trend(
+            result.at[idx, REVIEW_SIM_REAL_LABEL],
+            result.at[idx, REVIEW_SIM_EST_LABEL],
+        )
+    return result, len(batch_idx)
 
 
 def build_review_simulation_working_table(df: pd.DataFrame) -> pd.DataFrame:
@@ -2096,7 +2122,7 @@ def render_review_status_gauges(df: pd.DataFrame) -> None:
         return
     total = max(int(df["SIREN"].nunique()), 1)
     real_statuses = ["Vigilance Critique", "Vigilance Élevée", "Vigilance Modérée", "Vigilance Allégée"]
-    estimated_statuses = ["Vigilance Critique", "Vigilance Élevée"]
+    estimated_statuses = list(real_statuses)
 
     def format_pct(value: float) -> str:
         return f"{value * 100:.1f}".replace(".", ",") + " %"
@@ -2134,6 +2160,7 @@ def render_review_simulation_table(df: pd.DataFrame, key: str) -> list[int]:
     display_df["Date prochaine revue"] = display_df["Date prochaine revue"].apply(format_short_date)
     display_df["Explique moi"] = display_df["Explique moi"].fillna("")
     display_df["Alertes actives"] = display_df["Alertes actives"].fillna("")
+    display_df[REVIEW_SIM_TREND_LABEL] = display_df[REVIEW_SIM_TREND_LABEL].apply(review_trend_icon)
 
     column_order = [
         SOC_COL,
@@ -2293,6 +2320,23 @@ def render_review_simulations_screen(portfolio: pd.DataFrame, user: dict) -> Non
     c1, c2, c3 = st.columns([2.8, 2.2, 1.4])
     with c1:
         st.caption("Sélectionnez jusqu’à 10 SIREN directement dans le tableau. La colonne « Explique moi » stocke pour l’instant une simulation locale avant branchement Gemini.")
+        if selected_count:
+            status_options = list(VIGILANCE_ORDER)
+            current_values = working_df.iloc[selected_rows][REVIEW_SIM_EST_LABEL].astype(str).dropna().unique().tolist()
+            default_value = current_values[0] if len(current_values) == 1 and current_values[0] in status_options else working_df.iloc[selected_rows[0]][REVIEW_SIM_EST_LABEL]
+            if default_value not in status_options:
+                default_value = "Vigilance Modérée"
+            manual_status = st.selectbox(
+                "Statut de vigilance estimé à appliquer aux lignes sélectionnées",
+                options=status_options,
+                index=status_options.index(default_value),
+                key=f"review_sim_manual_status_{selected_review_type}",
+            )
+            if st.button("Appliquer le statut estimé sélectionné", type="secondary", key="review_sim_apply_manual_status", use_container_width=True):
+                updated_df, updated_count = apply_manual_estimated_status(working_df, selected_rows, manual_status)
+                persist_review_simulation_subset(updated_df)
+                st.session_state["review_sim_notice"] = f"{updated_count} SIREN mis à jour avec le statut estimé « {manual_status} »."
+                st.rerun()
     with c2:
         st.markdown(
             f"<div class='cm-analysis-mode-note'><strong>{selected_count}</strong> ligne(s) sélectionnée(s)</div>",
