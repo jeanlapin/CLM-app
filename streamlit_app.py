@@ -659,6 +659,12 @@ def inject_brand_theme() -> None:
             background: rgba(226, 237, 249, 0.96);
         }}
 
+        .cm-analysis-main-table tbody tr.cm-row-selected td {{
+            background: rgba(221, 234, 248, 0.98) !important;
+            color: var(--cm-primary);
+            font-weight: 700;
+        }}
+
         .cm-analysis-main-table tbody td.cm-number {{
             text-align: center;
             font-variant-numeric: tabular-nums;
@@ -3179,84 +3185,68 @@ def render_selectable_analysis_table(
 ) -> tuple[str, pd.Series | None]:
     if df is None or df.empty:
         st.info("Aucune donnée à afficher.")
-        st.session_state.pop(f"analysis_selected_idx_{key_prefix}", None)
+        st.session_state.pop(f"analysis_selected_option_{key_prefix}", None)
         return "empty", None
 
     raw_df = df.copy().reset_index(drop=True)
-    display_df = format_table_display_dataframe(raw_df)
 
     st.markdown(
         """
         <div class='cm-analysis-hint-row'>
-            <div class='cm-analysis-hint-text'>Cliquez sur une ligne pour définir le focus analytique et mettre à jour les clients sous-jacents.</div>
+            <div class='cm-analysis-hint-text'>Sélectionnez une ligne dans la liste ci-dessous pour définir le focus analytique et mettre à jour les clients sous-jacents.</div>
             <a class='cm-analysis-jump-btn' href='#clients-sous-jacents'>Voir les clients sous-jacents</a>
         </div>
         """,
         unsafe_allow_html=True,
     )
 
-    preferred_widths: dict[str, int] = {
-        "SIREN": 88,
-        "Dénomination": 170,
-        "Client": 170,
-        "Vigilance": 178,
-        "Risque": 150,
-        "EDD": 92,
-        "Segment": 96,
-        "Pays": 84,
-        "Produit": 112,
-        "Canal": 82,
-        "Analyste": 88,
-        "Valideur": 92,
-        "Clients": 68,
-        "Part du portefeuille": 94,
-        "Justificatifs incomplets": 102,
-        "Sans prochaine revue": 98,
-        "Revue trop ancienne": 94,
-        "Cross-border élevé": 98,
-        "Cash intensité élevée": 98,
-        "Vigilances critiques": 96,
-        "Risques avérés": 92,
-    }
+    def option_label(option: int) -> str:
+        if option == 0:
+            return "Aucune ligne sélectionnée"
+        row = raw_df.iloc[option - 1]
+        parts: list[str] = []
+        for label, _source in ANALYSIS_FILTER_COLUMNS:
+            if label not in row.index:
+                continue
+            value = str(row[label]).strip()
+            if value and value != "Non renseigné":
+                parts.append(value)
+            if len(parts) >= 5:
+                break
+        summary = " | ".join(parts) if parts else "Ligne sans libellé"
+        return f"Ligne {option} — {summary}"
 
-    column_config: dict[str, object] = {}
-    for col in display_df.columns:
-        width = preferred_widths.get(col, 92)
-        help_text = "Repère client" if col == "SIREN" else None
-        column_config[col] = st.column_config.TextColumn(col, width=width, help=help_text)
+    options = [0] + [idx + 1 for idx in range(len(raw_df))]
+    state_key = f"analysis_selected_option_{key_prefix}"
+    if st.session_state.get(state_key) not in options:
+        st.session_state[state_key] = 0
 
-    event = st.dataframe(
-        style_interactive_table(display_df, raw_df),
-        width="stretch",
-        height=height,
-        hide_index=True,
-        column_order=list(display_df.columns),
-        column_config=column_config,
-        on_select="rerun",
-        selection_mode="single-row",
-        row_height=42,
-        key=f"cm_analysis_select_{key_prefix}",
-    )
+    selector_left, selector_right = st.columns([4.8, 1.2])
+    with selector_left:
+        selected_option = st.selectbox(
+            "Ligne active",
+            options=options,
+            format_func=option_label,
+            key=state_key,
+        )
+    with selector_right:
+        st.markdown("<div style='height:1.85rem'></div>", unsafe_allow_html=True)
+        if st.button(
+            "Effacer le focus",
+            key=f"{state_key}_clear",
+            type="secondary",
+            disabled=selected_option == 0,
+        ):
+            st.session_state[state_key] = 0
+            st.rerun()
 
-    rows: list[int] = []
-    if event is not None:
-        try:
-            rows = [int(i) for i in event.selection.get("rows", [])]
-        except Exception:
-            rows = []
+    selected_idx = selected_option - 1 if selected_option else None
+    render_analysis_main_table(raw_df, selected_row_idx=selected_idx)
 
-    state_key = f"analysis_selected_idx_{key_prefix}"
-    previous_idx = st.session_state.get(state_key)
-
-    if rows and 0 <= rows[0] < len(raw_df):
-        st.session_state[state_key] = rows[0]
-        return "selected", raw_df.iloc[rows[0]]
-
-    if previous_idx is not None:
-        st.session_state.pop(state_key, None)
+    if selected_idx is None:
         return "cleared", None
+    return "selected", raw_df.iloc[selected_idx]
 
-    return "idle", None
 
 
 def render_analysis_simple_table(df: pd.DataFrame) -> None:
@@ -3608,7 +3598,7 @@ def format_table_for_display(df: pd.DataFrame) -> pd.DataFrame:
     return output
 
 
-def render_analysis_main_table(df: pd.DataFrame) -> None:
+def render_analysis_main_table(df: pd.DataFrame, selected_row_idx: int | None = None) -> None:
     if df is None or df.empty:
         st.info("Aucune donnée à afficher.")
         return
@@ -3619,12 +3609,13 @@ def render_analysis_main_table(df: pd.DataFrame) -> None:
         header_classes = []
         if str(col) == "Alertes de gouvernance (calculé)":
             header_classes.append("cm-calculated-col")
-        header_class_attr = f" class='{" ".join(header_classes)}'" if header_classes else ""
+        header_class_attr = f" class='{' '.join(header_classes)}'" if header_classes else ""
         html.append(f"<th{header_class_attr}>{escape(str(col))}</th>")
     html.append("</tr></thead><tbody>")
 
     for row_idx, row in display_df.iterrows():
-        html.append("<tr>")
+        row_class = " class='cm-row-selected'" if selected_row_idx is not None and row_idx == int(selected_row_idx) else ""
+        html.append(f"<tr{row_class}>")
         for idx, col in enumerate(display_df.columns):
             value = row[col]
             classes = []
