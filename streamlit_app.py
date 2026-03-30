@@ -3988,6 +3988,57 @@ def build_analysis_focus_dataset_from_selection(
 
 
 
+
+def build_existing_review_dates_dataset(df: pd.DataFrame) -> pd.DataFrame:
+    if df is None or df.empty:
+        return pd.DataFrame(columns=[SOC_COL, "SIREN", "Dénomination", "Régime de vigilance", "Date prochaine revue"])
+
+    work = df.copy()
+    work["Date prochaine revue"] = pd.to_datetime(
+        work.get("Date prochaine revue", pd.Series(index=work.index, dtype="datetime64[ns]")),
+        errors="coerce",
+    )
+    work = work.dropna(subset=["Date prochaine revue"]).copy()
+    if work.empty:
+        return pd.DataFrame(columns=[SOC_COL, "SIREN", "Dénomination", "Régime de vigilance", "Date prochaine revue"])
+
+    regimes = work.apply(lambda row: review_vigilance_regime(row)[0], axis=1)
+    work["Régime de vigilance"] = regimes
+    cols = [c for c in [SOC_COL, "SIREN", "Dénomination", "Régime de vigilance", "Date prochaine revue"] if c in work.columns]
+    work = work[cols].drop_duplicates(subset=[c for c in [SOC_COL, "SIREN"] if c in cols], keep="last")
+    return work
+
+
+def render_analysis_review_dates_from_base(df: pd.DataFrame) -> None:
+    st.markdown('<h3 class="cm-section-title">Planification des revues</h3>', unsafe_allow_html=True)
+    st.caption("Cette vue reprend uniquement les dates de prochaine revue déjà présentes dans le fichier 01, sur le périmètre filtré en haut de l’écran Analyse.")
+
+    schedule_df = build_existing_review_dates_dataset(df)
+    if schedule_df.empty:
+        st.info("Aucune date de prochaine revue n’est disponible dans le fichier 01 sur le périmètre filtré.")
+        return
+
+    chart_df = build_review_schedule_chart_table(schedule_df)
+    render_review_schedule_chart(chart_df)
+
+    available = int(schedule_df["Date prochaine revue"].notna().sum())
+    missing = int(len(df) - available)
+    cards = [
+        ("SIREN datés", f"{available:,}".replace(",", " "), "Dates issues du fichier 01", ""),
+        ("Sans date", f"{missing:,}".replace(",", " "), "Aucune prochaine revue dans le fichier 01", " is-alert" if missing > 0 else ""),
+    ]
+    st.markdown(
+        "<div class='cm-kpi-band'>"
+        + "".join(
+            f"<div class='cm-kpi-card{extra_class}'><div class='cm-kpi-label'>{escape(label)}</div><div class='cm-kpi-value'>{escape(value)}</div><div class='cm-kpi-sub'>{escape(sub)}</div></div>"
+            for label, value, sub, extra_class in cards
+        )
+        + "</div>",
+        unsafe_allow_html=True,
+    )
+
+
+
 def render_analysis_screen(portfolio: pd.DataFrame, indicators: pd.DataFrame) -> None:
     render_home_hero("Analyse")
     nav = render_primary_navigation("analysis")
@@ -4072,13 +4123,7 @@ def render_analysis_screen(portfolio: pd.DataFrame, indicators: pd.DataFrame) ->
     render_indicator_contribution_chart(indicator_table)
 
     st.divider()
-    st.markdown('<h3 class="cm-section-title">Planification des revues</h3>', unsafe_allow_html=True)
-    render_review_planning_content(
-        filtered,
-        show_export=True,
-        allow_apply=False,
-        section_caption="La planification ci-dessous reprend uniquement le périmètre filtré en haut de l’écran Analyse.",
-    )
+    render_analysis_review_dates_from_base(filtered)
 
     st.divider()
     st.markdown("<div id='clients-sous-jacents'></div>", unsafe_allow_html=True)
