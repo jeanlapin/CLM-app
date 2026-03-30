@@ -302,6 +302,62 @@ def inject_brand_theme() -> None:
             color: var(--cm-primary);
         }}
 
+        .cm-kpi-band {{
+            display: grid;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: 0.75rem;
+            margin: 0.45rem 0 0.25rem 0;
+        }}
+
+        .cm-kpi-card {{
+            background: linear-gradient(180deg, rgba(255,255,255,0.96), rgba(246,250,255,0.92));
+            border: 1px solid rgba(22, 58, 89, 0.10);
+            border-radius: 18px;
+            padding: 0.7rem 0.85rem 0.72rem 0.85rem;
+            box-shadow: 0 8px 20px rgba(22, 58, 89, 0.06);
+            min-height: 84px;
+        }}
+
+        .cm-kpi-card.is-alert {{
+            border-color: rgba(180, 42, 42, 0.16);
+            background: linear-gradient(180deg, rgba(255,255,255,0.98), rgba(255,245,245,0.92));
+        }}
+
+        .cm-kpi-label {{
+            font-family: 'Sora', sans-serif;
+            font-size: 0.72rem;
+            font-weight: 800;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            color: #65758A;
+            margin-bottom: 0.22rem;
+        }}
+
+        .cm-kpi-value {{
+            font-family: 'Montserrat', sans-serif;
+            font-size: 1.62rem;
+            font-weight: 800;
+            line-height: 1.05;
+            color: var(--cm-primary);
+            margin-bottom: 0.08rem;
+        }}
+
+        .cm-kpi-card.is-alert .cm-kpi-value {{
+            color: #A22828;
+        }}
+
+        .cm-kpi-sub {{
+            font-size: 0.78rem;
+            color: var(--cm-muted);
+            line-height: 1.25;
+        }}
+
+        .cm-kpi-note {{
+            margin-top: 0.35rem;
+            font-size: 0.82rem;
+            color: var(--cm-muted);
+        }}
+
         .stButton > button, .stDownloadButton > button, .stFileUploader button {{
             border-radius: 14px;
             border: none !important;
@@ -3451,7 +3507,6 @@ def build_analysis_focus_dataset(
 
 
 def render_analysis_kpis(df: pd.DataFrame, full_scope_df: pd.DataFrame | None = None) -> None:
-    st.subheader("Bandeau de synthèse")
     total_clients = int(len(df))
     scope_total = int(len(full_scope_df)) if full_scope_df is not None else total_clients
     part_portefeuille = (total_clients / scope_total) if scope_total else 0.0
@@ -3486,22 +3541,49 @@ def render_analysis_kpis(df: pd.DataFrame, full_scope_df: pd.DataFrame | None = 
         .astype(int)
         .sum()
     )
+    vigilance_renforcee = int(
+        df.get("Vigilance", pd.Series(index=df.index, dtype="string"))
+        .astype("string")
+        .isin(CRITICAL_VIGILANCE)
+        .sum()
+    )
+    risque_avere = int(
+        df.get("Risque", pd.Series(index=df.index, dtype="string"))
+        .astype("string")
+        .eq("Risque avéré")
+        .sum()
+    )
 
-    top_row = st.columns(4)
-    top_row[0].metric("Clients", f"{total_clients:,}".replace(",", " "))
-    top_row[1].metric("Part du portefeuille", f"{part_portefeuille:.1%}".replace(".", ","))
-    top_row[2].metric("Justificatifs incomplets", f"{justificatifs_incomplets:,}".replace(",", " "))
-    top_row[3].metric("Sans prochaine revue", f"{sans_prochaine_revue:,}".replace(",", " "))
+    cards = [
+        ("Clients", f"{total_clients:,}".replace(",", " "), "Périmètre analysé", ""),
+        ("Part du portefeuille", f"{part_portefeuille:.1%}".replace(".", ","), "Poids du périmètre", ""),
+        ("Vigilance renforcée", f"{vigilance_renforcee:,}".replace(",", " "), "Élevée + critique", " is-alert"),
+        ("Risque avéré", f"{risque_avere:,}".replace(",", " "), "Clients en risque avéré", " is-alert"),
+        ("Justificatifs incomplets", f"{justificatifs_incomplets:,}".replace(",", " "), "Documents à compléter", ""),
+        ("Sans prochaine revue", f"{sans_prochaine_revue:,}".replace(",", " "), "Revue non planifiée", ""),
+        ("Revue trop ancienne", f"{revue_trop_ancienne:,}".replace(",", " "), "Suivi à mettre à jour", ""),
+        ("Cross-border élevé", f"{cross_border_eleve:,}".replace(",", " "), "Exposition élevée", ""),
+        ("Cash intensité élevée", f"{cash_intensite_elevee:,}".replace(",", " "), "Usage cash élevé", ""),
+    ]
 
-    bottom_row = st.columns(3)
-    bottom_row[0].metric("Revue trop ancienne", f"{revue_trop_ancienne:,}".replace(",", " "))
-    bottom_row[1].metric("Cross-border élevé", f"{cross_border_eleve:,}".replace(",", " "))
-    bottom_row[2].metric("Cash intensité élevée", f"{cash_intensite_elevee:,}".replace(",", " "))
+    st.markdown('<h3 class="cm-section-title">Bandeau de synthèse</h3>', unsafe_allow_html=True)
+    st.markdown(
+        "<div class='cm-kpi-band'>"
+        + "".join(
+            f"<div class='cm-kpi-card{extra_class}'><div class='cm-kpi-label'>{escape(label)}</div><div class='cm-kpi-value'>{escape(value)}</div><div class='cm-kpi-sub'>{escape(sub)}</div></div>"
+            for label, value, sub, extra_class in cards
+        )
+        + "</div>",
+        unsafe_allow_html=True,
+    )
 
     if total_clients and "Vigilance Date de mise à jour" in df.columns:
         last_update = pd.to_datetime(df["Vigilance Date de mise à jour"], errors="coerce").max()
         if pd.notna(last_update):
-            st.caption(f"Fraîcheur visible : dernière mise à jour vigilance = {last_update.strftime('%d/%m/%Y')}. Les indicateurs sont regroupés dans ce bandeau ; le tableau d’analyse présente uniquement les dimensions de lecture.")
+            st.markdown(
+                f"<div class='cm-kpi-note'>Dernière mise à jour vigilance visible : <strong>{last_update.strftime('%d/%m/%Y')}</strong>. Les indicateurs sont regroupés dans ce bandeau ; le tableau d’analyse présente uniquement les dimensions de lecture.</div>",
+                unsafe_allow_html=True,
+            )
 
 
 def format_table_for_display(df: pd.DataFrame) -> pd.DataFrame:
