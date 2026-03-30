@@ -3139,18 +3139,35 @@ def render_selectable_analysis_table(
         unsafe_allow_html=True,
     )
 
+    preferred_widths: dict[str, int] = {
+        "SIREN": 88,
+        "Dénomination": 170,
+        "Client": 170,
+        "Vigilance": 178,
+        "Risque": 150,
+        "EDD": 92,
+        "Segment": 96,
+        "Pays": 84,
+        "Produit": 112,
+        "Canal": 82,
+        "Analyste": 88,
+        "Valideur": 92,
+        "Clients": 68,
+        "Part du portefeuille": 94,
+        "Justificatifs incomplets": 102,
+        "Sans prochaine revue": 98,
+        "Revue trop ancienne": 94,
+        "Cross-border élevé": 98,
+        "Cash intensité élevée": 98,
+        "Vigilances critiques": 96,
+        "Risques avérés": 92,
+    }
+
     column_config: dict[str, object] = {}
     for col in display_df.columns:
-        if col == "SIREN":
-            column_config[col] = st.column_config.TextColumn(col, width="small", help="Repère client")
-        elif col in {"Dénomination", "Client"}:
-            column_config[col] = st.column_config.TextColumn(col, width="large")
-        elif col.startswith("%") or "%" in col:
-            column_config[col] = st.column_config.TextColumn(col, width="small")
-        elif col in {"Clients", "Vigilances critiques", "Risques avérés"}:
-            column_config[col] = st.column_config.TextColumn(col, width="small")
-        else:
-            column_config[col] = st.column_config.TextColumn(col, width="medium")
+        width = preferred_widths.get(col, 92)
+        help_text = "Repère client" if col == "SIREN" else None
+        column_config[col] = st.column_config.TextColumn(col, width=width, help=help_text)
 
     event = st.dataframe(
         style_interactive_table(display_df, raw_df),
