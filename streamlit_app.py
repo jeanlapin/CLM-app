@@ -3450,31 +3450,58 @@ def build_analysis_focus_dataset(
     return detail[detail_columns]
 
 
-def render_analysis_kpis(df: pd.DataFrame) -> None:
+def render_analysis_kpis(df: pd.DataFrame, full_scope_df: pd.DataFrame | None = None) -> None:
     st.subheader("Bandeau de synthèse")
-    total = len(df)
-    vigilance_renforcee = int(df.get("Vigilance", pd.Series(index=df.index, dtype="string")).isin(CRITICAL_VIGILANCE).sum()) if total else 0
-    risque_avere = int(df.get("Risque", pd.Series(index=df.index, dtype="string")).eq("Risque avéré").sum()) if total else 0
-    edd_concernees = int(df.get("Statut EDD", pd.Series(index=df.index, dtype="string")).astype("string").str.lower().str.contains("ouvrir|ouverte|ouvert|cours", regex=True).sum())
-    ecarts_gouvernance = int(
-        df.get("Alerte justificatif incomplet", pd.Series(index=df.index, dtype="int64")).sum()
-        + df.get("Alerte revue trop ancienne", pd.Series(index=df.index, dtype="int64")).sum()
-        + df.get("Alerte sans prochaine revue", pd.Series(index=df.index, dtype="int64")).sum()
+    total_clients = int(len(df))
+    scope_total = int(len(full_scope_df)) if full_scope_df is not None else total_clients
+    part_portefeuille = (total_clients / scope_total) if scope_total else 0.0
+
+    justificatifs_incomplets = int(
+        df.get("Flag justificatif complet", pd.Series(index=df.index, dtype="string"))
+        .astype("string")
+        .fillna("")
+        .ne("Oui")
+        .sum()
     )
-    historique_disponible = int(df.get("Nb historique", pd.Series(index=df.index, dtype="float64")).fillna(0).gt(0).sum())
+    sans_prochaine_revue = int(
+        df.get("Date prochaine revue", pd.Series(index=df.index, dtype="datetime64[ns]"))
+        .isna()
+        .sum()
+    )
+    revue_trop_ancienne = int(
+        df.get("Alerte revue trop ancienne", pd.Series(index=df.index, dtype="int64"))
+        .fillna(0)
+        .astype(int)
+        .sum()
+    )
+    cross_border_eleve = int(
+        df.get("Alerte cross-border élevé", pd.Series(index=df.index, dtype="int64"))
+        .fillna(0)
+        .astype(int)
+        .sum()
+    )
+    cash_intensite_elevee = int(
+        df.get("Alerte cash intensité élevée", pd.Series(index=df.index, dtype="int64"))
+        .fillna(0)
+        .astype(int)
+        .sum()
+    )
 
-    c1, c2, c3, c4, c5, c6 = st.columns(6)
-    c1.metric("Clients visibles", total)
-    c2.metric("Vigilance renforcée", vigilance_renforcee)
-    c3.metric("Risque avéré", risque_avere)
-    c4.metric("EDD concernées", edd_concernees)
-    c5.metric("Alertes de gouvernance (calculé)", ecarts_gouvernance)
-    c6.metric("Historique disponible", historique_disponible)
+    top_row = st.columns(4)
+    top_row[0].metric("Clients", f"{total_clients:,}".replace(",", " "))
+    top_row[1].metric("Part du portefeuille", f"{part_portefeuille:.1%}".replace(".", ","))
+    top_row[2].metric("Justificatifs incomplets", f"{justificatifs_incomplets:,}".replace(",", " "))
+    top_row[3].metric("Sans prochaine revue", f"{sans_prochaine_revue:,}".replace(",", " "))
 
-    if total and "Vigilance Date de mise à jour" in df.columns:
+    bottom_row = st.columns(3)
+    bottom_row[0].metric("Revue trop ancienne", f"{revue_trop_ancienne:,}".replace(",", " "))
+    bottom_row[1].metric("Cross-border élevé", f"{cross_border_eleve:,}".replace(",", " "))
+    bottom_row[2].metric("Cash intensité élevée", f"{cash_intensite_elevee:,}".replace(",", " "))
+
+    if total_clients and "Vigilance Date de mise à jour" in df.columns:
         last_update = pd.to_datetime(df["Vigilance Date de mise à jour"], errors="coerce").max()
         if pd.notna(last_update):
-            st.caption(f"Fraîcheur visible : dernière mise à jour vigilance = {last_update.strftime('%d/%m/%Y')}.")
+            st.caption(f"Fraîcheur visible : dernière mise à jour vigilance = {last_update.strftime('%d/%m/%Y')}. Les indicateurs sont regroupés dans ce bandeau ; le tableau d’analyse présente uniquement les dimensions de lecture.")
 
 
 def format_table_for_display(df: pd.DataFrame) -> pd.DataFrame:
@@ -3549,52 +3576,26 @@ ANALYSIS_FILTER_COLUMNS: list[tuple[str, str]] = [
 ]
 
 
-def build_unified_analysis_table(
-    df: pd.DataFrame,
-    indicator_labels: list[str],
-) -> tuple[pd.DataFrame, str]:
+def build_unified_analysis_table(df: pd.DataFrame) -> tuple[pd.DataFrame, str]:
     group_labels = [label for label, _ in ANALYSIS_FILTER_COLUMNS]
-    base_columns = group_labels.copy()
     if df is None or df.empty:
-        return pd.DataFrame(columns=base_columns + indicator_labels), ""
+        return pd.DataFrame(columns=group_labels), ""
 
     work = df.copy()
     for label, source in ANALYSIS_FILTER_COLUMNS:
         work[label] = normalize_analysis_category(work.get(source, pd.Series(index=work.index, dtype="object")))
 
     work["cm_client_key"] = work[SOC_COL].astype(str) + "|" + work["SIREN"].astype(str)
-    work["cm_missing_docs"] = work.get("Flag justificatif complet", pd.Series(index=work.index, dtype="string")).astype("string").fillna("").ne("Oui").astype(int)
-    work["cm_without_next_review"] = work.get("Date prochaine revue", pd.Series(index=work.index, dtype="datetime64[ns]")).isna().astype(int)
-    work["cm_stale_review"] = work.get("Alerte revue trop ancienne", pd.Series(index=work.index, dtype="int64")).fillna(0).astype(int)
-    work["cm_cross_border_high"] = work.get("Alerte cross-border élevé", pd.Series(index=work.index, dtype="int64")).fillna(0).astype(int)
-    work["cm_cash_intensity_high"] = work.get("Alerte cash intensité élevée", pd.Series(index=work.index, dtype="int64")).fillna(0).astype(int)
-
-    agg_map: dict[str, tuple[str, str]] = {"Clients": ("cm_client_key", "nunique")}
-    if "Justificatifs incomplets" in indicator_labels:
-        agg_map["Justificatifs incomplets"] = ("cm_missing_docs", "sum")
-    if "Sans prochaine revue" in indicator_labels:
-        agg_map["Sans prochaine revue"] = ("cm_without_next_review", "sum")
-    if "Revue trop ancienne" in indicator_labels:
-        agg_map["Revue trop ancienne"] = ("cm_stale_review", "sum")
-    if "Cross-border élevé" in indicator_labels:
-        agg_map["Cross-border élevé"] = ("cm_cross_border_high", "sum")
-    if "Cash intensité élevée" in indicator_labels:
-        agg_map["Cash intensité élevée"] = ("cm_cash_intensity_high", "sum")
-
-    grouped = work.groupby(group_labels, dropna=False).agg(**agg_map).reset_index()
-    total_clients = max(int(work["cm_client_key"].nunique()), 1)
-    grouped["Part du portefeuille"] = grouped["Clients"].div(total_clients).fillna(0)
-
-    ordered_columns = base_columns + [label for label in indicator_labels if label in grouped.columns]
-    if "Part du portefeuille" in indicator_labels and "Part du portefeuille" not in ordered_columns:
-        ordered_columns.append("Part du portefeuille")
-    result = grouped[ordered_columns].copy()
-
-    sort_col = "Clients" if "Clients" in result.columns else ("Part du portefeuille" if "Part du portefeuille" in result.columns else result.columns[0])
-    ascending = False if sort_col != result.columns[0] else True
-    result = result.sort_values(sort_col, ascending=ascending, kind="stable").reset_index(drop=True)
-    caption = "Une ligne correspond à une combinaison des filtres visibles sur le périmètre sélectionné."
-    return result, caption
+    grouped = (
+        work.groupby(group_labels, dropna=False)
+        .agg(__sort_clients=("cm_client_key", "nunique"))
+        .reset_index()
+        .sort_values("__sort_clients", ascending=False, kind="stable")
+        .drop(columns=["__sort_clients"])
+        .reset_index(drop=True)
+    )
+    caption = "Le tableau d’analyse présente uniquement les dimensions de lecture ; les indicateurs sont portés par le bandeau de synthèse."
+    return grouped, caption
 
 
 def apply_unified_analysis_table_controls(df: pd.DataFrame) -> pd.DataFrame:
@@ -3719,7 +3720,6 @@ def render_analysis_screen(portfolio: pd.DataFrame, indicators: pd.DataFrame) ->
                 "analysis_table_sort_by",
                 "analysis_table_sort_order",
                 "analysis_table_top_n",
-                "analysis_indicator_columns",
             ]:
                 st.session_state.pop(key, None)
             clear_analysis_focus()
@@ -3739,37 +3739,16 @@ def render_analysis_screen(portfolio: pd.DataFrame, indicators: pd.DataFrame) ->
         if idx % 5 == 4 and idx < len(filter_labels) - 1:
             filter_cols = st.columns(5)
 
-    indicator_options = list(analysis_measure_mapping(portfolio).keys())
-    default_indicators = [
-        "Clients",
-        "Part du portefeuille",
-        "Justificatifs incomplets",
-        "Sans prochaine revue",
-        "Revue trop ancienne",
-        "Cross-border élevé",
-        "Cash intensité élevée",
-    ]
-    if "analysis_indicator_columns" not in st.session_state:
-        st.session_state["analysis_indicator_columns"] = default_indicators
     st.markdown(
         """
         <div class="cm-analysis-mode-shell">
-            <div class="cm-analysis-mode-kicker">Indicateurs visibles</div>
-            <div class="cm-analysis-mode-title">Choisissez les colonnes métier à afficher dans le tableau d’analyse</div>
-            <div class="cm-analysis-mode-note">Les colonnes de dimensions restent fixes ; seuls les indicateurs ci-dessous peuvent être affichés ou masqués.</div>
+            <div class="cm-analysis-mode-kicker">Lecture de l’analyse</div>
+            <div class="cm-analysis-mode-title">Le tableau présente uniquement les dimensions de lecture</div>
+            <div class="cm-analysis-mode-note">Les indicateurs Clients, Part du portefeuille, Justificatifs incomplets, Sans prochaine revue, Revue trop ancienne, Cross-border élevé et Cash intensité élevée sont affichés dans le bandeau de synthèse.</div>
         </div>
         """,
         unsafe_allow_html=True,
     )
-    selected_indicators = st.multiselect(
-        "Indicateurs du tableau",
-        options=indicator_options,
-        default=[opt for opt in st.session_state.get("analysis_indicator_columns", default_indicators) if opt in indicator_options],
-        key="analysis_indicator_columns",
-        placeholder="Choisissez les indicateurs à afficher",
-    )
-    if not selected_indicators:
-        selected_indicators = ["Clients", "Part du portefeuille"]
 
     st.markdown('</div>', unsafe_allow_html=True)
 
@@ -3778,9 +3757,9 @@ def render_analysis_screen(portfolio: pd.DataFrame, indicators: pd.DataFrame) ->
         st.warning("Aucun client ne correspond au périmètre société + filtres sélectionnés.")
         return
 
-    render_analysis_kpis(filtered)
+    render_analysis_kpis(filtered, portfolio)
 
-    analysis_table, analysis_caption = build_unified_analysis_table(filtered, selected_indicators)
+    analysis_table, analysis_caption = build_unified_analysis_table(filtered)
     render_analysis_panel_header("Tableau d’analyse", analysis_caption)
     display_analysis_table = apply_unified_analysis_table_controls(analysis_table)
     main_action, selected_main = render_selectable_analysis_table(display_analysis_table, key_prefix="analysis_main", height=520)
