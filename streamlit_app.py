@@ -13,11 +13,19 @@ import unicodedata
 from urllib.error import HTTPError, URLError
 from urllib.parse import quote_plus
 from urllib.request import Request, urlopen
+import zipfile
 
 import numpy as np
 import pandas as pd
 import altair as alt
 import streamlit as st
+from reportlab.lib import colors
+from reportlab.lib.pagesizes import A4
+from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
+from reportlab.lib.units import mm
+from reportlab.pdfbase import pdfmetrics
+from reportlab.pdfbase.ttfonts import TTFont
+from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
 PAGE_TITLE = "CLASSIFICATION MANAGEMENT"
 APP_SUBTITLE = "Pilotage du portefeuille, gouvernance des risques et supervision multi-société"
@@ -90,6 +98,9 @@ GEMINI_MODEL_DEFAULT = "gemini-2.5-flash"
 GEMINI_MAX_BATCH_SIZE = 10
 GEMINI_API_TIMEOUT_SECONDS = 60
 REVIEW_SIM_GEMINI_KEY_STATE = "review_sim_gemini_api_key"
+REVIEW_SIM_PDF_DIR = "review_simulation_pdfs"
+REVIEW_SIM_PDF_FONT_REGULAR = "CMDejaVuSans"
+REVIEW_SIM_PDF_FONT_BOLD = "CMDejaVuSans-Bold"
 GEMINI_BASE_SOURCE_PREFIX = "Base source :: "
 GEMINI_INDICATORS_SOURCE_PREFIX = "Indicateurs source :: "
 VIGILANCE_RANK = {label: idx for idx, label in enumerate(VIGILANCE_ORDER)}
@@ -1476,6 +1487,37 @@ def review_simulations_path() -> Path:
     return active_dataset_path() / REVIEW_SIMULATIONS_FILE
 
 
+def review_simulation_pdfs_path() -> Path:
+    path = active_dataset_path() / REVIEW_SIM_PDF_DIR
+    path.mkdir(parents=True, exist_ok=True)
+    return path
+
+
+def safe_filename_component(value: object, fallback: str = "document") -> str:
+    text = str(value or "").strip().lower()
+    text = unicodedata.normalize("NFKD", text)
+    text = "".join(ch for ch in text if not unicodedata.combining(ch))
+    text = re.sub(r"[^a-z0-9]+", "_", text)
+    text = text.strip("_")
+    return text or fallback
+
+
+def review_simulation_pdf_storage_name(row: pd.Series) -> str:
+    soc = safe_filename_component(row.get(SOC_COL, ""), fallback="societe")
+    siren = safe_filename_component(row.get("SIREN", ""), fallback="siren")
+    return f"revue_simulation_{soc}_{siren}.pdf"
+
+
+def review_simulation_pdf_download_name(row: pd.Series) -> str:
+    siren = safe_filename_component(row.get("SIREN", ""), fallback="siren")
+    denomination = safe_filename_component(row.get("Dénomination", ""), fallback="dossier")
+    return f"revue_simulation_{siren}_{denomination}.pdf"
+
+
+def review_simulation_pdf_path(row: pd.Series) -> Path:
+    return review_simulation_pdfs_path() / review_simulation_pdf_storage_name(row)
+
+
 def find_file(filename: str) -> Path:
     here = app_root()
     candidates = [
@@ -2247,6 +2289,368 @@ def apply_gemini_review_simulation_batch(
     return result, processed, errors
 
 
+def merge_review_row_with_source_data(row: pd.Series, source_df: pd.DataFrame | None = None) -> pd.Series:
+    if source_df is None or source_df.empty:
+        return row.copy()
+    source_row = review_simulation_source_row(row, source_df)
+    merged = source_row.copy()
+    for col in row.index:
+        current_value = merged.get(col)
+        if col not in merged.index or prompt_json_value(current_value) is None:
+            merged[col] = row.get(col)
+    return merged
+
+
+def ensure_review_simulation_pdf_fonts() -> tuple[str, str]:
+    regular_font = "Helvetica"
+    bold_font = "Helvetica-Bold"
+    try:
+        if REVIEW_SIM_PDF_FONT_REGULAR not in pdfmetrics.getRegisteredFontNames():
+            pdfmetrics.registerFont(TTFont(REVIEW_SIM_PDF_FONT_REGULAR, "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"))
+        if REVIEW_SIM_PDF_FONT_BOLD not in pdfmetrics.getRegisteredFontNames():
+            pdfmetrics.registerFont(TTFont(REVIEW_SIM_PDF_FONT_BOLD, "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"))
+        regular_font = REVIEW_SIM_PDF_FONT_REGULAR
+        bold_font = REVIEW_SIM_PDF_FONT_BOLD
+    except Exception:
+        pass
+    return regular_font, bold_font
+
+
+def review_simulation_pdf_styles() -> dict[str, ParagraphStyle]:
+    regular_font, bold_font = ensure_review_simulation_pdf_fonts()
+    base_styles = getSampleStyleSheet()
+    primary_color = colors.HexColor(PRIMARY_COLOR)
+    muted_color = colors.HexColor("#5B6B7F")
+    return {
+        "title": ParagraphStyle(
+            "ReviewSimPdfTitle",
+            parent=base_styles["Title"],
+            fontName=bold_font,
+            fontSize=18,
+            leading=22,
+            textColor=primary_color,
+            spaceAfter=4,
+        ),
+        "subtitle": ParagraphStyle(
+            "ReviewSimPdfSubtitle",
+            parent=base_styles["Normal"],
+            fontName=regular_font,
+            fontSize=9.5,
+            leading=12,
+            textColor=muted_color,
+            spaceAfter=12,
+        ),
+        "section": ParagraphStyle(
+            "ReviewSimPdfSection",
+            parent=base_styles["Heading2"],
+            fontName=bold_font,
+            fontSize=11.5,
+            leading=14,
+            textColor=primary_color,
+            spaceBefore=4,
+            spaceAfter=6,
+        ),
+        "body": ParagraphStyle(
+            "ReviewSimPdfBody",
+            parent=base_styles["BodyText"],
+            fontName=regular_font,
+            fontSize=9,
+            leading=12,
+            textColor=colors.HexColor("#12263A"),
+        ),
+        "body_muted": ParagraphStyle(
+            "ReviewSimPdfBodyMuted",
+            parent=base_styles["BodyText"],
+            fontName=regular_font,
+            fontSize=9,
+            leading=12,
+            textColor=muted_color,
+        ),
+        "field_name": ParagraphStyle(
+            "ReviewSimPdfFieldName",
+            parent=base_styles["BodyText"],
+            fontName=bold_font,
+            fontSize=8.6,
+            leading=11,
+            textColor=primary_color,
+        ),
+        "field_value": ParagraphStyle(
+            "ReviewSimPdfFieldValue",
+            parent=base_styles["BodyText"],
+            fontName=regular_font,
+            fontSize=8.8,
+            leading=11.5,
+            textColor=colors.HexColor("#12263A"),
+        ),
+        "table_header": ParagraphStyle(
+            "ReviewSimPdfTableHeader",
+            parent=base_styles["BodyText"],
+            fontName=bold_font,
+            fontSize=8.4,
+            leading=10.4,
+            textColor=colors.white,
+        ),
+    }
+
+
+def review_simulation_pdf_value(field_name: str, value: object) -> str:
+    normalized = prompt_json_value(value)
+    if normalized is None:
+        return "Non renseigné"
+    if isinstance(normalized, bool):
+        return "Oui" if normalized else "Non"
+    if isinstance(normalized, float):
+        label = str(field_name or "").lower()
+        if 0 <= normalized <= 1 and any(token in label for token in ["part", "taux", "ratio", "cash intensité", "cross border", "%"]):
+            return f"{normalized:.1%}"
+        text_value = f"{normalized:,.4f}".replace(",", " ")
+        text_value = text_value.rstrip("0").rstrip(".")
+        return text_value or "0"
+    if isinstance(normalized, (list, tuple, set)):
+        items = [review_simulation_pdf_value(field_name, item) for item in normalized]
+        items = [item for item in items if item and item != "Non renseigné"]
+        return ", ".join(items) if items else "Aucune"
+    if isinstance(normalized, dict):
+        if not normalized:
+            return "Aucune donnée"
+        return json.dumps(normalized, ensure_ascii=False, indent=2)
+    text_value = str(normalized).strip()
+    if re.fullmatch(r"\d{4}-\d{2}-\d{2}", text_value):
+        dt = pd.to_datetime(text_value, errors="coerce")
+        if not pd.isna(dt):
+            return pd.Timestamp(dt).strftime("%d/%m/%Y")
+    return text_value or "Non renseigné"
+
+
+def review_simulation_pdf_paragraph(text: object, style: ParagraphStyle) -> Paragraph:
+    rendered = str(text or "").strip() or "Non renseigné"
+    return Paragraph(escape(rendered).replace("\n", "<br/>"), style)
+
+
+def review_simulation_pdf_field_label(field_name: object) -> str:
+    label = str(field_name or "").strip()
+    return {
+        "societe_id": "Société (id)",
+    }.get(label, label)
+
+
+def review_simulation_pdf_field_rows(data: dict[str, object], styles: dict[str, ParagraphStyle]) -> list[list[Paragraph]]:
+    rows = [[review_simulation_pdf_paragraph("Champ", styles["table_header"]), review_simulation_pdf_paragraph("Valeur", styles["table_header"])]]
+    for field_name, raw_value in data.items():
+        rows.append([
+            review_simulation_pdf_paragraph(review_simulation_pdf_field_label(field_name), styles["field_name"]),
+            review_simulation_pdf_paragraph(review_simulation_pdf_value(field_name, raw_value), styles["field_value"]),
+        ])
+    return rows
+
+
+def review_simulation_pdf_table(data: dict[str, object], styles: dict[str, ParagraphStyle], col_widths: list[float] | None = None) -> Table:
+    col_widths = col_widths or [58 * mm, 116 * mm]
+    rows = review_simulation_pdf_field_rows(data, styles)
+    table = Table(rows, colWidths=col_widths, repeatRows=1, hAlign="LEFT")
+    table.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor(PRIMARY_COLOR)),
+        ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+        ("BACKGROUND", (0, 1), (-1, -1), colors.white),
+        ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#F7FAFE")]),
+        ("GRID", (0, 0), (-1, -1), 0.35, colors.HexColor("#D6E1EE")),
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ("LEFTPADDING", (0, 0), (-1, -1), 7),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 7),
+        ("TOPPADDING", (0, 0), (-1, -1), 6),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
+    ]))
+    return table
+
+
+def review_simulation_summary_payload(row: pd.Series) -> dict[str, object]:
+    return {
+        "Société": row.get(SOC_COL, ""),
+        "SIREN": row.get("SIREN", ""),
+        "Dénomination": row.get("Dénomination", ""),
+        "Type de revue": row.get("Type de revue", review_type_for_vigilance(row.get(REVIEW_SIM_REAL_LABEL, row.get("Vigilance", "")))),
+        "Statut de vigilance réel": row.get(REVIEW_SIM_REAL_LABEL, row.get("Vigilance", "")),
+        "Statut estimé après remédiation": row.get(REVIEW_SIM_EST_LABEL, ""),
+        "Indicateur de tendance": row.get(REVIEW_SIM_TREND_LABEL, ""),
+        "Risque": row.get("Risque", ""),
+        "Statut EDD": row.get("Statut EDD", ""),
+        "Date prochaine revue": row.get("Date prochaine revue", ""),
+        "Alertes actives": row.get("Alertes actives", ", ".join(build_row_alert_labels(row)) or "Aucune"),
+    }
+
+
+def build_review_simulation_pdf_story(
+    row: pd.Series,
+    source_row: pd.Series,
+    generated_at_utc: datetime,
+    prompt_template: str = "",
+) -> tuple[list[object], dict[str, ParagraphStyle]]:
+    styles = review_simulation_pdf_styles()
+    payload = build_gemini_source_payload(source_row)
+    summary_payload = review_simulation_summary_payload(source_row)
+    context_payload = payload.get("contexte_simulation") if isinstance(payload.get("contexte_simulation"), dict) else {}
+    base_payload = payload.get("donnees_base_source") if isinstance(payload.get("donnees_base_source"), dict) else {}
+    indicators_payload = payload.get("indicateurs_source") if isinstance(payload.get("indicateurs_source"), dict) else {}
+    generated_text = pd.Timestamp(generated_at_utc).strftime("%d/%m/%Y %H:%M UTC")
+    explain_text = str(row.get("Explique moi", "") or "").strip()
+    prompt_text = format_review_prompt_template(prompt_template, source_row)
+
+    story: list[object] = [
+        review_simulation_pdf_paragraph(
+            f"Revue & Simulation - SIREN {review_simulation_pdf_value('SIREN', row.get('SIREN', ''))}",
+            styles["title"],
+        ),
+        review_simulation_pdf_paragraph(
+            f"Dossier : {review_simulation_pdf_value('Dénomination', row.get('Dénomination', ''))} - Généré le {generated_text}.",
+            styles["subtitle"],
+        ),
+        review_simulation_pdf_paragraph("Synthèse du dossier", styles["section"]),
+        review_simulation_pdf_table(summary_payload, styles, col_widths=[60 * mm, 114 * mm]),
+        Spacer(1, 5 * mm),
+        review_simulation_pdf_paragraph("Explication / consignes", styles["section"]),
+    ]
+
+    explanation_box = Table(
+        [[review_simulation_pdf_paragraph(explain_text or "Non renseigné", styles["body"])]],
+        colWidths=[174 * mm],
+        hAlign="LEFT",
+    )
+    explanation_box.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#F3F8FE")),
+        ("BOX", (0, 0), (-1, -1), 0.6, colors.HexColor("#C6D8EA")),
+        ("LEFTPADDING", (0, 0), (-1, -1), 9),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 9),
+        ("TOPPADDING", (0, 0), (-1, -1), 8),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 8),
+    ]))
+    story.extend([
+        explanation_box,
+        Spacer(1, 5 * mm),
+        review_simulation_pdf_paragraph("Contexte de simulation", styles["section"]),
+        review_simulation_pdf_table(context_payload or {"Contexte": "Aucune donnée complémentaire"}, styles),
+        Spacer(1, 5 * mm),
+        review_simulation_pdf_paragraph("Données de base source", styles["section"]),
+        review_simulation_pdf_table(base_payload or {"Données de base source": "Aucune donnée disponible"}, styles),
+        Spacer(1, 5 * mm),
+        review_simulation_pdf_paragraph("Indicateurs source", styles["section"]),
+        review_simulation_pdf_table(indicators_payload or {"Indicateurs source": "Aucune donnée disponible"}, styles),
+    ])
+
+    if prompt_text:
+        story.extend([
+            Spacer(1, 5 * mm),
+            review_simulation_pdf_paragraph("Prompt Gemini utilisé", styles["section"]),
+            review_simulation_pdf_table({"Consignes générales": prompt_text}, styles, col_widths=[58 * mm, 116 * mm]),
+        ])
+
+    return story, styles
+
+
+def write_review_simulation_pdf(
+    row: pd.Series,
+    source_df: pd.DataFrame | None = None,
+    prompt_template: str = "",
+) -> Path | None:
+    explain_text = str(row.get("Explique moi", "") or "").strip()
+    if not explain_text:
+        return None
+
+    source_row = merge_review_row_with_source_data(row, source_df=source_df)
+    pdf_path = review_simulation_pdf_path(row)
+    generated_at_utc = datetime.now(timezone.utc)
+    story, styles = build_review_simulation_pdf_story(row, source_row, generated_at_utc, prompt_template=prompt_template)
+
+    doc = SimpleDocTemplate(
+        str(pdf_path),
+        pagesize=A4,
+        leftMargin=18 * mm,
+        rightMargin=18 * mm,
+        topMargin=18 * mm,
+        bottomMargin=16 * mm,
+        title=f"Revue & Simulation - {row.get('SIREN', '')}",
+        author=PAGE_TITLE,
+        subject="Synthèse de revue et simulation",
+    )
+
+    regular_font = styles["body"].fontName
+    primary_color = colors.HexColor(PRIMARY_COLOR)
+    muted_color = colors.HexColor("#5B6B7F")
+
+    def _draw_page(canvas, doc_obj):
+        canvas.saveState()
+        canvas.setStrokeColor(primary_color)
+        canvas.setLineWidth(0.8)
+        canvas.line(doc_obj.leftMargin, A4[1] - 12 * mm, A4[0] - doc_obj.rightMargin, A4[1] - 12 * mm)
+        canvas.setFont(regular_font, 8)
+        canvas.setFillColor(muted_color)
+        canvas.drawString(doc_obj.leftMargin, 10 * mm, f"{PAGE_TITLE} - Revues & Simulations")
+        canvas.drawRightString(A4[0] - doc_obj.rightMargin, 10 * mm, f"Page {canvas.getPageNumber()}")
+        canvas.restoreState()
+
+    doc.build(story, onFirstPage=_draw_page, onLaterPages=_draw_page)
+    return pdf_path
+
+
+def delete_review_simulation_pdf(row: pd.Series) -> None:
+    pdf_path = review_simulation_pdf_path(row)
+    if pdf_path.exists():
+        pdf_path.unlink()
+
+
+def sync_review_simulation_pdfs(
+    rows_df: pd.DataFrame,
+    source_df: pd.DataFrame | None = None,
+    prompt_template: str = "",
+) -> tuple[int, list[str]]:
+    if rows_df is None or rows_df.empty:
+        return 0, []
+
+    generated = 0
+    errors: list[str] = []
+    for _, row in rows_df.iterrows():
+        siren = str(row.get("SIREN", "") or "").strip() or "SIREN inconnu"
+        explain_text = str(row.get("Explique moi", "") or "").strip()
+        if not explain_text:
+            delete_review_simulation_pdf(row)
+            continue
+        try:
+            if write_review_simulation_pdf(row, source_df=source_df, prompt_template=prompt_template):
+                generated += 1
+        except Exception as exc:
+            errors.append(f"PDF {siren} : {exc}")
+    return generated, errors
+
+
+def review_simulation_available_pdfs(df: pd.DataFrame, selected_indices: list[int]) -> list[dict[str, object]]:
+    if df is None or df.empty or not selected_indices:
+        return []
+    valid_indices = [int(i) for i in selected_indices if 0 <= int(i) < len(df)]
+    items: list[dict[str, object]] = []
+    for idx in valid_indices:
+        row = df.iloc[idx]
+        pdf_path = review_simulation_pdf_path(row)
+        if not pdf_path.exists():
+            continue
+        items.append({
+            "row": row,
+            "path": pdf_path,
+            "label": f"{row.get('SIREN', '')} - {row.get('Dénomination', '')}",
+            "download_name": review_simulation_pdf_download_name(row),
+        })
+    return items
+
+
+def review_simulation_pdfs_zip_bytes(items: list[dict[str, object]]) -> bytes:
+    buffer = BytesIO()
+    with zipfile.ZipFile(buffer, mode="w", compression=zipfile.ZIP_DEFLATED) as archive:
+        for item in items:
+            path = item.get("path")
+            download_name = str(item.get("download_name", "document.pdf") or "document.pdf")
+            if isinstance(path, Path) and path.exists():
+                archive.writestr(download_name, path.read_bytes())
+    return buffer.getvalue()
+
+
 def build_simulated_review_explanation(row: pd.Series) -> str:
     vigilance = str(row.get("Vigilance", "") or "").strip()
     review_type = review_type_for_vigilance(vigilance)
@@ -2404,15 +2808,20 @@ def build_review_simulation_working_table(df: pd.DataFrame) -> pd.DataFrame:
     return table.reset_index(drop=True)
 
 
-def persist_review_simulation_subset(edited_df: pd.DataFrame, selected_indices: list[int] | None = None) -> None:
+def persist_review_simulation_subset(
+    edited_df: pd.DataFrame,
+    selected_indices: list[int] | None = None,
+    pdf_source_df: pd.DataFrame | None = None,
+    prompt_template: str = "",
+) -> tuple[int, list[str]]:
     if edited_df is None or edited_df.empty:
-        return
+        return 0, []
 
     target_df = edited_df.copy()
     if selected_indices is not None:
         valid_indices = [int(i) for i in selected_indices if 0 <= int(i) < len(target_df)]
         if not valid_indices:
-            return
+            return 0, []
         target_df = target_df.iloc[valid_indices].copy()
 
     store = load_review_simulation_store()
@@ -2426,15 +2835,29 @@ def persist_review_simulation_subset(edited_df: pd.DataFrame, selected_indices: 
     subset["Explique moi"] = subset["Explique moi"].fillna("").astype(str)
     subset[REVIEW_SIM_EST_LABEL] = subset[REVIEW_SIM_EST_LABEL].fillna("").astype(str)
     subset = subset[subset["Explique moi"].str.strip().ne("") | subset[REVIEW_SIM_EST_LABEL].str.strip().ne("")].copy()
-    if subset.empty:
-        return
-    subset[SOC_COL] = normalize_societe_id(subset[SOC_COL])
-    subset["SIREN"] = normalize_siren(subset["SIREN"])
-    subset["updated_at_utc"] = datetime.now(timezone.utc).isoformat()
-    remaining = store.merge(subset[KEY_COLUMNS], on=KEY_COLUMNS, how="left", indicator=True)
-    remaining = remaining[remaining["_merge"] == "left_only"].drop(columns=["_merge"])
-    combined = pd.concat([remaining, subset], ignore_index=True)
-    save_review_simulation_store(combined)
+    if not subset.empty:
+        subset[SOC_COL] = normalize_societe_id(subset[SOC_COL])
+        subset["SIREN"] = normalize_siren(subset["SIREN"])
+        subset["updated_at_utc"] = datetime.now(timezone.utc).isoformat()
+        remaining = store.merge(subset[KEY_COLUMNS], on=KEY_COLUMNS, how="left", indicator=True)
+        remaining = remaining[remaining["_merge"] == "left_only"].drop(columns=["_merge"])
+        combined = pd.concat([remaining, subset], ignore_index=True)
+        save_review_simulation_store(combined)
+
+    pdf_scope = target_df.copy()
+    if "Explique moi" not in pdf_scope.columns:
+        return 0, []
+
+    if pdf_source_df is None:
+        explain_mask = pdf_scope["Explique moi"].fillna("").astype(str).str.strip().ne("")
+        if explain_mask.any():
+            try:
+                base_source_df, indicators_source_df, _ = load_source_data()
+                pdf_source_df = build_review_simulation_source_dataset(pdf_scope.loc[explain_mask].copy(), base_source_df, indicators_source_df)
+            except Exception as exc:
+                return 0, [f"PDF : impossible de charger les données source ({exc})"]
+
+    return sync_review_simulation_pdfs(pdf_scope, source_df=pdf_source_df, prompt_template=prompt_template)
 
 
 def apply_review_simulation_batch(working_df: pd.DataFrame, selected_indices: list[int], source_df: pd.DataFrame) -> tuple[pd.DataFrame, int]:
@@ -2838,8 +3261,13 @@ def render_review_simulations_screen(portfolio: pd.DataFrame, user: dict) -> Non
         )
         if st.button("Mettre à jour le statut estimé", type="secondary", key="review_sim_apply_manual_status", use_container_width=True, disabled=(selected_count == 0)):
             updated_df, updated_count = apply_manual_estimated_status(working_df, selected_rows, manual_status)
-            persist_review_simulation_subset(updated_df, selected_rows)
-            st.session_state["review_sim_notice"] = f"{updated_count} SIREN mis à jour avec le statut estimé « {manual_status} »."
+            pdf_count, pdf_errors = persist_review_simulation_subset(updated_df, selected_rows)
+            notice = f"{updated_count} SIREN mis à jour avec le statut estimé « {manual_status} »."
+            if pdf_count:
+                notice += f" {pdf_count} PDF structuré(s) généré(s) ou mis à jour."
+            st.session_state["review_sim_notice"] = notice
+            if pdf_errors:
+                st.session_state["review_sim_warning"] = " | ".join(pdf_errors[:3])
             st.rerun()
     with c2:
         st.markdown(
@@ -2865,18 +3293,28 @@ def render_review_simulations_screen(portfolio: pd.DataFrame, user: dict) -> Non
                     base_prompt=base_prompt,
                     model=GEMINI_MODEL_DEFAULT,
                 )
-            persist_review_simulation_subset(updated_df, selected_rows[:GEMINI_MAX_BATCH_SIZE])
+            pdf_count, pdf_errors = persist_review_simulation_subset(
+                updated_df,
+                selected_rows[:GEMINI_MAX_BATCH_SIZE],
+                pdf_source_df=source_df,
+                prompt_template=base_prompt,
+            )
+            combined_errors = list(errors)
+            combined_errors.extend(pdf_errors)
             if processed == 0:
-                st.session_state["review_sim_warning"] = errors[0] if errors else "Sélectionnez au moins un SIREN pour lancer Gemini."
+                st.session_state["review_sim_warning"] = combined_errors[0] if combined_errors else "Sélectionnez au moins un SIREN pour lancer Gemini."
             else:
                 if selected_count > GEMINI_MAX_BATCH_SIZE:
-                    st.session_state["review_sim_notice"] = f"{processed} SIREN traités par Gemini. Seuls les {GEMINI_MAX_BATCH_SIZE} premiers SIREN sélectionnés ont été envoyés."
+                    notice = f"{processed} SIREN traités par Gemini. Seuls les {GEMINI_MAX_BATCH_SIZE} premiers SIREN sélectionnés ont été envoyés."
                 else:
-                    st.session_state["review_sim_notice"] = f"{processed} SIREN traités par Gemini dans le lot courant."
-                if errors:
-                    preview_errors = " | ".join(errors[:3])
-                    if len(errors) > 3:
-                        preview_errors += f" | +{len(errors) - 3} autre(s) erreur(s)"
+                    notice = f"{processed} SIREN traités par Gemini dans le lot courant."
+                if pdf_count:
+                    notice += f" {pdf_count} PDF structuré(s) généré(s) ou mis à jour."
+                st.session_state["review_sim_notice"] = notice
+                if combined_errors:
+                    preview_errors = " | ".join(combined_errors[:3])
+                    if len(combined_errors) > 3:
+                        preview_errors += f" | +{len(combined_errors) - 3} autre(s) erreur(s)"
                     st.session_state["review_sim_warning"] = preview_errors
             st.rerun()
         if not gemini_api_key:
@@ -2896,6 +3334,34 @@ def render_review_simulations_screen(portfolio: pd.DataFrame, user: dict) -> Non
         st.success(str(st.session_state.pop("review_sim_notice")))
     if st.session_state.get("review_sim_warning"):
         st.warning(str(st.session_state.pop("review_sim_warning")))
+
+    pdf_items = review_simulation_available_pdfs(working_df, selected_rows)
+    if pdf_items:
+        with st.expander("PDF structurés disponibles pour la sélection", expanded=False):
+            st.caption("Chaque PDF est régénéré automatiquement quand la colonne « Explique moi » est renseignée ou mise à jour pour le SIREN concerné.")
+            if len(pdf_items) > 1:
+                st.download_button(
+                    label="Télécharger tous les PDF sélectionnés (.zip)",
+                    data=review_simulation_pdfs_zip_bytes(pdf_items),
+                    file_name="revues_simulations_selection.zip",
+                    mime="application/zip",
+                    type="secondary",
+                    use_container_width=True,
+                    key=f"review_sim_pdf_zip_{selected_review_type}",
+                )
+            for idx, item in enumerate(pdf_items):
+                path = item.get("path")
+                if not isinstance(path, Path) or not path.exists():
+                    continue
+                st.download_button(
+                    label=f"Télécharger {item.get('label', 'PDF')}",
+                    data=path.read_bytes(),
+                    file_name=str(item.get("download_name", "revue_simulation.pdf")),
+                    mime="application/pdf",
+                    type="secondary",
+                    use_container_width=True,
+                    key=f"review_sim_pdf_{selected_review_type}_{idx}",
+                )
 
     st.divider()
     st.markdown("<div id='clients-sous-jacents'></div>", unsafe_allow_html=True)
