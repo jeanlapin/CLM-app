@@ -55,13 +55,21 @@ RISK_ORDER = [
 CRITICAL_VIGILANCE = {"Vigilance Élevée", "Vigilance Critique"}
 PRIORITY_RISK = {"Risque potentiel", "Risque avéré"}
 
-REVIEW_RULE_DEFAULTS = {
-    "Critique": 3,
-    "Renforcé": 12,
-    "Modéré": 24,
-    "Standard": 36,
+REVIEW_FREQUENCY_DEFAULTS = {
+    "Vigilance Critique": 3,
+    "Vigilance Élevée": 6,
+    "Vigilance Modérée": 12,
+    "Vigilance Allégée": 24,
+    "Vigilance Aucune": 36,
 }
-REVIEW_RULE_ORDER = ["Critique", "Renforcé", "Modéré", "Standard"]
+
+REVIEW_CAPACITY_DEFAULTS = {
+    "Vigilance Critique": 5,
+    "Vigilance Élevée": 8,
+    "Vigilance Modérée": 10,
+    "Vigilance Allégée": 12,
+    "Vigilance Aucune": 15,
+}
 
 FILTER_MAPPING = {
     "Segment": "Segment",
@@ -4100,41 +4108,119 @@ def render_analysis_screen(portfolio: pd.DataFrame, indicators: pd.DataFrame) ->
         )
 
 
-def get_review_frequency_settings() -> dict[str, int]:
-    settings: dict[str, int] = {}
-    for label, default in REVIEW_RULE_DEFAULTS.items():
-        key = f"review_freq_{label.lower().replace('é', 'e').replace('è', 'e')}"
-        st.session_state.setdefault(key, int(default))
-        settings[label] = int(st.session_state.get(key, default))
-    return settings
+def review_setting_slug(label: str) -> str:
+    slug = label.lower()
+    slug = slug.replace("é", "e").replace("è", "e").replace("ê", "e")
+    slug = slug.replace("à", "a").replace("ù", "u")
+    slug = re.sub(r"[^a-z0-9]+", "_", slug)
+    return slug.strip("_")
 
 
-def render_review_rule_table(freq_map: dict[str, int]) -> None:
-    rules_df = pd.DataFrame(
-        [
-            ["Critique", "Vigilance Critique ou Risque avéré", f"{int(freq_map.get('Critique', 3))} mois"],
-            ["Renforcé", "Vigilance Élevée ou EDD active", f"{int(freq_map.get('Renforcé', 12))} mois"],
-            ["Modéré", "Vigilance Modérée ou Risque potentiel", f"{int(freq_map.get('Modéré', 24))} mois"],
-            ["Standard", "Tous les autres cas", f"{int(freq_map.get('Standard', 36))} mois"],
-        ],
-        columns=["Type de revue", "Condition retenue", "Fréquence appliquée"],
+def ensure_review_planning_state_defaults() -> None:
+    for label in VIGILANCE_ORDER:
+        freq_key = f"review_freq_{review_setting_slug(label)}"
+        cap_key = f"review_cap_{review_setting_slug(label)}"
+        st.session_state.setdefault(freq_key, int(REVIEW_FREQUENCY_DEFAULTS.get(label, 12)))
+        st.session_state.setdefault(cap_key, int(REVIEW_CAPACITY_DEFAULTS.get(label, 10)))
+
+
+def get_review_planning_settings() -> tuple[dict[str, int], dict[str, int]]:
+    ensure_review_planning_state_defaults()
+    freq_map: dict[str, int] = {}
+    cap_map: dict[str, int] = {}
+    for label in VIGILANCE_ORDER:
+        freq_key = f"review_freq_{review_setting_slug(label)}"
+        cap_key = f"review_cap_{review_setting_slug(label)}"
+        freq_map[label] = int(st.session_state.get(freq_key, REVIEW_FREQUENCY_DEFAULTS.get(label, 12)))
+        cap_map[label] = int(st.session_state.get(cap_key, REVIEW_CAPACITY_DEFAULTS.get(label, 10)))
+    return freq_map, cap_map
+
+
+def review_table_static_cell(value: object, *, header: bool = False, align: str = "center") -> str:
+    bg = PRIMARY_COLOR if header else "#F8FBFF"
+    fg = "#FFFFFF" if header else "#163A59"
+    weight = 700 if header else 600
+    border = "none" if header else "1px solid rgba(22, 58, 89, 0.10)"
+    radius = "10px" if header else "10px"
+    pad = "0.72rem 0.55rem" if header else "0.78rem 0.55rem"
+    size = "0.82rem" if header else "0.9rem"
+    return (
+        f"<div style='background:{bg}; color:{fg}; border:{border}; border-radius:{radius}; "
+        f"padding:{pad}; text-align:{align}; font-weight:{weight}; font-size:{size}; line-height:1.1;'>"
+        f"{escape(str(value))}</div>"
     )
-    render_small_table(rules_df)
-    st.caption("Date prochaine revue calculée = date de base + fréquence. Date de base : dernière revue si disponible, sinon dernière mise à jour vigilance, sinon date du jour.")
 
 
-def review_level_and_reason(row: pd.Series) -> tuple[str, str]:
-    vigilance = str(row.get("Vigilance", "") or "").strip().lower()
-    risk = str(row.get("Risque", "") or "").strip().lower()
-    edd = str(row.get("Statut EDD", "") or "").strip().lower()
 
-    if "critique" in vigilance or "avéré" in risk:
-        return "Critique", "Vigilance Critique ou Risque avéré"
-    if "élev" in vigilance or "elev" in vigilance or any(token in edd for token in ["ouvrir", "ouverte", "ouvert", "cours", "renfor"]):
-        return "Renforcé", "Vigilance Élevée ou EDD active"
-    if "modér" in vigilance or "moder" in vigilance or "potentiel" in risk:
-        return "Modéré", "Vigilance Modérée ou Risque potentiel"
-    return "Standard", "Règle standard du portefeuille"
+def render_review_rule_editor(df: pd.DataFrame) -> tuple[dict[str, int], dict[str, int], bool]:
+    ensure_review_planning_state_defaults()
+    dist = build_distribution(df, "Vigilance", VIGILANCE_ORDER).rename(columns={"Libellé": "Régime de vigilance"})
+    count_map = {row["Régime de vigilance"]: int(row["Nb"]) for _, row in dist.iterrows()}
+    share_map = {row["Régime de vigilance"]: float(row["%"] if pd.notna(row["%"] ) else 0.0) for _, row in dist.iterrows()}
+
+    st.markdown('<h3 class="cm-section-title">Règles de planification des revues</h3>', unsafe_allow_html=True)
+    st.caption("Fréquence par régime de vigilance + capacité maximale de revues par mois. Si la capacité d’un mois est dépassée, l’excédent est décalé automatiquement sur les mois suivants.")
+
+    with st.form("review_planning_rules_form"):
+        header_cols = st.columns([2.9, 0.8, 0.9, 1.35, 1.55])
+        headers = ["Régime de vigilance", "Nb", "%", "Fréquence (mois)", "Capacité max / mois"]
+        for col, title in zip(header_cols, headers):
+            with col:
+                st.markdown(review_table_static_cell(title, header=True), unsafe_allow_html=True)
+
+        for regime in VIGILANCE_ORDER:
+            freq_key = f"review_freq_{review_setting_slug(regime)}"
+            cap_key = f"review_cap_{review_setting_slug(regime)}"
+            row_cols = st.columns([2.9, 0.8, 0.9, 1.35, 1.55])
+            with row_cols[0]:
+                st.markdown(review_table_static_cell(regime, align="left"), unsafe_allow_html=True)
+            with row_cols[1]:
+                st.markdown(review_table_static_cell(count_map.get(regime, 0)), unsafe_allow_html=True)
+            with row_cols[2]:
+                st.markdown(review_table_static_cell(f"{share_map.get(regime, 0.0) * 100:.1f}%"), unsafe_allow_html=True)
+            with row_cols[3]:
+                st.number_input(
+                    f"Fréquence {regime}",
+                    min_value=1,
+                    max_value=60,
+                    step=1,
+                    key=freq_key,
+                    label_visibility="collapsed",
+                )
+            with row_cols[4]:
+                st.number_input(
+                    f"Capacité {regime}",
+                    min_value=1,
+                    max_value=500,
+                    step=1,
+                    key=cap_key,
+                    label_visibility="collapsed",
+                )
+
+        recalc = st.form_submit_button("Recalculer le planning", type="primary", use_container_width=True)
+
+    freq_map, cap_map = get_review_planning_settings()
+    return freq_map, cap_map, recalc
+
+
+
+def review_vigilance_regime(row: pd.Series) -> tuple[str, str]:
+    raw_value = str(row.get("Vigilance", "") or "").strip()
+    value = raw_value.lower()
+    if "critique" in value:
+        return "Vigilance Critique", "Régime de vigilance = Critique"
+    if "élev" in value or "elev" in value:
+        return "Vigilance Élevée", "Régime de vigilance = Élevée"
+    if "modér" in value or "moder" in value:
+        return "Vigilance Modérée", "Régime de vigilance = Modérée"
+    if "allég" in value or "alleg" in value:
+        return "Vigilance Allégée", "Régime de vigilance = Allégée"
+    if "aucune" in value:
+        return "Vigilance Aucune", "Régime de vigilance = Aucune"
+    if raw_value in VIGILANCE_ORDER:
+        return raw_value, f"Régime de vigilance = {raw_value.replace('Vigilance ', '')}"
+    return "Vigilance Aucune", "Régime de vigilance par défaut = Aucune"
+
 
 
 def compute_review_base_date(row: pd.Series, today: pd.Timestamp) -> tuple[pd.Timestamp, str]:
@@ -4149,39 +4235,97 @@ def compute_review_base_date(row: pd.Series, today: pd.Timestamp) -> tuple[pd.Ti
     return today.normalize(), "Date du jour"
 
 
-def build_review_schedule(df: pd.DataFrame, freq_map: dict[str, int], today: pd.Timestamp | None = None) -> pd.DataFrame:
+
+def shift_date_to_target_month(date_value: pd.Timestamp, target_month: pd.Timestamp) -> pd.Timestamp:
+    date_value = pd.Timestamp(date_value).normalize()
+    target_month = pd.Timestamp(target_month).normalize().replace(day=1)
+    month_end = (target_month + pd.offsets.MonthEnd(0)).normalize()
+    day = min(int(date_value.day), int(month_end.day))
+    return pd.Timestamp(year=int(target_month.year), month=int(target_month.month), day=day)
+
+
+
+def month_offset(start_month: pd.Timestamp, end_month: pd.Timestamp) -> int:
+    start_month = pd.Timestamp(start_month)
+    end_month = pd.Timestamp(end_month)
+    return int((end_month.year - start_month.year) * 12 + (end_month.month - start_month.month))
+
+
+
+def smooth_review_schedule(schedule_df: pd.DataFrame, capacity_map: dict[str, int], today: pd.Timestamp) -> pd.DataFrame:
+    if schedule_df is None or schedule_df.empty:
+        return schedule_df
+
+    schedule = schedule_df.copy()
+    schedule["Date prochaine revue"] = pd.NaT
+    schedule["Mois théorique"] = ""
+    schedule["Mois planifié"] = ""
+    schedule["Lissé"] = "Non"
+    schedule["Décalage (mois)"] = 0
+    schedule["Capacité max / mois"] = 0
+
+    current_month = today.to_period("M").to_timestamp()
+    for regime in VIGILANCE_ORDER:
+        mask = schedule["Régime de vigilance"].eq(regime)
+        if not mask.any():
+            continue
+        capacity = max(int(capacity_map.get(regime, REVIEW_CAPACITY_DEFAULTS.get(regime, 10))), 1)
+        bucket_usage: dict[pd.Timestamp, int] = {}
+        group = schedule.loc[mask].sort_values(["Date prochaine revue théorique", "Date de base", "SIREN"], kind="stable")
+        for idx, row in group.iterrows():
+            theoretical = pd.to_datetime(row.get("Date prochaine revue théorique"), errors="coerce")
+            if pd.isna(theoretical):
+                theoretical = today.normalize()
+            base_month = theoretical.to_period("M").to_timestamp()
+            candidate_month = base_month if base_month >= current_month else current_month
+            source_month = candidate_month
+            while bucket_usage.get(candidate_month, 0) >= capacity:
+                candidate_month = (candidate_month + pd.DateOffset(months=1)).to_period("M").to_timestamp()
+            planned_date = shift_date_to_target_month(theoretical, candidate_month)
+            bucket_usage[candidate_month] = bucket_usage.get(candidate_month, 0) + 1
+
+            schedule.at[idx, "Date prochaine revue"] = planned_date
+            schedule.at[idx, "Mois théorique"] = theoretical.to_period("M").strftime("%Y-%m")
+            schedule.at[idx, "Mois planifié"] = pd.Timestamp(candidate_month).strftime("%Y-%m")
+            schedule.at[idx, "Lissé"] = "Oui" if candidate_month != source_month else "Non"
+            schedule.at[idx, "Décalage (mois)"] = month_offset(source_month, candidate_month)
+            schedule.at[idx, "Capacité max / mois"] = capacity
+
+    planned_dates = pd.to_datetime(schedule["Date prochaine revue"], errors="coerce")
+    delta_days = (planned_dates - today).dt.days
+    schedule["Statut planning"] = np.select(
+        [delta_days < 0, delta_days <= 30, delta_days <= 90],
+        ["En retard", "À 30 jours", "31-90 jours"],
+        default="Au-delà de 90 jours",
+    )
+    schedule = schedule.sort_values(["Date prochaine revue", "Régime de vigilance", SOC_COL, "SIREN"], kind="stable").reset_index(drop=True)
+    return schedule
+
+
+
+def build_review_schedule(df: pd.DataFrame, freq_map: dict[str, int], capacity_map: dict[str, int], today: pd.Timestamp | None = None) -> pd.DataFrame:
     if today is None:
         today = pd.Timestamp.today().normalize()
     if df is None or df.empty:
-        return pd.DataFrame(columns=[SOC_COL, "SIREN", "Date prochaine revue calculée", "Type de revue", "Règle appliquée", "Date de base", "Source date de base", "Statut planning"])
+        return pd.DataFrame(columns=[SOC_COL, "SIREN", "Régime de vigilance", "Date prochaine revue"]) 
 
     rows: list[dict[str, object]] = []
     for _, row in df.iterrows():
-        level, reason = review_level_and_reason(row)
+        regime, reason = review_vigilance_regime(row)
         base_date, base_source = compute_review_base_date(row, today)
-        months = int(freq_map.get(level, REVIEW_RULE_DEFAULTS[level]))
-        next_review = (base_date + pd.DateOffset(months=months)).normalize()
-        days_to_due = (next_review - today).days
-        if days_to_due < 0:
-            planning_status = "En retard"
-        elif days_to_due <= 30:
-            planning_status = "À 30 jours"
-        elif days_to_due <= 90:
-            planning_status = "31-90 jours"
-        else:
-            planning_status = "Au-delà de 90 jours"
+        months = int(freq_map.get(regime, REVIEW_FREQUENCY_DEFAULTS.get(regime, 12)))
+        theoretical = (base_date + pd.DateOffset(months=months)).normalize()
         rows.append(
             {
                 SOC_COL: row.get(SOC_COL),
                 "SIREN": row.get("SIREN"),
                 "Dénomination": row.get("Dénomination"),
-                "Type de revue": level,
+                "Régime de vigilance": regime,
                 "Règle appliquée": reason,
                 "Fréquence (mois)": months,
                 "Date de base": base_date,
                 "Source date de base": base_source,
-                "Date prochaine revue calculée": next_review,
-                "Statut planning": planning_status,
+                "Date prochaine revue théorique": theoretical,
                 "Vigilance": row.get("Vigilance"),
                 "Risque": row.get("Risque"),
             }
@@ -4190,38 +4334,39 @@ def build_review_schedule(df: pd.DataFrame, freq_map: dict[str, int], today: pd.
     schedule = pd.DataFrame(rows)
     if schedule.empty:
         return schedule
-    schedule = schedule.sort_values(["Date prochaine revue calculée", SOC_COL, "SIREN"], kind="stable").reset_index(drop=True)
-    return schedule
+    return smooth_review_schedule(schedule, capacity_map, today)
+
 
 
 def build_review_schedule_chart_table(schedule_df: pd.DataFrame, today: pd.Timestamp | None = None) -> pd.DataFrame:
     if today is None:
         today = pd.Timestamp.today().normalize()
     if schedule_df is None or schedule_df.empty:
-        return pd.DataFrame(columns=["Mois", "Standard / Modéré", "Renforcé", "Critique"])
+        return pd.DataFrame(columns=["Mois"] + VIGILANCE_ORDER)
 
     work = schedule_df.copy()
-    due = pd.to_datetime(work["Date prochaine revue calculée"], errors="coerce")
+    due = pd.to_datetime(work["Date prochaine revue"], errors="coerce")
     current_month = today.to_period("M").to_timestamp()
     month_bucket = due.dt.to_period("M").dt.to_timestamp()
     month_bucket = month_bucket.where(month_bucket >= current_month, current_month)
     work["Mois"] = month_bucket
-    work["Série"] = np.where(
-        work["Type de revue"].eq("Critique"),
-        "Critique",
-        np.where(work["Type de revue"].eq("Renforcé"), "Renforcé", "Standard / Modéré"),
-    )
 
-    month_index = pd.date_range(current_month, periods=12, freq="MS")
+    max_month = month_bucket.max()
+    if pd.isna(max_month):
+        max_month = current_month
+    horizon_end = max(current_month + pd.DateOffset(months=11), pd.Timestamp(max_month))
+    month_index = pd.date_range(current_month, horizon_end, freq="MS")
+
     grouped = (
-        work.groupby(["Mois", "Série"]).size().unstack(fill_value=0).reindex(month_index, fill_value=0)
+        work.groupby(["Mois", "Régime de vigilance"]).size().unstack(fill_value=0).reindex(month_index, fill_value=0)
     )
-    for col in ["Standard / Modéré", "Renforcé", "Critique"]:
+    for col in VIGILANCE_ORDER:
         if col not in grouped.columns:
             grouped[col] = 0
-    grouped = grouped[["Standard / Modéré", "Renforcé", "Critique"]].reset_index().rename(columns={"index": "Mois"})
+    grouped = grouped[VIGILANCE_ORDER].reset_index().rename(columns={"index": "Mois"})
     grouped["Mois"] = pd.to_datetime(grouped["Mois"]).dt.strftime("%Y-%m")
     return grouped
+
 
 
 def render_review_schedule_chart(chart_df: pd.DataFrame) -> None:
@@ -4229,37 +4374,46 @@ def render_review_schedule_chart(chart_df: pd.DataFrame) -> None:
         st.info("Aucune revue planifiée n'est disponible sur le périmètre filtré.")
         return
 
-    metric_cols = ["Standard / Modéré", "Renforcé", "Critique"]
+    metric_cols = VIGILANCE_ORDER
     chart_df = chart_df.copy()
     for col in metric_cols:
         chart_df[col] = pd.to_numeric(chart_df[col], errors="coerce").fillna(0).round(0).astype(int)
+    chart_df["Total"] = chart_df[metric_cols].sum(axis=1)
 
     month_order = chart_df["Mois"].astype(str).tolist()
-    melted = chart_df.melt(id_vars=["Mois"], value_vars=metric_cols, var_name="Type de revue", value_name="Cas")
-    color_scale = alt.Scale(domain=metric_cols, range=["#0F4C81", "#F28C28", "#BF2424"])
+    melted = chart_df.melt(id_vars=["Mois"], value_vars=metric_cols, var_name="Régime de vigilance", value_name="Cas")
+    color_scale = alt.Scale(
+        domain=metric_cols,
+        range=["#BF2424", "#F28C28", "#EAAA08", "#5E8FC7", "#163A59"],
+    )
 
-    base = alt.Chart(melted).encode(
+    bars = alt.Chart(melted).mark_bar(cornerRadiusTopLeft=5, cornerRadiusTopRight=5).encode(
         x=alt.X("Mois:N", sort=month_order, title=None, axis=alt.Axis(labelAngle=0, labelPadding=10, labelFontSize=12, labelColor="#163A59")),
-        xOffset=alt.XOffset("Type de revue:N", sort=metric_cols),
-        y=alt.Y("Cas:Q", title=None, axis=alt.Axis(grid=True, tickMinStep=1, labelFontSize=12, labelColor="#526273"), scale=alt.Scale(nice=True, zero=True)),
-        color=alt.Color("Type de revue:N", sort=metric_cols, scale=color_scale, legend=alt.Legend(title=None, orient="top", direction="horizontal", labelFontSize=12, symbolType="square")),
+        y=alt.Y("Cas:Q", title=None, axis=alt.Axis(grid=True, tickMinStep=1, labelFontSize=12, labelColor="#526273"), stack=True),
+        color=alt.Color("Régime de vigilance:N", sort=metric_cols, scale=color_scale, legend=alt.Legend(title=None, orient="top", direction="horizontal", labelFontSize=12, symbolType="square")),
         tooltip=[
             alt.Tooltip("Mois:N", title="Mois"),
-            alt.Tooltip("Type de revue:N", title="Type de revue"),
+            alt.Tooltip("Régime de vigilance:N", title="Régime"),
             alt.Tooltip("Cas:Q", title="Cas", format=".0f"),
         ],
     )
-    bars = base.mark_bar(size=22, cornerRadiusTopLeft=5, cornerRadiusTopRight=5)
-    labels = base.mark_text(dy=-10, font="Sora", fontSize=11, fontWeight="bold", color="#163A59").encode(text=alt.Text("Cas:Q", format=".0f"))
+
+    totals = alt.Chart(chart_df).mark_text(dy=-10, font="Sora", fontSize=11, fontWeight="bold", color="#163A59").encode(
+        x=alt.X("Mois:N", sort=month_order),
+        y=alt.Y("Total:Q"),
+        text=alt.Text("Total:Q", format=".0f"),
+    )
+
     chart = (
-        (bars + labels)
-        .properties(height=320)
+        (bars + totals)
+        .properties(height=330)
         .configure_view(strokeOpacity=0)
         .configure_axis(domain=False, gridColor="#E6EEF6", tickColor="#E6EEF6", titleColor="#163A59")
         .configure_legend(labelColor="#163A59")
     )
     st.altair_chart(chart, use_container_width=True)
-    st.caption("Lecture mensuelle : bleu = revues standard / modérées, orange = revues renforcées, rouge = revues critiques.")
+    st.caption("Chaque barre empilée représente la charge mensuelle planifiée après lissage. Les dossiers au-delà de la capacité d’un mois sont décalés sur les mois suivants dans le même régime de vigilance.")
+
 
 
 def render_review_schedule_kpis(schedule_df: pd.DataFrame) -> None:
@@ -4268,15 +4422,16 @@ def render_review_schedule_kpis(schedule_df: pd.DataFrame) -> None:
         return
 
     today = pd.Timestamp.today().normalize()
-    next_dates = pd.to_datetime(schedule_df["Date prochaine revue calculée"], errors="coerce")
-    delta_days = (next_dates - today).dt.days
+    planned_dates = pd.to_datetime(schedule_df["Date prochaine revue"], errors="coerce")
+    current_month = today.to_period("M").strftime("%Y-%m")
+    this_month = planned_dates.dt.to_period("M").astype(str).eq(current_month)
     cards = [
-        ("Revues planifiées", f"{len(schedule_df):,}".replace(",", " "), "SIREN planifiés", ""),
-        ("Revues en retard", f"{int((delta_days < 0).sum()):,}".replace(",", " "), "Échéance dépassée", " is-alert"),
-        ("À 30 jours", f"{int(((delta_days >= 0) & (delta_days <= 30)).sum()):,}".replace(",", " "), "Échéance proche", ""),
-        ("31-90 jours", f"{int(((delta_days > 30) & (delta_days <= 90)).sum()):,}".replace(",", " "), "Charge à venir", ""),
-        ("Revues renforcées", f"{int(schedule_df['Type de revue'].eq('Renforcé').sum()):,}".replace(",", " "), "Niveau renforcé", ""),
-        ("Revues critiques", f"{int(schedule_df['Type de revue'].eq('Critique').sum()):,}".replace(",", " "), "Niveau critique", " is-alert"),
+        ("SIREN planifiés", f"{len(schedule_df):,}".replace(",", " "), "Portefeuille courant", ""),
+        ("Revues ce mois", f"{int(this_month.sum()):,}".replace(",", " "), "Charge du mois courant", ""),
+        ("Dossiers lissés", f"{int(schedule_df['Lissé'].eq('Oui').sum()):,}".replace(",", " "), "Décalés sur les mois suivants", ""),
+        ("Vigilance critique", f"{int(schedule_df['Régime de vigilance'].eq('Vigilance Critique').sum()):,}".replace(",", " "), "Régime critique", " is-alert"),
+        ("Vigilance élevée", f"{int(schedule_df['Régime de vigilance'].eq('Vigilance Élevée').sum()):,}".replace(",", " "), "Régime élevé", ""),
+        ("En retard théorique", f"{int((pd.to_datetime(schedule_df['Date prochaine revue théorique'], errors='coerce') < today).sum()):,}".replace(",", " "), "Échéance théorique dépassée", " is-alert"),
     ]
     st.markdown('<h3 class="cm-section-title">Bandeau de synthèse</h3>', unsafe_allow_html=True)
     st.markdown(
@@ -4288,6 +4443,7 @@ def render_review_schedule_kpis(schedule_df: pd.DataFrame) -> None:
         + "</div>",
         unsafe_allow_html=True,
     )
+
 
 
 def render_review_planning_screen(portfolio: pd.DataFrame) -> None:
@@ -4303,13 +4459,13 @@ def render_review_planning_screen(portfolio: pd.DataFrame) -> None:
     top_left, top_right = st.columns([5.3, 1.2])
     with top_left:
         st.markdown('<h3 class="cm-section-title">Planification des revues</h3>', unsafe_allow_html=True)
-        st.caption("Ajustez la fréquence par type de revue, recalculez le planning et exportez les prochaines dates par SIREN.")
+        st.caption("La date de prochaine revue est calculée à partir du régime de vigilance, puis lissée sur les mois suivants si la capacité mensuelle du régime est dépassée.")
     with top_right:
         if st.button("Réinitialiser", type="secondary", key="review_planning_reset"):
             reset_review_filters()
-            for label, default in REVIEW_RULE_DEFAULTS.items():
-                key = f"review_freq_{label.lower().replace('é', 'e').replace('è', 'e')}"
-                st.session_state[key] = int(default)
+            for label in VIGILANCE_ORDER:
+                st.session_state[f"review_freq_{review_setting_slug(label)}"] = int(REVIEW_FREQUENCY_DEFAULTS.get(label, 12))
+                st.session_state[f"review_cap_{review_setting_slug(label)}"] = int(REVIEW_CAPACITY_DEFAULTS.get(label, 10))
             st.rerun()
 
     filter_labels = ["Vigilance", "Risque", "EDD", "Segment", "Pays", "Produit", "Canal", "Analyste", "Valideur"]
@@ -4326,44 +4482,17 @@ def render_review_planning_screen(portfolio: pd.DataFrame) -> None:
         if idx % 5 == 4 and idx < len(filter_labels) - 1:
             filter_cols = st.columns(5)
 
-    for label, default in REVIEW_RULE_DEFAULTS.items():
-        key = f"review_freq_{label.lower().replace('é', 'e').replace('è', 'e')}"
-        st.session_state.setdefault(key, int(default))
-
-    with st.form("review_frequency_form"):
-        st.markdown('<h3 class="cm-section-title">Paramètres de fréquence</h3>', unsafe_allow_html=True)
-        f1, f2, f3, f4, f5 = st.columns([1, 1, 1, 1, 1.2])
-        with f1:
-            st.number_input("Critique (mois)", min_value=1, max_value=60, step=1, key="review_freq_critique")
-        with f2:
-            st.number_input("Renforcé (mois)", min_value=1, max_value=60, step=1, key="review_freq_renforce")
-        with f3:
-            st.number_input("Modéré (mois)", min_value=1, max_value=60, step=1, key="review_freq_modere")
-        with f4:
-            st.number_input("Standard (mois)", min_value=1, max_value=60, step=1, key="review_freq_standard")
-        with f5:
-            st.markdown("<div style='height: 1.55rem'></div>", unsafe_allow_html=True)
-            recalc = st.form_submit_button("Recalculer le planning", type="primary", use_container_width=True)
-    if recalc:
-        st.success("Planning recalculé avec les fréquences saisies.")
-
-    freq_map = {
-        "Critique": int(st.session_state.get("review_freq_critique", REVIEW_RULE_DEFAULTS["Critique"])),
-        "Renforcé": int(st.session_state.get("review_freq_renforce", REVIEW_RULE_DEFAULTS["Renforcé"])),
-        "Modéré": int(st.session_state.get("review_freq_modere", REVIEW_RULE_DEFAULTS["Modéré"])),
-        "Standard": int(st.session_state.get("review_freq_standard", REVIEW_RULE_DEFAULTS["Standard"])),
-    }
-
     filtered = apply_filters(portfolio, selections)
     if filtered.empty:
         st.warning("Aucun client ne correspond au périmètre société + filtres sélectionnés.")
         return
 
     st.divider()
-    st.markdown('<h3 class="cm-section-title">Règles de calcul</h3>', unsafe_allow_html=True)
-    render_review_rule_table(freq_map)
+    freq_map, capacity_map, recalc = render_review_rule_editor(filtered)
+    if recalc:
+        st.success("Planning recalculé avec les paramètres saisis.")
 
-    schedule_df = build_review_schedule(filtered, freq_map)
+    schedule_df = build_review_schedule(filtered, freq_map, capacity_map)
     if schedule_df.empty:
         st.info("Aucune revue à planifier sur le périmètre filtré.")
         return
@@ -4378,13 +4507,29 @@ def render_review_planning_screen(portfolio: pd.DataFrame) -> None:
 
     st.divider()
     st.markdown('<h3 class="cm-section-title">04 - Dates revue</h3>', unsafe_allow_html=True)
-    export_df = schedule_df[["SIREN", "Date prochaine revue calculée"]].rename(columns={"Date prochaine revue calculée": "Date prochaine revue"}).copy()
-    export_df["Date prochaine revue"] = pd.to_datetime(export_df["Date prochaine revue"], errors="coerce").dt.strftime("%d/%m/%Y")
-    export_df["Date prochaine revue"] = export_df["Date prochaine revue"].fillna("")
+    export_df = schedule_df[[
+        "SIREN",
+        "Dénomination",
+        "Régime de vigilance",
+        "Fréquence (mois)",
+        "Date de base",
+        "Date prochaine revue théorique",
+        "Date prochaine revue",
+        "Lissé",
+        "Décalage (mois)",
+    ]].copy()
+    export_df = export_df.rename(
+        columns={
+            "Date prochaine revue théorique": "Date théorique",
+            "Date prochaine revue": "Date prochaine revue",
+        }
+    )
+    for col in ["Date de base", "Date théorique", "Date prochaine revue"]:
+        export_df[col] = pd.to_datetime(export_df[col], errors="coerce").dt.strftime("%d/%m/%Y").fillna("")
 
     export_left, export_right = st.columns([5.0, 1.4])
     with export_left:
-        st.caption("Table exportable des prochaines revues calculées par SIREN sur le périmètre courant.")
+        st.caption("Table exportable par SIREN avec régime de vigilance, fréquence appliquée, date théorique et date lissée de prochaine revue.")
     with export_right:
         st.download_button(
             label="Exporter (.csv)",
@@ -4396,6 +4541,7 @@ def render_review_planning_screen(portfolio: pd.DataFrame) -> None:
             use_container_width=True,
         )
     render_small_table(export_df, bold_numbers=False)
+
 
 
 def render_user_header(user: dict, selected_societies: list[str], total_societies: int) -> None:
