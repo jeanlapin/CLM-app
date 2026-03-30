@@ -4253,8 +4253,10 @@ def render_clickable_dataframe(
     height: int | None = None,
     hide_index: bool = True,
     key_prefix: str = "table",
+    key: str | None = None,
 ) -> None:
-    render_clickable_streamlit_table(df, height=height, key_prefix=key_prefix)
+    effective_key_prefix = str(key) if key is not None else key_prefix
+    render_clickable_streamlit_table(df, height=height, key_prefix=effective_key_prefix)
 
 
 def render_clickable_styled_dataframe(
@@ -4265,8 +4267,10 @@ def render_clickable_styled_dataframe(
     height: int | None = None,
     hide_index: bool = True,
     key_prefix: str = "table",
+    key: str | None = None,
 ) -> None:
-    render_clickable_streamlit_table(source_df, height=height, key_prefix=key_prefix)
+    effective_key_prefix = str(key) if key is not None else key_prefix
+    render_clickable_streamlit_table(source_df, height=height, key_prefix=effective_key_prefix)
 
 
 def client_label(row: pd.Series) -> str:
