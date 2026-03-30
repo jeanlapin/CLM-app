@@ -3778,7 +3778,6 @@ def render_analysis_screen(portfolio: pd.DataFrame, indicators: pd.DataFrame) ->
         open_portfolio_view()
         st.rerun()
 
-    st.markdown('<div class="cm-analysis-params">', unsafe_allow_html=True)
     top_left, top_right = st.columns([5.4, 1.2])
     with top_left:
         st.markdown('<h3 class="cm-section-title">Pilotage de l’analyse</h3>', unsafe_allow_html=True)
@@ -3822,7 +3821,6 @@ def render_analysis_screen(portfolio: pd.DataFrame, indicators: pd.DataFrame) ->
         unsafe_allow_html=True,
     )
 
-    st.markdown('</div>', unsafe_allow_html=True)
 
     filtered = apply_filters(portfolio, selections)
     if filtered.empty:
