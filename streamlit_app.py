@@ -2452,30 +2452,6 @@ def render_review_simulations_screen(portfolio: pd.DataFrame, user: dict) -> Non
     if st.session_state.get("review_sim_notice"):
         st.success(str(st.session_state.pop("review_sim_notice")))
 
-    if selected_rows:
-        first = working_df.iloc[selected_rows[0]]
-        source_df = portfolio.copy()
-        source_df[SOC_COL] = normalize_societe_id(source_df[SOC_COL])
-        source_df["SIREN"] = normalize_siren(source_df["SIREN"])
-        soc = normalize_societe_id(pd.Series([first.get(SOC_COL, "")])).iloc[0]
-        siren = normalize_siren(pd.Series([first.get("SIREN", "")])).iloc[0]
-        match = source_df[(source_df[SOC_COL] == soc) & (source_df["SIREN"] == siren)]
-        preview_row = match.iloc[0] if not match.empty else pd.Series({
-            SOC_COL: soc,
-            "SIREN": siren,
-            "Dénomination": first.get("Dénomination", ""),
-            "Vigilance": first.get(REVIEW_SIM_REAL_LABEL, ""),
-            "Risque": "",
-            "Statut EDD": "",
-            "Date prochaine revue": first.get("Date prochaine revue"),
-        })
-        st.text_area(
-            "Prompt prêt à l’emploi pour le 1er SIREN sélectionné",
-            value=build_row_review_prompt(preview_row),
-            height=230,
-            key="review_sim_prompt_selected",
-        )
-
     st.divider()
     st.markdown("<div id='clients-sous-jacents'></div>", unsafe_allow_html=True)
     st.markdown('<h3 class="cm-section-title">Clients sous-jacents</h3>', unsafe_allow_html=True)
