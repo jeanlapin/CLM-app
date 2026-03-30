@@ -1931,10 +1931,10 @@ def build_review_trend(real_status: object, estimated_status: object) -> str:
 def review_trend_icon(trend_value: object) -> str:
     trend = str(trend_value or "").strip()
     if trend == "S’aggrave":
-        return "▲"
+        return "🔴 ▲"
     if trend == "S’améliore":
-        return "▼"
-    return "•"
+        return "🟢 ▼"
+    return "🟠 •"
 
 
 def apply_manual_estimated_status(working_df: pd.DataFrame, selected_indices: list[int], estimated_status: str) -> tuple[pd.DataFrame, int]:
@@ -2368,7 +2368,7 @@ def render_review_simulations_screen(portfolio: pd.DataFrame, user: dict) -> Non
     hint_cols = st.columns([6.0, 2.4, 2.0])
     with hint_cols[0]:
         st.markdown(
-            "<div class='cm-analysis-hint-text'>Sélectionnez une ou plusieurs lignes du tableau pour préparer un lot, modifier le statut estimé et piloter les clients sous-jacents. La tendance est matérialisée par une icône : ▲ aggravation, • stabilité, ▼ amélioration.</div>",
+            "<div class='cm-analysis-hint-text'>Sélectionnez une ou plusieurs lignes du tableau pour préparer un lot, modifier le statut estimé et piloter les clients sous-jacents. La tendance est matérialisée par une icône colorée : 🔴 ▲ aggravation, 🟠 • stabilité, 🟢 ▼ amélioration.</div>",
             unsafe_allow_html=True,
         )
     with hint_cols[1]:
