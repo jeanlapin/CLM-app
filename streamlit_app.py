@@ -55,6 +55,14 @@ RISK_ORDER = [
 CRITICAL_VIGILANCE = {"Vigilance Élevée", "Vigilance Critique"}
 PRIORITY_RISK = {"Risque potentiel", "Risque avéré"}
 
+REVIEW_RULE_DEFAULTS = {
+    "Critique": 3,
+    "Renforcé": 12,
+    "Modéré": 24,
+    "Standard": 36,
+}
+REVIEW_RULE_ORDER = ["Critique", "Renforcé", "Modéré", "Standard"]
+
 FILTER_MAPPING = {
     "Segment": "Segment",
     "Pays": "Pays de résidence",
@@ -1934,6 +1942,12 @@ def reset_filters() -> None:
             st.session_state[key] = "Tous"
 
 
+def reset_review_filters() -> None:
+    for key in list(st.session_state.keys()):
+        if key.startswith("review_filter_"):
+            st.session_state[key] = "Tous"
+
+
 def format_manifest_date(value: str | None) -> str:
     if not value:
         return "inconnue"
@@ -2218,6 +2232,8 @@ def sync_view_state_from_query_params() -> None:
 
     if view == "analyse":
         st.session_state["cm_view"] = "analysis"
+    elif view in {"dates-revue", "dates_revue", "datesrevue", "planning"}:
+        st.session_state["cm_view"] = "review_dates"
 
     if view == "client" and societe_id and siren:
         st.session_state["cm_view"] = "client"
@@ -2855,21 +2871,35 @@ def render_client_screen(
 
 
 def render_primary_navigation(current_view: str) -> str:
-    label_map = {"portfolio": "Portefeuille", "analysis": "Analyse"}
+    label_map = {
+        "portfolio": "Portefeuille",
+        "analysis": "Analyse",
+        "review_dates": "04 - Dates revue",
+    }
+    options = ["Portefeuille", "Analyse", "04 - Dates revue"]
     current_label = label_map.get(current_view, "Portefeuille")
     selection = st.radio(
         "Navigation principale",
-        options=["Portefeuille", "Analyse"],
+        options=options,
         horizontal=True,
         label_visibility="collapsed",
-        index=["Portefeuille", "Analyse"].index(current_label),
+        index=options.index(current_label),
         key="cm_main_nav_radio",
     )
-    return "analysis" if selection == "Analyse" else "portfolio"
+    if selection == "Analyse":
+        return "analysis"
+    if selection == "04 - Dates revue":
+        return "review_dates"
+    return "portfolio"
 
 
 def open_analysis_view() -> None:
     st.session_state["cm_view"] = "analysis"
+    st.query_params.clear()
+
+
+def open_review_dates_view() -> None:
+    st.session_state["cm_view"] = "review_dates"
     st.query_params.clear()
 
 
@@ -3949,8 +3979,11 @@ def build_analysis_focus_dataset_from_selection(
 def render_analysis_screen(portfolio: pd.DataFrame, indicators: pd.DataFrame) -> None:
     render_home_hero("Analyse")
     nav = render_primary_navigation("analysis")
-    if nav != "analysis":
+    if nav == "portfolio":
         open_portfolio_view()
+        st.rerun()
+    if nav == "review_dates":
+        open_review_dates_view()
         st.rerun()
 
     top_left, top_right = st.columns([5.4, 1.2])
@@ -4067,6 +4100,304 @@ def render_analysis_screen(portfolio: pd.DataFrame, indicators: pd.DataFrame) ->
         )
 
 
+def get_review_frequency_settings() -> dict[str, int]:
+    settings: dict[str, int] = {}
+    for label, default in REVIEW_RULE_DEFAULTS.items():
+        key = f"review_freq_{label.lower().replace('é', 'e').replace('è', 'e')}"
+        st.session_state.setdefault(key, int(default))
+        settings[label] = int(st.session_state.get(key, default))
+    return settings
+
+
+def render_review_rule_table(freq_map: dict[str, int]) -> None:
+    rules_df = pd.DataFrame(
+        [
+            ["Critique", "Vigilance Critique ou Risque avéré", f"{int(freq_map.get('Critique', 3))} mois"],
+            ["Renforcé", "Vigilance Élevée ou EDD active", f"{int(freq_map.get('Renforcé', 12))} mois"],
+            ["Modéré", "Vigilance Modérée ou Risque potentiel", f"{int(freq_map.get('Modéré', 24))} mois"],
+            ["Standard", "Tous les autres cas", f"{int(freq_map.get('Standard', 36))} mois"],
+        ],
+        columns=["Type de revue", "Condition retenue", "Fréquence appliquée"],
+    )
+    render_small_table(rules_df)
+    st.caption("Date prochaine revue calculée = date de base + fréquence. Date de base : dernière revue si disponible, sinon dernière mise à jour vigilance, sinon date du jour.")
+
+
+def review_level_and_reason(row: pd.Series) -> tuple[str, str]:
+    vigilance = str(row.get("Vigilance", "") or "").strip().lower()
+    risk = str(row.get("Risque", "") or "").strip().lower()
+    edd = str(row.get("Statut EDD", "") or "").strip().lower()
+
+    if "critique" in vigilance or "avéré" in risk:
+        return "Critique", "Vigilance Critique ou Risque avéré"
+    if "élev" in vigilance or "elev" in vigilance or any(token in edd for token in ["ouvrir", "ouverte", "ouvert", "cours", "renfor"]):
+        return "Renforcé", "Vigilance Élevée ou EDD active"
+    if "modér" in vigilance or "moder" in vigilance or "potentiel" in risk:
+        return "Modéré", "Vigilance Modérée ou Risque potentiel"
+    return "Standard", "Règle standard du portefeuille"
+
+
+def compute_review_base_date(row: pd.Series, today: pd.Timestamp) -> tuple[pd.Timestamp, str]:
+    last_review = pd.to_datetime(row.get("Date dernière revue"), errors="coerce")
+    if pd.notna(last_review):
+        return pd.Timestamp(last_review).normalize(), "Date dernière revue"
+
+    vig_update = pd.to_datetime(row.get("Vigilance Date de mise à jour"), errors="coerce")
+    if pd.notna(vig_update):
+        return pd.Timestamp(vig_update).normalize(), "Dernière mise à jour vigilance"
+
+    return today.normalize(), "Date du jour"
+
+
+def build_review_schedule(df: pd.DataFrame, freq_map: dict[str, int], today: pd.Timestamp | None = None) -> pd.DataFrame:
+    if today is None:
+        today = pd.Timestamp.today().normalize()
+    if df is None or df.empty:
+        return pd.DataFrame(columns=[SOC_COL, "SIREN", "Date prochaine revue calculée", "Type de revue", "Règle appliquée", "Date de base", "Source date de base", "Statut planning"])
+
+    rows: list[dict[str, object]] = []
+    for _, row in df.iterrows():
+        level, reason = review_level_and_reason(row)
+        base_date, base_source = compute_review_base_date(row, today)
+        months = int(freq_map.get(level, REVIEW_RULE_DEFAULTS[level]))
+        next_review = (base_date + pd.DateOffset(months=months)).normalize()
+        days_to_due = (next_review - today).days
+        if days_to_due < 0:
+            planning_status = "En retard"
+        elif days_to_due <= 30:
+            planning_status = "À 30 jours"
+        elif days_to_due <= 90:
+            planning_status = "31-90 jours"
+        else:
+            planning_status = "Au-delà de 90 jours"
+        rows.append(
+            {
+                SOC_COL: row.get(SOC_COL),
+                "SIREN": row.get("SIREN"),
+                "Dénomination": row.get("Dénomination"),
+                "Type de revue": level,
+                "Règle appliquée": reason,
+                "Fréquence (mois)": months,
+                "Date de base": base_date,
+                "Source date de base": base_source,
+                "Date prochaine revue calculée": next_review,
+                "Statut planning": planning_status,
+                "Vigilance": row.get("Vigilance"),
+                "Risque": row.get("Risque"),
+            }
+        )
+
+    schedule = pd.DataFrame(rows)
+    if schedule.empty:
+        return schedule
+    schedule = schedule.sort_values(["Date prochaine revue calculée", SOC_COL, "SIREN"], kind="stable").reset_index(drop=True)
+    return schedule
+
+
+def build_review_schedule_chart_table(schedule_df: pd.DataFrame, today: pd.Timestamp | None = None) -> pd.DataFrame:
+    if today is None:
+        today = pd.Timestamp.today().normalize()
+    if schedule_df is None or schedule_df.empty:
+        return pd.DataFrame(columns=["Mois", "Standard / Modéré", "Renforcé", "Critique"])
+
+    work = schedule_df.copy()
+    due = pd.to_datetime(work["Date prochaine revue calculée"], errors="coerce")
+    current_month = today.to_period("M").to_timestamp()
+    month_bucket = due.dt.to_period("M").dt.to_timestamp()
+    month_bucket = month_bucket.where(month_bucket >= current_month, current_month)
+    work["Mois"] = month_bucket
+    work["Série"] = np.where(
+        work["Type de revue"].eq("Critique"),
+        "Critique",
+        np.where(work["Type de revue"].eq("Renforcé"), "Renforcé", "Standard / Modéré"),
+    )
+
+    month_index = pd.date_range(current_month, periods=12, freq="MS")
+    grouped = (
+        work.groupby(["Mois", "Série"]).size().unstack(fill_value=0).reindex(month_index, fill_value=0)
+    )
+    for col in ["Standard / Modéré", "Renforcé", "Critique"]:
+        if col not in grouped.columns:
+            grouped[col] = 0
+    grouped = grouped[["Standard / Modéré", "Renforcé", "Critique"]].reset_index().rename(columns={"index": "Mois"})
+    grouped["Mois"] = pd.to_datetime(grouped["Mois"]).dt.strftime("%Y-%m")
+    return grouped
+
+
+def render_review_schedule_chart(chart_df: pd.DataFrame) -> None:
+    if chart_df is None or chart_df.empty:
+        st.info("Aucune revue planifiée n'est disponible sur le périmètre filtré.")
+        return
+
+    metric_cols = ["Standard / Modéré", "Renforcé", "Critique"]
+    chart_df = chart_df.copy()
+    for col in metric_cols:
+        chart_df[col] = pd.to_numeric(chart_df[col], errors="coerce").fillna(0).round(0).astype(int)
+
+    month_order = chart_df["Mois"].astype(str).tolist()
+    melted = chart_df.melt(id_vars=["Mois"], value_vars=metric_cols, var_name="Type de revue", value_name="Cas")
+    color_scale = alt.Scale(domain=metric_cols, range=["#0F4C81", "#F28C28", "#BF2424"])
+
+    base = alt.Chart(melted).encode(
+        x=alt.X("Mois:N", sort=month_order, title=None, axis=alt.Axis(labelAngle=0, labelPadding=10, labelFontSize=12, labelColor="#163A59")),
+        xOffset=alt.XOffset("Type de revue:N", sort=metric_cols),
+        y=alt.Y("Cas:Q", title=None, axis=alt.Axis(grid=True, tickMinStep=1, labelFontSize=12, labelColor="#526273"), scale=alt.Scale(nice=True, zero=True)),
+        color=alt.Color("Type de revue:N", sort=metric_cols, scale=color_scale, legend=alt.Legend(title=None, orient="top", direction="horizontal", labelFontSize=12, symbolType="square")),
+        tooltip=[
+            alt.Tooltip("Mois:N", title="Mois"),
+            alt.Tooltip("Type de revue:N", title="Type de revue"),
+            alt.Tooltip("Cas:Q", title="Cas", format=".0f"),
+        ],
+    )
+    bars = base.mark_bar(size=22, cornerRadiusTopLeft=5, cornerRadiusTopRight=5)
+    labels = base.mark_text(dy=-10, font="Sora", fontSize=11, fontWeight="bold", color="#163A59").encode(text=alt.Text("Cas:Q", format=".0f"))
+    chart = (
+        (bars + labels)
+        .properties(height=320)
+        .configure_view(strokeOpacity=0)
+        .configure_axis(domain=False, gridColor="#E6EEF6", tickColor="#E6EEF6", titleColor="#163A59")
+        .configure_legend(labelColor="#163A59")
+    )
+    st.altair_chart(chart, use_container_width=True)
+    st.caption("Lecture mensuelle : bleu = revues standard / modérées, orange = revues renforcées, rouge = revues critiques.")
+
+
+def render_review_schedule_kpis(schedule_df: pd.DataFrame) -> None:
+    if schedule_df is None or schedule_df.empty:
+        st.info("Aucune revue n'est disponible sur le périmètre filtré.")
+        return
+
+    today = pd.Timestamp.today().normalize()
+    next_dates = pd.to_datetime(schedule_df["Date prochaine revue calculée"], errors="coerce")
+    delta_days = (next_dates - today).dt.days
+    cards = [
+        ("Revues planifiées", f"{len(schedule_df):,}".replace(",", " "), "SIREN planifiés", ""),
+        ("Revues en retard", f"{int((delta_days < 0).sum()):,}".replace(",", " "), "Échéance dépassée", " is-alert"),
+        ("À 30 jours", f"{int(((delta_days >= 0) & (delta_days <= 30)).sum()):,}".replace(",", " "), "Échéance proche", ""),
+        ("31-90 jours", f"{int(((delta_days > 30) & (delta_days <= 90)).sum()):,}".replace(",", " "), "Charge à venir", ""),
+        ("Revues renforcées", f"{int(schedule_df['Type de revue'].eq('Renforcé').sum()):,}".replace(",", " "), "Niveau renforcé", ""),
+        ("Revues critiques", f"{int(schedule_df['Type de revue'].eq('Critique').sum()):,}".replace(",", " "), "Niveau critique", " is-alert"),
+    ]
+    st.markdown('<h3 class="cm-section-title">Bandeau de synthèse</h3>', unsafe_allow_html=True)
+    st.markdown(
+        "<div class='cm-kpi-band'>"
+        + "".join(
+            f"<div class='cm-kpi-card{extra_class}'><div class='cm-kpi-label'>{escape(label)}</div><div class='cm-kpi-value'>{escape(value)}</div><div class='cm-kpi-sub'>{escape(sub)}</div></div>"
+            for label, value, sub, extra_class in cards
+        )
+        + "</div>",
+        unsafe_allow_html=True,
+    )
+
+
+def render_review_planning_screen(portfolio: pd.DataFrame) -> None:
+    render_home_hero("04 - Dates revue")
+    nav = render_primary_navigation("review_dates")
+    if nav == "portfolio":
+        open_portfolio_view()
+        st.rerun()
+    if nav == "analysis":
+        open_analysis_view()
+        st.rerun()
+
+    top_left, top_right = st.columns([5.3, 1.2])
+    with top_left:
+        st.markdown('<h3 class="cm-section-title">Planification des revues</h3>', unsafe_allow_html=True)
+        st.caption("Ajustez la fréquence par type de revue, recalculez le planning et exportez les prochaines dates par SIREN.")
+    with top_right:
+        if st.button("Réinitialiser", type="secondary", key="review_planning_reset"):
+            reset_review_filters()
+            for label, default in REVIEW_RULE_DEFAULTS.items():
+                key = f"review_freq_{label.lower().replace('é', 'e').replace('è', 'e')}"
+                st.session_state[key] = int(default)
+            st.rerun()
+
+    filter_labels = ["Vigilance", "Risque", "EDD", "Segment", "Pays", "Produit", "Canal", "Analyste", "Valideur"]
+    selections: dict[str, str] = {}
+    filter_cols = st.columns(5)
+    for idx, label in enumerate(filter_labels):
+        column = FILTER_MAPPING[label]
+        options = ["Tous"] + non_empty_sorted(portfolio[column].unique()) if column in portfolio.columns else ["Tous"]
+        state_key = "review_filter_" + label
+        if st.session_state.get(state_key) not in options:
+            st.session_state[state_key] = "Tous"
+        with filter_cols[idx % 5]:
+            selections[label] = st.selectbox(label, options=options, key=state_key)
+        if idx % 5 == 4 and idx < len(filter_labels) - 1:
+            filter_cols = st.columns(5)
+
+    for label, default in REVIEW_RULE_DEFAULTS.items():
+        key = f"review_freq_{label.lower().replace('é', 'e').replace('è', 'e')}"
+        st.session_state.setdefault(key, int(default))
+
+    with st.form("review_frequency_form"):
+        st.markdown('<h3 class="cm-section-title">Paramètres de fréquence</h3>', unsafe_allow_html=True)
+        f1, f2, f3, f4, f5 = st.columns([1, 1, 1, 1, 1.2])
+        with f1:
+            st.number_input("Critique (mois)", min_value=1, max_value=60, step=1, key="review_freq_critique")
+        with f2:
+            st.number_input("Renforcé (mois)", min_value=1, max_value=60, step=1, key="review_freq_renforce")
+        with f3:
+            st.number_input("Modéré (mois)", min_value=1, max_value=60, step=1, key="review_freq_modere")
+        with f4:
+            st.number_input("Standard (mois)", min_value=1, max_value=60, step=1, key="review_freq_standard")
+        with f5:
+            st.markdown("<div style='height: 1.55rem'></div>", unsafe_allow_html=True)
+            recalc = st.form_submit_button("Recalculer le planning", type="primary", use_container_width=True)
+    if recalc:
+        st.success("Planning recalculé avec les fréquences saisies.")
+
+    freq_map = {
+        "Critique": int(st.session_state.get("review_freq_critique", REVIEW_RULE_DEFAULTS["Critique"])),
+        "Renforcé": int(st.session_state.get("review_freq_renforce", REVIEW_RULE_DEFAULTS["Renforcé"])),
+        "Modéré": int(st.session_state.get("review_freq_modere", REVIEW_RULE_DEFAULTS["Modéré"])),
+        "Standard": int(st.session_state.get("review_freq_standard", REVIEW_RULE_DEFAULTS["Standard"])),
+    }
+
+    filtered = apply_filters(portfolio, selections)
+    if filtered.empty:
+        st.warning("Aucun client ne correspond au périmètre société + filtres sélectionnés.")
+        return
+
+    st.divider()
+    st.markdown('<h3 class="cm-section-title">Règles de calcul</h3>', unsafe_allow_html=True)
+    render_review_rule_table(freq_map)
+
+    schedule_df = build_review_schedule(filtered, freq_map)
+    if schedule_df.empty:
+        st.info("Aucune revue à planifier sur le périmètre filtré.")
+        return
+
+    st.divider()
+    render_review_schedule_kpis(schedule_df)
+
+    st.divider()
+    st.markdown('<h3 class="cm-section-title">Jalons temporels de l’ensemble des revues</h3>', unsafe_allow_html=True)
+    chart_df = build_review_schedule_chart_table(schedule_df)
+    render_review_schedule_chart(chart_df)
+
+    st.divider()
+    st.markdown('<h3 class="cm-section-title">04 - Dates revue</h3>', unsafe_allow_html=True)
+    export_df = schedule_df[["SIREN", "Date prochaine revue calculée"]].rename(columns={"Date prochaine revue calculée": "Date prochaine revue"}).copy()
+    export_df["Date prochaine revue"] = pd.to_datetime(export_df["Date prochaine revue"], errors="coerce").dt.strftime("%d/%m/%Y")
+    export_df["Date prochaine revue"] = export_df["Date prochaine revue"].fillna("")
+
+    export_left, export_right = st.columns([5.0, 1.4])
+    with export_left:
+        st.caption("Table exportable des prochaines revues calculées par SIREN sur le périmètre courant.")
+    with export_right:
+        st.download_button(
+            label="Exporter (.csv)",
+            data=dataframe_to_csv_bytes(export_df),
+            file_name="04_dates_revue.csv",
+            mime="text/csv",
+            type="secondary",
+            key="export_review_schedule_csv",
+            use_container_width=True,
+        )
+    render_small_table(export_df, bold_numbers=False)
+
+
 def render_user_header(user: dict, selected_societies: list[str], total_societies: int) -> None:
     manifest = load_manifest()
     with st.sidebar:
@@ -4123,10 +4454,17 @@ def main() -> None:
         render_analysis_screen(scoped, scoped_indicators)
         return
 
+    if current_view == "review_dates":
+        render_review_planning_screen(scoped)
+        return
+
     render_home_hero("Portefeuille 360°")
     nav = render_primary_navigation("portfolio")
     if nav == "analysis":
         open_analysis_view()
+        st.rerun()
+    if nav == "review_dates":
+        open_review_dates_view()
         st.rerun()
 
     render_client_launcher(scoped, key_prefix="header")
