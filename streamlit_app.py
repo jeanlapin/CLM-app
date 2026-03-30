@@ -1660,6 +1660,38 @@ def save_manifest(manifest: dict) -> None:
     manifest_path().write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
+def load_saved_review_planning_settings() -> tuple[dict[str, int], dict[str, int]]:
+    manifest = load_manifest() or {}
+    saved = manifest.get("review_planning_settings") or {}
+    saved_freq = saved.get("frequencies_months") or {}
+    saved_cap = saved.get("capacity_per_month") or {}
+
+    freq_map: dict[str, int] = {}
+    cap_map: dict[str, int] = {}
+    for label in VIGILANCE_ORDER:
+        try:
+            freq_map[label] = max(int(saved_freq.get(label, REVIEW_FREQUENCY_DEFAULTS.get(label, 12))), 1)
+        except Exception:
+            freq_map[label] = int(REVIEW_FREQUENCY_DEFAULTS.get(label, 12))
+        try:
+            cap_map[label] = max(int(saved_cap.get(label, REVIEW_CAPACITY_DEFAULTS.get(label, 10))), 1)
+        except Exception:
+            cap_map[label] = int(REVIEW_CAPACITY_DEFAULTS.get(label, 10))
+    return freq_map, cap_map
+
+
+def persist_review_planning_settings(freq_map: dict[str, int], cap_map: dict[str, int], user: dict | None = None) -> None:
+    manifest = load_manifest() or {}
+    manifest["review_planning_settings"] = {
+        "frequencies_months": {label: int(freq_map.get(label, REVIEW_FREQUENCY_DEFAULTS.get(label, 12))) for label in VIGILANCE_ORDER},
+        "capacity_per_month": {label: int(cap_map.get(label, REVIEW_CAPACITY_DEFAULTS.get(label, 10))) for label in VIGILANCE_ORDER},
+        "saved_at_utc": datetime.now(timezone.utc).isoformat(),
+        "saved_by": (user or {}).get("username"),
+        "saved_by_name": (user or {}).get("display_name"),
+    }
+    save_manifest(manifest)
+
+
 def build_dataset_cache_signature() -> str:
     manifest = load_manifest() or {}
     current_dir = active_dataset_path()
@@ -1729,11 +1761,11 @@ def load_source_data() -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
 
     for col in ["Date dernière revue", "Date prochaine revue"]:
         if col in base.columns:
-            base[col] = pd.to_datetime(base[col], errors="coerce")
+            base[col] = pd.to_datetime(base[col], errors="coerce", dayfirst=True)
 
     for col in indicators.columns:
         if "Date de mise à jour" in col:
-            indicators[col] = pd.to_datetime(indicators[col], errors="coerce")
+            indicators[col] = pd.to_datetime(indicators[col], errors="coerce", dayfirst=True)
 
     for frame, columns in [
         (
@@ -3997,6 +4029,7 @@ def build_existing_review_dates_dataset(df: pd.DataFrame) -> pd.DataFrame:
     work["Date prochaine revue"] = pd.to_datetime(
         work.get("Date prochaine revue", pd.Series(index=work.index, dtype="datetime64[ns]")),
         errors="coerce",
+        dayfirst=True,
     )
     work = work.dropna(subset=["Date prochaine revue"]).copy()
     if work.empty:
@@ -4171,11 +4204,12 @@ def review_setting_slug(label: str) -> str:
 
 
 def ensure_review_planning_state_defaults() -> None:
+    saved_freq_map, saved_cap_map = load_saved_review_planning_settings()
     for label in VIGILANCE_ORDER:
         freq_key = f"review_freq_{review_setting_slug(label)}"
         cap_key = f"review_cap_{review_setting_slug(label)}"
-        st.session_state.setdefault(freq_key, int(REVIEW_FREQUENCY_DEFAULTS.get(label, 12)))
-        st.session_state.setdefault(cap_key, int(REVIEW_CAPACITY_DEFAULTS.get(label, 10)))
+        st.session_state.setdefault(freq_key, int(saved_freq_map.get(label, REVIEW_FREQUENCY_DEFAULTS.get(label, 12))))
+        st.session_state.setdefault(cap_key, int(saved_cap_map.get(label, REVIEW_CAPACITY_DEFAULTS.get(label, 10))))
 
 
 def get_review_planning_settings() -> tuple[dict[str, int], dict[str, int]]:
@@ -4585,6 +4619,7 @@ def render_review_planning_content(
     allow_apply: bool = False,
     notice_key: str | None = None,
     section_caption: str | None = None,
+    persist_settings: bool = False,
 ) -> pd.DataFrame:
     if notice_key and st.session_state.get(notice_key):
         st.success(str(st.session_state.pop(notice_key)))
@@ -4593,7 +4628,10 @@ def render_review_planning_content(
         st.caption(section_caption)
 
     freq_map, capacity_map, recalc = render_review_rule_editor(df)
-    if recalc:
+    if recalc and persist_settings:
+        persist_review_planning_settings(freq_map, capacity_map, user)
+        st.success("Planning recalculé avec les paramètres saisis. Les paramètres sont mémorisés pour la suite.")
+    elif recalc:
         st.success("Planning recalculé avec les paramètres saisis.")
 
     schedule_df = build_review_schedule(df, freq_map, capacity_map)
@@ -4669,9 +4707,12 @@ def render_review_planning_screen(portfolio: pd.DataFrame, user: dict) -> None:
     with top_right:
         if st.button("Réinitialiser", type="secondary", key="review_planning_reset"):
             reset_review_filters()
+            default_freq = {label: int(REVIEW_FREQUENCY_DEFAULTS.get(label, 12)) for label in VIGILANCE_ORDER}
+            default_cap = {label: int(REVIEW_CAPACITY_DEFAULTS.get(label, 10)) for label in VIGILANCE_ORDER}
             for label in VIGILANCE_ORDER:
-                st.session_state[f"review_freq_{review_setting_slug(label)}"] = int(REVIEW_FREQUENCY_DEFAULTS.get(label, 12))
-                st.session_state[f"review_cap_{review_setting_slug(label)}"] = int(REVIEW_CAPACITY_DEFAULTS.get(label, 10))
+                st.session_state[f"review_freq_{review_setting_slug(label)}"] = default_freq[label]
+                st.session_state[f"review_cap_{review_setting_slug(label)}"] = default_cap[label]
+            persist_review_planning_settings(default_freq, default_cap, user)
             st.rerun()
 
     filter_labels = ["Vigilance", "Risque", "EDD", "Segment", "Pays", "Produit", "Canal", "Analyste", "Valideur"]
@@ -4700,6 +4741,7 @@ def render_review_planning_screen(portfolio: pd.DataFrame, user: dict) -> None:
         show_export=True,
         allow_apply=True,
         notice_key="review_schedule_apply_notice",
+        persist_settings=True,
     )
 
 
