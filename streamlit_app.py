@@ -3182,6 +3182,86 @@ def render_analysis_simple_table(df: pd.DataFrame) -> None:
     display_df = format_table_for_display(df)
     render_small_table(display_df)
 
+def apply_analysis_table_controls(
+    df: pd.DataFrame,
+    *,
+    line_label: str,
+    default_sort_label: str,
+) -> tuple[pd.DataFrame, dict[str, object]]:
+    if df is None or df.empty:
+        return df, {"sort_by": default_sort_label, "ascending": False, "search": "", "selected_labels": []}
+
+    work = df.copy().reset_index(drop=True)
+    control_cols = st.columns([1.4, 1.8, 1.1, 1.0, 0.9])
+    with control_cols[0]:
+        search_value = st.text_input(
+            "Recherche",
+            value=st.session_state.get("analysis_table_search", ""),
+            key="analysis_table_search",
+            placeholder=f"Filtrer {line_label.lower()}…",
+        )
+    with control_cols[1]:
+        available_labels = non_empty_sorted(work[line_label].astype(str).unique())
+        selected_labels = st.multiselect(
+            f"{line_label}",
+            options=available_labels,
+            default=st.session_state.get("analysis_table_values", []),
+            key="analysis_table_values",
+            placeholder="Toutes les valeurs",
+        )
+    sort_options = [c for c in work.columns if c != line_label]
+    if default_sort_label not in sort_options:
+        default_sort_label = sort_options[0] if sort_options else line_label
+    if st.session_state.get("analysis_table_sort_by") not in sort_options:
+        st.session_state["analysis_table_sort_by"] = default_sort_label
+    with control_cols[2]:
+        sort_by = st.selectbox(
+            "Trier par",
+            options=sort_options,
+            index=sort_options.index(st.session_state.get("analysis_table_sort_by", default_sort_label)) if sort_options else 0,
+            key="analysis_table_sort_by",
+        ) if sort_options else default_sort_label
+    order_options = ["Décroissant", "Croissant"]
+    if st.session_state.get("analysis_table_sort_order") not in order_options:
+        st.session_state["analysis_table_sort_order"] = "Décroissant"
+    with control_cols[3]:
+        sort_order = st.selectbox(
+            "Ordre",
+            options=order_options,
+            index=order_options.index(st.session_state.get("analysis_table_sort_order", "Décroissant")),
+            key="analysis_table_sort_order",
+        )
+    with control_cols[4]:
+        top_n = st.number_input(
+            "Top N",
+            min_value=0,
+            max_value=max(len(work), 1),
+            value=min(int(st.session_state.get("analysis_table_top_n", min(len(work), 12))), max(len(work), 1)),
+            step=1,
+            key="analysis_table_top_n",
+            help="0 = toutes les lignes",
+        )
+
+    if search_value:
+        mask = work[line_label].astype(str).str.contains(str(search_value), case=False, na=False)
+        work = work[mask]
+    if selected_labels:
+        work = work[work[line_label].astype(str).isin([str(v) for v in selected_labels])]
+
+    ascending = sort_order == "Croissant"
+    if sort_by in work.columns:
+        work = work.sort_values(sort_by, ascending=ascending, kind="stable")
+    if int(top_n) > 0:
+        work = work.head(int(top_n))
+    work = work.reset_index(drop=True)
+    return work, {
+        "sort_by": sort_by,
+        "ascending": ascending,
+        "search": search_value,
+        "selected_labels": selected_labels,
+        "top_n": int(top_n),
+    }
+
 
 def normalize_indicators_current(indicators_df: pd.DataFrame) -> pd.DataFrame:
     if indicators_df is None or indicators_df.empty:
@@ -3485,7 +3565,7 @@ def render_analysis_screen(portfolio: pd.DataFrame, indicators: pd.DataFrame) ->
         unsafe_allow_html=True,
     )
 
-    analysis_cols = st.columns([1.45, 1.15, 1.0])
+    analysis_cols = st.columns([1.6, 1.2])
     with analysis_cols[0]:
         row_dimension_label = st.selectbox(
             "Vue d’analyse",
@@ -3505,24 +3585,12 @@ def render_analysis_screen(portfolio: pd.DataFrame, indicators: pd.DataFrame) ->
             key="analysis_measure",
             help="Indicateur affiché dans le tableau d’analyse.",
         )
-    sort_options = ["Indicateur décroissant", "Libellé A → Z"]
-    if st.session_state.get("analysis_sort") not in sort_options:
-        st.session_state["analysis_sort"] = sort_options[0]
-    with analysis_cols[2]:
-        sort_choice = st.selectbox(
-            "Classement",
-            options=sort_options,
-            index=sort_options.index(st.session_state.get("analysis_sort", sort_options[0])),
-            key="analysis_sort",
-            help="Ordre d’affichage des regroupements.",
-        )
     st.markdown('</div>', unsafe_allow_html=True)
 
     render_analysis_kpis(filtered)
 
     row_col = dimension_map[row_dimension_label]
     measure_key = measure_map[measure_label]
-    sort_desc = sort_choice == "Indicateur décroissant"
     validate_analysis_focus(filtered, row_col, row_dimension_label, None, None)
 
     analysis_table, analysis_caption = build_analysis_main_table(
@@ -3531,11 +3599,16 @@ def render_analysis_screen(portfolio: pd.DataFrame, indicators: pd.DataFrame) ->
         row_dimension_label,
         measure_key,
         measure_label,
-        sort_desc=sort_desc,
+        sort_desc=True,
     )
 
     render_analysis_panel_header("Tableau d’analyse", analysis_caption)
-    main_action, selected_main = render_selectable_analysis_table(analysis_table, key_prefix="analysis_main", height=500)
+    display_analysis_table, analysis_table_controls = apply_analysis_table_controls(
+        analysis_table,
+        line_label=row_dimension_label,
+        default_sort_label=(measure_label if measure_label in analysis_table.columns else ("Clients" if "Clients" in analysis_table.columns else analysis_table.columns[-1])),
+    )
+    main_action, selected_main = render_selectable_analysis_table(display_analysis_table, key_prefix="analysis_main", height=500)
 
     if main_action == "selected" and selected_main is not None:
         set_analysis_focus(
@@ -3549,6 +3622,8 @@ def render_analysis_screen(portfolio: pd.DataFrame, indicators: pd.DataFrame) ->
     if analysis_table.empty:
         st.info("Aucun résultat à afficher pour les paramètres sélectionnés.")
         return
+    if display_analysis_table.empty:
+        st.info("Aucune ligne ne correspond aux filtres intégrés du tableau d’analyse.")
 
     st.divider()
     st.markdown('<h3 class="cm-section-title">Indicateurs les plus contributifs</h3>', unsafe_allow_html=True)
