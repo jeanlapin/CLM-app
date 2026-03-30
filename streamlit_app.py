@@ -1656,6 +1656,10 @@ def load_manifest() -> dict | None:
         return None
 
 
+def save_manifest(manifest: dict) -> None:
+    manifest_path().write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
 def build_dataset_cache_signature() -> str:
     manifest = load_manifest() or {}
     current_dir = active_dataset_path()
@@ -2882,9 +2886,9 @@ def render_primary_navigation(current_view: str) -> str:
     label_map = {
         "portfolio": "Portefeuille",
         "analysis": "Analyse",
-        "review_dates": "04 - Dates revue",
+        "review_dates": "Planification des revues",
     }
-    options = ["Portefeuille", "Analyse", "04 - Dates revue"]
+    options = ["Portefeuille", "Analyse", "Planification des revues"]
     current_label = label_map.get(current_view, "Portefeuille")
     selection = st.radio(
         "Navigation principale",
@@ -2896,7 +2900,7 @@ def render_primary_navigation(current_view: str) -> str:
     )
     if selection == "Analyse":
         return "analysis"
-    if selection == "04 - Dates revue":
+    if selection == "Planification des revues":
         return "review_dates"
     return "portfolio"
 
@@ -4067,9 +4071,14 @@ def render_analysis_screen(portfolio: pd.DataFrame, indicators: pd.DataFrame) ->
     indicator_table = build_indicator_analysis_table(filtered, indicators)
     render_indicator_contribution_chart(indicator_table)
 
-    st.markdown('<h3 class="cm-section-title">Jalons temporels des revues de diligence renforcée (EDD)</h3>', unsafe_allow_html=True)
-    trend_df = build_analysis_trend_table(filtered)
-    render_analysis_trend_chart(trend_df)
+    st.divider()
+    st.markdown('<h3 class="cm-section-title">Planification des revues</h3>', unsafe_allow_html=True)
+    render_review_planning_content(
+        filtered,
+        show_export=True,
+        allow_apply=False,
+        section_caption="La planification ci-dessous reprend uniquement le périmètre filtré en haut de l’écran Analyse.",
+    )
 
     st.divider()
     st.markdown("<div id='clients-sous-jacents'></div>", unsafe_allow_html=True)
@@ -4446,8 +4455,160 @@ def render_review_schedule_kpis(schedule_df: pd.DataFrame) -> None:
 
 
 
-def render_review_planning_screen(portfolio: pd.DataFrame) -> None:
-    render_home_hero("04 - Dates revue")
+def build_review_export_dataframe(schedule_df: pd.DataFrame) -> pd.DataFrame:
+    if schedule_df is None or schedule_df.empty:
+        return pd.DataFrame(
+            columns=[
+                "SIREN",
+                "Dénomination",
+                "Régime de vigilance",
+                "Fréquence (mois)",
+                "Date de base",
+                "Date théorique",
+                "Date prochaine revue",
+                "Lissé",
+                "Décalage (mois)",
+            ]
+        )
+
+    export_df = schedule_df[[
+        "SIREN",
+        "Dénomination",
+        "Régime de vigilance",
+        "Fréquence (mois)",
+        "Date de base",
+        "Date prochaine revue théorique",
+        "Date prochaine revue",
+        "Lissé",
+        "Décalage (mois)",
+    ]].copy()
+    export_df = export_df.rename(
+        columns={
+            "Date prochaine revue théorique": "Date théorique",
+            "Date prochaine revue": "Date prochaine revue",
+        }
+    )
+    for col in ["Date de base", "Date théorique", "Date prochaine revue"]:
+        export_df[col] = pd.to_datetime(export_df[col], errors="coerce").dt.strftime("%d/%m/%Y").fillna("")
+    return export_df
+
+
+
+def apply_review_schedule_to_active_base(schedule_df: pd.DataFrame, user: dict) -> int:
+    if schedule_df is None or schedule_df.empty:
+        return 0
+
+    path = active_dataset_path() / DATA_FILES["base"]
+    if not path.exists():
+        raise FileNotFoundError("Le fichier 01_Donnees_base_source.csv est introuvable dans le jeu actif.")
+
+    base_raw = read_csv_semicolon(path)
+    validate_required_columns(base_raw, "base")
+    base_raw[SOC_COL] = normalize_societe_id(base_raw[SOC_COL])
+    base_raw["SIREN"] = normalize_siren(base_raw["SIREN"])
+    if "Date prochaine revue" not in base_raw.columns:
+        base_raw["Date prochaine revue"] = ""
+
+    updates = schedule_df[[SOC_COL, "SIREN", "Date prochaine revue"]].copy()
+    updates[SOC_COL] = normalize_societe_id(updates[SOC_COL])
+    updates["SIREN"] = normalize_siren(updates["SIREN"])
+    updates["Date prochaine revue"] = pd.to_datetime(updates["Date prochaine revue"], errors="coerce").dt.strftime("%d/%m/%Y")
+    updates = updates.dropna(subset=KEY_COLUMNS).drop_duplicates(subset=KEY_COLUMNS, keep="last")
+    updates = updates.rename(columns={"Date prochaine revue": "Date prochaine revue__calc"})
+
+    merged = base_raw.merge(updates, on=KEY_COLUMNS, how="left")
+    mask = merged["Date prochaine revue__calc"].fillna("").astype(str).str.strip().ne("")
+    updated_count = int(mask.sum())
+    merged.loc[mask, "Date prochaine revue"] = merged.loc[mask, "Date prochaine revue__calc"]
+    merged = merged.drop(columns=["Date prochaine revue__calc"])
+    merged.to_csv(path, sep=";", index=False, encoding="utf-8-sig")
+
+    manifest = load_manifest() or {}
+    manifest["last_review_schedule_apply_at_utc"] = datetime.now(timezone.utc).isoformat()
+    manifest["last_review_schedule_apply_by"] = user.get("username")
+    manifest["last_review_schedule_apply_by_name"] = user.get("display_name")
+    save_manifest(manifest)
+    return updated_count
+
+
+
+def render_review_planning_content(
+    df: pd.DataFrame,
+    *,
+    user: dict | None = None,
+    show_export: bool = True,
+    allow_apply: bool = False,
+    notice_key: str | None = None,
+    section_caption: str | None = None,
+) -> pd.DataFrame:
+    if notice_key and st.session_state.get(notice_key):
+        st.success(str(st.session_state.pop(notice_key)))
+
+    if section_caption:
+        st.caption(section_caption)
+
+    freq_map, capacity_map, recalc = render_review_rule_editor(df)
+    if recalc:
+        st.success("Planning recalculé avec les paramètres saisis.")
+
+    schedule_df = build_review_schedule(df, freq_map, capacity_map)
+    if schedule_df.empty:
+        st.info("Aucune revue à planifier sur le périmètre filtré.")
+        return schedule_df
+
+    st.divider()
+    render_review_schedule_kpis(schedule_df)
+
+    st.divider()
+    st.markdown('<h3 class="cm-section-title">Jalons temporels de l’ensemble des revues</h3>', unsafe_allow_html=True)
+    chart_df = build_review_schedule_chart_table(schedule_df)
+    render_review_schedule_chart(chart_df)
+
+    if show_export or (allow_apply and user and user.get("role") == "admin"):
+        st.divider()
+        st.markdown('<h3 class="cm-section-title">Table de planification</h3>', unsafe_allow_html=True)
+        export_df = build_review_export_dataframe(schedule_df)
+
+        if allow_apply and user and user.get("role") == "admin":
+            info_col, export_col, apply_col = st.columns([4.5, 1.4, 2.1])
+        else:
+            info_col, export_col = st.columns([5.8, 1.4])
+            apply_col = None
+
+        with info_col:
+            st.caption("Table exportable par SIREN avec régime de vigilance, fréquence appliquée, date théorique et date planifiée. La diffusion met à jour la colonne Date prochaine revue du fichier 01 pour le périmètre courant.")
+        with export_col:
+            st.download_button(
+                label="Exporter (.csv)",
+                data=dataframe_to_csv_bytes(export_df),
+                file_name="planification_des_revues.csv",
+                mime="text/csv",
+                type="secondary",
+                key="export_review_schedule_csv",
+                use_container_width=True,
+            )
+        if apply_col is not None:
+            with apply_col:
+                if st.button(
+                    "Diffuser dans l’onglet 01",
+                    type="primary",
+                    key="apply_review_schedule_to_base",
+                    use_container_width=True,
+                ):
+                    updated_count = apply_review_schedule_to_active_base(schedule_df, user)
+                    st.session_state[notice_key or "review_schedule_apply_notice"] = (
+                        f"{updated_count} date(s) de prochaine revue ont été diffusées dans le fichier 01 sur le périmètre courant."
+                    )
+                    st.rerun()
+
+        render_small_table(export_df, bold_numbers=False)
+
+    return schedule_df
+
+
+
+def render_review_planning_screen(portfolio: pd.DataFrame, user: dict) -> None:
+    render_home_hero("Planification des revues")
     nav = render_primary_navigation("review_dates")
     if nav == "portfolio":
         open_portfolio_view()
@@ -4488,59 +4649,13 @@ def render_review_planning_screen(portfolio: pd.DataFrame) -> None:
         return
 
     st.divider()
-    freq_map, capacity_map, recalc = render_review_rule_editor(filtered)
-    if recalc:
-        st.success("Planning recalculé avec les paramètres saisis.")
-
-    schedule_df = build_review_schedule(filtered, freq_map, capacity_map)
-    if schedule_df.empty:
-        st.info("Aucune revue à planifier sur le périmètre filtré.")
-        return
-
-    st.divider()
-    render_review_schedule_kpis(schedule_df)
-
-    st.divider()
-    st.markdown('<h3 class="cm-section-title">Jalons temporels de l’ensemble des revues</h3>', unsafe_allow_html=True)
-    chart_df = build_review_schedule_chart_table(schedule_df)
-    render_review_schedule_chart(chart_df)
-
-    st.divider()
-    st.markdown('<h3 class="cm-section-title">04 - Dates revue</h3>', unsafe_allow_html=True)
-    export_df = schedule_df[[
-        "SIREN",
-        "Dénomination",
-        "Régime de vigilance",
-        "Fréquence (mois)",
-        "Date de base",
-        "Date prochaine revue théorique",
-        "Date prochaine revue",
-        "Lissé",
-        "Décalage (mois)",
-    ]].copy()
-    export_df = export_df.rename(
-        columns={
-            "Date prochaine revue théorique": "Date théorique",
-            "Date prochaine revue": "Date prochaine revue",
-        }
+    render_review_planning_content(
+        filtered,
+        user=user,
+        show_export=True,
+        allow_apply=True,
+        notice_key="review_schedule_apply_notice",
     )
-    for col in ["Date de base", "Date théorique", "Date prochaine revue"]:
-        export_df[col] = pd.to_datetime(export_df[col], errors="coerce").dt.strftime("%d/%m/%Y").fillna("")
-
-    export_left, export_right = st.columns([5.0, 1.4])
-    with export_left:
-        st.caption("Table exportable par SIREN avec régime de vigilance, fréquence appliquée, date théorique et date lissée de prochaine revue.")
-    with export_right:
-        st.download_button(
-            label="Exporter (.csv)",
-            data=dataframe_to_csv_bytes(export_df),
-            file_name="04_dates_revue.csv",
-            mime="text/csv",
-            type="secondary",
-            key="export_review_schedule_csv",
-            use_container_width=True,
-        )
-    render_small_table(export_df, bold_numbers=False)
 
 
 
@@ -4601,7 +4716,7 @@ def main() -> None:
         return
 
     if current_view == "review_dates":
-        render_review_planning_screen(scoped)
+        render_review_planning_screen(scoped, user)
         return
 
     render_home_hero("Portefeuille 360°")
