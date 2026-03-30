@@ -2836,17 +2836,16 @@ def analysis_dimension_mapping(df: pd.DataFrame) -> dict[str, str]:
     return {label: column for label, column in candidates.items() if column in df.columns}
 
 
+
 def analysis_measure_mapping(df: pd.DataFrame) -> dict[str, str]:
     return {
         "Clients": "clients",
         "Part du portefeuille": "share",
-        "Vigilance renforcée": "critical_vigilance",
-        "Risques avérés": "confirmed_risk",
-        "EDD concernées": "edd_open",
         "Justificatifs incomplets": "missing_docs",
         "Sans prochaine revue": "without_next_review",
-        "Cross-border élevé": "cross_border",
-        "Historique indicateurs": "history_cases",
+        "Revue trop ancienne": "stale_review",
+        "Cross-border élevé": "cross_border_high",
+        "Cash intensité élevée": "cash_intensity_high",
     }
 
 
@@ -3335,6 +3334,7 @@ def clear_analysis_focus() -> None:
         "analysis_focus_col_label",
         "analysis_focus_col_value",
         "analysis_focus_source",
+        "analysis_focus_selection",
     ]:
         st.session_state.pop(key, None)
 
@@ -3518,6 +3518,169 @@ def render_analysis_main_table(df: pd.DataFrame) -> None:
     st.markdown("".join(html), unsafe_allow_html=True)
 
 
+
+ANALYSIS_FILTER_COLUMNS: list[tuple[str, str]] = [
+    ("Vigilance", "Vigilance"),
+    ("Risque", "Risque"),
+    ("EDD", "Statut EDD"),
+    ("Segment", "Segment"),
+    ("Pays", "Pays de résidence"),
+    ("Produit", "Produit(service) principal"),
+    ("Canal", "Canal d’opérations principal 12 mois"),
+    ("Analyste", "Analyste"),
+    ("Valideur", "Valideur"),
+]
+
+
+def build_unified_analysis_table(
+    df: pd.DataFrame,
+    indicator_labels: list[str],
+) -> tuple[pd.DataFrame, str]:
+    group_labels = [label for label, _ in ANALYSIS_FILTER_COLUMNS]
+    base_columns = group_labels.copy()
+    if df is None or df.empty:
+        return pd.DataFrame(columns=base_columns + indicator_labels), ""
+
+    work = df.copy()
+    for label, source in ANALYSIS_FILTER_COLUMNS:
+        work[label] = normalize_analysis_category(work.get(source, pd.Series(index=work.index, dtype="object")))
+
+    work["cm_client_key"] = work[SOC_COL].astype(str) + "|" + work["SIREN"].astype(str)
+    work["cm_missing_docs"] = work.get("Flag justificatif complet", pd.Series(index=work.index, dtype="string")).astype("string").fillna("").ne("Oui").astype(int)
+    work["cm_without_next_review"] = work.get("Date prochaine revue", pd.Series(index=work.index, dtype="datetime64[ns]")).isna().astype(int)
+    work["cm_stale_review"] = work.get("Alerte revue trop ancienne", pd.Series(index=work.index, dtype="int64")).fillna(0).astype(int)
+    work["cm_cross_border_high"] = work.get("Alerte cross-border élevé", pd.Series(index=work.index, dtype="int64")).fillna(0).astype(int)
+    work["cm_cash_intensity_high"] = work.get("Alerte cash intensité élevée", pd.Series(index=work.index, dtype="int64")).fillna(0).astype(int)
+
+    agg_map: dict[str, tuple[str, str]] = {"Clients": ("cm_client_key", "nunique")}
+    if "Justificatifs incomplets" in indicator_labels:
+        agg_map["Justificatifs incomplets"] = ("cm_missing_docs", "sum")
+    if "Sans prochaine revue" in indicator_labels:
+        agg_map["Sans prochaine revue"] = ("cm_without_next_review", "sum")
+    if "Revue trop ancienne" in indicator_labels:
+        agg_map["Revue trop ancienne"] = ("cm_stale_review", "sum")
+    if "Cross-border élevé" in indicator_labels:
+        agg_map["Cross-border élevé"] = ("cm_cross_border_high", "sum")
+    if "Cash intensité élevée" in indicator_labels:
+        agg_map["Cash intensité élevée"] = ("cm_cash_intensity_high", "sum")
+
+    grouped = work.groupby(group_labels, dropna=False).agg(**agg_map).reset_index()
+    total_clients = max(int(work["cm_client_key"].nunique()), 1)
+    grouped["Part du portefeuille"] = grouped["Clients"].div(total_clients).fillna(0)
+
+    ordered_columns = base_columns + [label for label in indicator_labels if label in grouped.columns]
+    if "Part du portefeuille" in indicator_labels and "Part du portefeuille" not in ordered_columns:
+        ordered_columns.append("Part du portefeuille")
+    result = grouped[ordered_columns].copy()
+
+    sort_col = "Clients" if "Clients" in result.columns else ("Part du portefeuille" if "Part du portefeuille" in result.columns else result.columns[0])
+    ascending = False if sort_col != result.columns[0] else True
+    result = result.sort_values(sort_col, ascending=ascending, kind="stable").reset_index(drop=True)
+    caption = "Une ligne correspond à une combinaison des filtres visibles sur le périmètre sélectionné."
+    return result, caption
+
+
+def apply_unified_analysis_table_controls(df: pd.DataFrame) -> pd.DataFrame:
+    if df is None or df.empty:
+        return df
+
+    work = df.copy().reset_index(drop=True)
+    text_cols = [label for label, _ in ANALYSIS_FILTER_COLUMNS if label in work.columns]
+
+    control_cols = st.columns([1.8, 1.35, 1.1, 0.85])
+    with control_cols[0]:
+        search_value = st.text_input(
+            "Recherche",
+            value=st.session_state.get("analysis_table_search", ""),
+            key="analysis_table_search",
+            placeholder="Rechercher une valeur dans le tableau…",
+        )
+    sort_options = [c for c in work.columns if c not in text_cols] or list(work.columns)
+    default_sort = "Clients" if "Clients" in sort_options else (sort_options[0] if sort_options else work.columns[0])
+    if st.session_state.get("analysis_table_sort_by") not in sort_options:
+        st.session_state["analysis_table_sort_by"] = default_sort
+    with control_cols[1]:
+        sort_by = st.selectbox(
+            "Trier par",
+            options=sort_options,
+            index=sort_options.index(st.session_state.get("analysis_table_sort_by", default_sort)),
+            key="analysis_table_sort_by",
+        )
+    order_options = ["Décroissant", "Croissant"]
+    if st.session_state.get("analysis_table_sort_order") not in order_options:
+        st.session_state["analysis_table_sort_order"] = "Décroissant"
+    with control_cols[2]:
+        sort_order = st.selectbox(
+            "Ordre",
+            options=order_options,
+            index=order_options.index(st.session_state.get("analysis_table_sort_order", "Décroissant")),
+            key="analysis_table_sort_order",
+        )
+    with control_cols[3]:
+        top_n = st.number_input(
+            "Top N",
+            min_value=0,
+            max_value=max(len(work), 1),
+            value=min(int(st.session_state.get("analysis_table_top_n", min(len(work), 20))), max(len(work), 1)),
+            step=1,
+            key="analysis_table_top_n",
+            help="0 = toutes les lignes",
+        )
+
+    if search_value:
+        mask = pd.Series(False, index=work.index)
+        for col in text_cols:
+            mask = mask | work[col].astype(str).str.contains(str(search_value), case=False, na=False)
+        work = work[mask]
+
+    ascending = sort_order == "Croissant"
+    work = work.sort_values(sort_by, ascending=ascending, kind="stable")
+    if int(top_n) > 0:
+        work = work.head(int(top_n))
+    return work.reset_index(drop=True)
+
+
+def build_analysis_focus_dataset_from_selection(
+    df: pd.DataFrame,
+    selection: dict[str, object] | None,
+) -> tuple[pd.DataFrame, list[str]]:
+    if not selection:
+        return pd.DataFrame(), []
+
+    detail = df.copy()
+    focus_parts: list[str] = []
+    for label, source in ANALYSIS_FILTER_COLUMNS:
+        if label not in selection:
+            continue
+        value = "Non renseigné" if pd.isna(selection[label]) or str(selection[label]).strip() == "" else str(selection[label])
+        detail = detail[
+            normalize_analysis_category(detail.get(source, pd.Series(index=detail.index, dtype="object"))) == value
+        ]
+        focus_parts.append(f"{label} = {value}")
+
+    detail = detail.copy()
+    detail["Motif de présence"] = " | ".join(focus_parts) if focus_parts else "Périmètre filtré"
+    detail_columns = [
+        "SIREN",
+        "Dénomination",
+        "Vigilance",
+        "Risque",
+        SOC_COL,
+        "Pays de résidence",
+        "Segment",
+        "Produit(service) principal",
+        "Canal d’opérations principal 12 mois",
+        "Statut EDD",
+        "Analyste",
+        "Valideur",
+        "Date dernière revue",
+        "Motif de présence",
+    ]
+    detail_columns = [c for c in detail_columns if c in detail.columns]
+    return detail[detail_columns], focus_parts
+
+
+
 def render_analysis_screen(portfolio: pd.DataFrame, indicators: pd.DataFrame) -> None:
     render_home_hero("Analyse")
     nav = render_primary_navigation("analysis")
@@ -3526,26 +3689,26 @@ def render_analysis_screen(portfolio: pd.DataFrame, indicators: pd.DataFrame) ->
         st.rerun()
 
     st.markdown('<div class="cm-analysis-params">', unsafe_allow_html=True)
-    top_left, top_right = st.columns([5.8, 1.2])
+    top_left, top_right = st.columns([5.4, 1.2])
     with top_left:
         st.markdown('<h3 class="cm-section-title">Pilotage de l’analyse</h3>', unsafe_allow_html=True)
-        st.caption("Un seul tableau d’analyse, piloté par les filtres et la vue choisie.")
+        st.caption("Un seul tableau d’analyse : les filtres cadrent le portefeuille, le clic sur une ligne alimente les clients sous-jacents.")
     with top_right:
         if st.button("Réinitialiser", type="secondary", key="analysis_reset_all"):
             reset_filters()
             for key in [
-                "analysis_row_dimension",
-                "analysis_measure",
-                "analysis_sort",
-                "analysis_focus_row_label",
-                "analysis_focus_row_value",
                 "analysis_selected_idx_analysis_main",
+                "analysis_table_search",
+                "analysis_table_sort_by",
+                "analysis_table_sort_order",
+                "analysis_table_top_n",
+                "analysis_indicator_columns",
             ]:
                 st.session_state.pop(key, None)
             clear_analysis_focus()
             st.rerun()
 
-    filter_labels = list(FILTER_MAPPING.keys())
+    filter_labels = ["Vigilance", "Risque", "EDD", "Segment", "Pays", "Produit", "Canal", "Analyste", "Valideur"]
     selections: dict[str, str] = {}
     filter_cols = st.columns(5)
     for idx, label in enumerate(filter_labels):
@@ -3559,89 +3722,62 @@ def render_analysis_screen(portfolio: pd.DataFrame, indicators: pd.DataFrame) ->
         if idx % 5 == 4 and idx < len(filter_labels) - 1:
             filter_cols = st.columns(5)
 
-    filtered = apply_filters(portfolio, selections)
-    if filtered.empty:
-        st.markdown('</div>', unsafe_allow_html=True)
-        st.warning("Aucun client ne correspond au périmètre société + filtres sélectionnés.")
-        return
-
-    dimension_map = analysis_dimension_mapping(filtered)
-    measure_map = analysis_measure_mapping(filtered)
-    row_options = list(dimension_map.keys())
-    default_row = "Segment" if "Segment" in row_options else row_options[0]
-    if st.session_state.get("analysis_row_dimension") not in row_options:
-        st.session_state["analysis_row_dimension"] = default_row
-
+    indicator_options = list(analysis_measure_mapping(portfolio).keys())
+    default_indicators = [
+        "Clients",
+        "Part du portefeuille",
+        "Justificatifs incomplets",
+        "Sans prochaine revue",
+        "Revue trop ancienne",
+        "Cross-border élevé",
+        "Cash intensité élevée",
+    ]
+    if "analysis_indicator_columns" not in st.session_state:
+        st.session_state["analysis_indicator_columns"] = default_indicators
     st.markdown(
         """
         <div class="cm-analysis-mode-shell">
-            <div class="cm-analysis-mode-kicker">Paramètres d’analyse</div>
-            <div class="cm-analysis-mode-title">Structurez une lecture claire du portefeuille</div>
-            <div class="cm-analysis-mode-note">Choisissez la vue principale, l’indicateur métier à lire et le classement du tableau.</div>
+            <div class="cm-analysis-mode-kicker">Indicateurs visibles</div>
+            <div class="cm-analysis-mode-title">Choisissez les colonnes métier à afficher dans le tableau d’analyse</div>
+            <div class="cm-analysis-mode-note">Les colonnes de dimensions restent fixes ; seuls les indicateurs ci-dessous peuvent être affichés ou masqués.</div>
         </div>
         """,
         unsafe_allow_html=True,
     )
+    selected_indicators = st.multiselect(
+        "Indicateurs du tableau",
+        options=indicator_options,
+        default=[opt for opt in st.session_state.get("analysis_indicator_columns", default_indicators) if opt in indicator_options],
+        key="analysis_indicator_columns",
+        placeholder="Choisissez les indicateurs à afficher",
+    )
+    if not selected_indicators:
+        selected_indicators = ["Clients", "Part du portefeuille"]
 
-    analysis_cols = st.columns([1.6, 1.2])
-    with analysis_cols[0]:
-        row_dimension_label = st.selectbox(
-            "Vue d’analyse",
-            options=row_options,
-            index=row_options.index(st.session_state.get("analysis_row_dimension", default_row)),
-            key="analysis_row_dimension",
-            help="Dimension principale de lecture du tableau d’analyse.",
-        )
-    measure_options = list(measure_map.keys())
-    if st.session_state.get("analysis_measure") not in measure_options:
-        st.session_state["analysis_measure"] = measure_options[0]
-    with analysis_cols[1]:
-        measure_label = st.selectbox(
-            "Indicateur",
-            options=measure_options,
-            index=measure_options.index(st.session_state.get("analysis_measure", measure_options[0])),
-            key="analysis_measure",
-            help="Indicateur affiché dans le tableau d’analyse.",
-        )
     st.markdown('</div>', unsafe_allow_html=True)
+
+    filtered = apply_filters(portfolio, selections)
+    if filtered.empty:
+        st.warning("Aucun client ne correspond au périmètre société + filtres sélectionnés.")
+        return
 
     render_analysis_kpis(filtered)
 
-    row_col = dimension_map[row_dimension_label]
-    measure_key = measure_map[measure_label]
-    validate_analysis_focus(filtered, row_col, row_dimension_label, None, None)
-
-    analysis_table, analysis_caption = build_analysis_main_table(
-        filtered,
-        row_col,
-        row_dimension_label,
-        measure_key,
-        measure_label,
-        sort_desc=True,
-    )
-
+    analysis_table, analysis_caption = build_unified_analysis_table(filtered, selected_indicators)
     render_analysis_panel_header("Tableau d’analyse", analysis_caption)
-    display_analysis_table, analysis_table_controls = apply_analysis_table_controls(
-        analysis_table,
-        line_label=row_dimension_label,
-        default_sort_label=(measure_label if measure_label in analysis_table.columns else ("Clients" if "Clients" in analysis_table.columns else analysis_table.columns[-1])),
-    )
-    main_action, selected_main = render_selectable_analysis_table(display_analysis_table, key_prefix="analysis_main", height=500)
+    display_analysis_table = apply_unified_analysis_table_controls(analysis_table)
+    main_action, selected_main = render_selectable_analysis_table(display_analysis_table, key_prefix="analysis_main", height=520)
 
     if main_action == "selected" and selected_main is not None:
-        set_analysis_focus(
-            row_label=row_dimension_label,
-            row_value=str(selected_main.get(row_dimension_label, "")),
-            source="main",
-        )
+        st.session_state["analysis_focus_selection"] = selected_main.to_dict()
     elif main_action == "cleared":
-        clear_analysis_focus()
+        st.session_state.pop("analysis_focus_selection", None)
 
     if analysis_table.empty:
         st.info("Aucun résultat à afficher pour les paramètres sélectionnés.")
         return
     if display_analysis_table.empty:
-        st.info("Aucune ligne ne correspond aux filtres intégrés du tableau d’analyse.")
+        st.info("Aucune ligne ne correspond aux contrôles intégrés du tableau d’analyse.")
 
     st.divider()
     st.markdown('<h3 class="cm-section-title">Indicateurs les plus contributifs</h3>', unsafe_allow_html=True)
@@ -3667,11 +3803,9 @@ def render_analysis_screen(portfolio: pd.DataFrame, indicators: pd.DataFrame) ->
     st.divider()
     st.markdown("<div id='clients-sous-jacents'></div>", unsafe_allow_html=True)
     st.markdown('<h3 class="cm-section-title">Clients sous-jacents</h3>', unsafe_allow_html=True)
-    active_row_value = st.session_state.get("analysis_focus_row_value")
 
-    focus_parts = []
-    if active_row_value not in {None, "", "Tous"}:
-        focus_parts.append(f"{row_dimension_label} = {active_row_value}")
+    focus_selection = st.session_state.get("analysis_focus_selection")
+    detail_df, focus_parts = build_analysis_focus_dataset_from_selection(filtered, focus_selection)
 
     focus_bar_left, focus_bar_right = st.columns([6.0, 1.2])
     with focus_bar_left:
@@ -3684,16 +3818,6 @@ def render_analysis_screen(portfolio: pd.DataFrame, indicators: pd.DataFrame) ->
             clear_analysis_focus()
             st.rerun()
 
-    detail_df = build_analysis_focus_dataset(
-        filtered,
-        row_col=row_col,
-        row_value=active_row_value,
-        row_label=row_dimension_label,
-        column_col=None,
-        column_value=None,
-        column_label=None,
-    ) if focus_parts else pd.DataFrame()
-
     if detail_df.empty:
         st.info("Aucun client sous-jacent à afficher tant qu’aucun focus n’est sélectionné.")
     else:
@@ -3705,30 +3829,6 @@ def render_analysis_screen(portfolio: pd.DataFrame, indicators: pd.DataFrame) ->
             hide_index=True,
             key_prefix="analysis_detail_clients",
         )
-
-    export_base = detail_df if not detail_df.empty else filtered[[c for c in DISPLAY_COLUMNS if c in filtered.columns]]
-    st.download_button(
-        label="Exporter la vue Analyse (.csv)",
-        data=dataframe_to_csv_bytes(export_base),
-        file_name="tableau2_analyse.csv",
-        mime="text/csv",
-        type="primary",
-    )
-
-def render_user_header(user: dict, selected_societies: list[str], total_societies: int) -> None:
-    manifest = load_manifest()
-    with st.sidebar:
-        st.markdown("### Session")
-        st.write("**Utilisateur :** {}".format(user["display_name"]))
-        st.write("**Rôle :** {}".format(user["role"]))
-        st.write("**Sociétés sélectionnées :** {} / {}".format(len(selected_societies), total_societies))
-        if manifest:
-            st.write(
-                "**Jeu actif :** {}".format(
-                    format_manifest_date(manifest.get("published_at_utc"))
-                )
-            )
-        logout_button()
 
 
 def main() -> None:
