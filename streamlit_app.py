@@ -2117,12 +2117,13 @@ def style_review_simulation_table(display_df: pd.DataFrame) -> pd.io.formats.sty
     return styled
 
 
+
 def render_review_status_gauges(df: pd.DataFrame) -> None:
     if df is None or df.empty:
         return
+
     total = max(int(df["SIREN"].nunique()), 1)
-    real_statuses = ["Vigilance Critique", "Vigilance Élevée", "Vigilance Modérée", "Vigilance Allégée"]
-    estimated_statuses = list(real_statuses)
+    statuses = ["Vigilance Critique", "Vigilance Élevée", "Vigilance Modérée", "Vigilance Allégée"]
 
     def format_pct(value: float) -> str:
         return f"{value * 100:.1f}".replace(".", ",") + " %"
@@ -2132,7 +2133,7 @@ def render_review_status_gauges(df: pd.DataFrame) -> None:
         bg, fg = status_palette(status_label, "vigilance")
         width = round(pct * 100) if count else 0
         return (
-            "<div style='background:#FFFFFF; border:1px solid rgba(22,58,89,0.08); border-radius:18px; padding:0.9rem 1rem; box-shadow:0 10px 24px rgba(22,58,89,0.05);'>"
+            "<div style='background:#FFFFFF; border:1px solid rgba(22,58,89,0.08); border-radius:18px; padding:0.9rem 1rem; box-shadow:0 10px 24px rgba(22,58,89,0.05); min-height:138px;'>"
             f"<div style='font-size:0.72rem; text-transform:uppercase; letter-spacing:0.08em; color:#5B7084; margin-bottom:0.25rem;'>{escape(kicker)}</div>"
             f"<div style='display:inline-flex; padding:0.22rem 0.55rem; border-radius:999px; background:{bg}; color:{fg}; font-weight:700; font-size:0.78rem; margin-bottom:0.55rem;'>{escape(status_label)}</div>"
             f"<div style='font-size:1.55rem; font-weight:800; color:#163A59; line-height:1.1;'>{count}</div>"
@@ -2142,17 +2143,64 @@ def render_review_status_gauges(df: pd.DataFrame) -> None:
         )
 
     real_cards = []
-    for label in real_statuses:
-        count = int(df.loc[df[REVIEW_SIM_REAL_LABEL].astype(str).eq(label), "SIREN"].nunique())
-        real_cards.append(build_card(label, count, total, "Statuts réels"))
     est_cards = []
-    for label in estimated_statuses:
-        count = int(df.loc[df[REVIEW_SIM_EST_LABEL].astype(str).eq(label), "SIREN"].nunique())
-        est_cards.append(build_card(label, count, total, "Statuts estimés"))
+    for label in statuses:
+        real_count = int(df.loc[df[REVIEW_SIM_REAL_LABEL].astype(str).eq(label), "SIREN"].nunique())
+        est_count = int(df.loc[df[REVIEW_SIM_EST_LABEL].astype(str).eq(label), "SIREN"].nunique())
+        real_cards.append(build_card(label, real_count, total, "Statuts réels"))
+        est_cards.append(build_card(label, est_count, total, "Statuts estimés"))
 
-    st.markdown("<div style='display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:0.85rem; margin:0.2rem 0 0.8rem 0;'>" + ''.join(real_cards) + "</div>", unsafe_allow_html=True)
-    st.markdown("<div style='display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:0.85rem; margin:0.15rem 0 0.95rem 0;'>" + ''.join(est_cards) + "</div>", unsafe_allow_html=True)
+    grid_style = "display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:0.85rem;"
+    st.markdown(f"<div style='{grid_style} margin:0.2rem 0 0.55rem 0;'>" + "".join(real_cards) + "</div>", unsafe_allow_html=True)
+    st.markdown(f"<div style='{grid_style} margin:0.0rem 0 0.95rem 0;'>" + "".join(est_cards) + "</div>", unsafe_allow_html=True)
 
+
+def review_sim_selection_keys(df: pd.DataFrame, row_indices: list[int]) -> list[str]:
+    if df is None or df.empty or not row_indices:
+        return []
+    result: list[str] = []
+    for idx in row_indices:
+        if idx < 0 or idx >= len(df):
+            continue
+        row = df.iloc[idx]
+        soc = normalize_societe_id(pd.Series([row.get(SOC_COL, "")])).iloc[0]
+        siren = normalize_siren(pd.Series([row.get("SIREN", "")])).iloc[0]
+        if pd.notna(soc) and pd.notna(siren):
+            result.append(f"{soc}|{siren}")
+    return list(dict.fromkeys(result))
+
+
+def review_sim_rows_from_selection(df: pd.DataFrame, selected_keys: list[str]) -> list[int]:
+    if df is None or df.empty or not selected_keys:
+        return []
+    normalized = df[[SOC_COL, "SIREN"]].copy()
+    normalized[SOC_COL] = normalize_societe_id(normalized[SOC_COL])
+    normalized["SIREN"] = normalize_siren(normalized["SIREN"])
+    key_series = normalized[SOC_COL].fillna("").astype(str) + "|" + normalized["SIREN"].fillna("").astype(str)
+    allowed = set(selected_keys)
+    return [int(i) for i, key in enumerate(key_series.tolist()) if key in allowed]
+
+
+def build_review_simulation_detail_df(portfolio: pd.DataFrame, review_df: pd.DataFrame, selected_keys: list[str]) -> pd.DataFrame:
+    if portfolio is None or portfolio.empty or review_df is None or review_df.empty:
+        return pd.DataFrame()
+    source = portfolio.copy()
+    source[SOC_COL] = normalize_societe_id(source[SOC_COL])
+    source["SIREN"] = normalize_siren(source["SIREN"])
+    review_norm = review_df[[SOC_COL, "SIREN"]].copy()
+    review_norm[SOC_COL] = normalize_societe_id(review_norm[SOC_COL])
+    review_norm["SIREN"] = normalize_siren(review_norm["SIREN"])
+    all_keys = review_norm[SOC_COL].fillna("").astype(str) + "|" + review_norm["SIREN"].fillna("").astype(str)
+    target_keys = list(dict.fromkeys(selected_keys or all_keys.tolist()))
+    source_keys = source[SOC_COL].fillna("").astype(str) + "|" + source["SIREN"].fillna("").astype(str)
+    detail_df = source.loc[source_keys.isin(set(target_keys))].copy()
+    if detail_df.empty:
+        return detail_df
+    detail_df = detail_df[[c for c in DISPLAY_COLUMNS if c in detail_df.columns]].copy()
+    sort_cols = [c for c in ["Date prochaine revue", "Vigilance", "Dénomination"] if c in detail_df.columns]
+    if sort_cols:
+        detail_df = detail_df.sort_values(sort_cols, kind="stable", na_position="last")
+    return detail_df.reset_index(drop=True)
 
 def render_review_simulation_table(df: pd.DataFrame, key: str) -> list[int]:
     raw_df = df.copy().reset_index(drop=True)
@@ -2208,6 +2256,7 @@ def render_review_simulation_table(df: pd.DataFrame, key: str) -> list[int]:
         except Exception:
             selected_rows = []
     return selected_rows
+
 
 
 def render_review_simulations_screen(portfolio: pd.DataFrame, user: dict) -> None:
@@ -2296,10 +2345,30 @@ def render_review_simulations_screen(portfolio: pd.DataFrame, user: dict) -> Non
 
     render_review_status_gauges(working_df)
 
+    status_filter_options = list(VIGILANCE_ORDER)
+    default_real_filter = st.session_state.get("review_sim_real_filter")
+    if not isinstance(default_real_filter, list) or not default_real_filter:
+        default_real_filter = list(status_filter_options)
+    current_filter = st.multiselect(
+        "Filtrer sur le statut de vigilance réel",
+        options=status_filter_options,
+        default=[v for v in default_real_filter if v in status_filter_options] or list(status_filter_options),
+        key="review_sim_real_filter",
+        help="Ce filtre agit sur le tableau Revues & Simulations et sur les clients sous-jacents affichés plus bas.",
+    )
+    if current_filter:
+        working_df = working_df[working_df[REVIEW_SIM_REAL_LABEL].astype(str).isin(current_filter)].copy()
+    else:
+        working_df = working_df.iloc[0:0].copy()
+
+    if working_df.empty:
+        st.info("Aucun SIREN ne correspond au filtre de statut de vigilance retenu.")
+        return
+
     hint_cols = st.columns([6.0, 2.4, 2.0])
     with hint_cols[0]:
         st.markdown(
-            "<div class='cm-analysis-hint-text'>Cliquez sur une ou plusieurs lignes du tableau pour préparer un lot de revue. Les statuts de vigilance sont colorés et l’indicateur de tendance compare le statut réel au statut estimé.</div>",
+            "<div class='cm-analysis-hint-text'>Sélectionnez une ou plusieurs lignes du tableau pour préparer un lot, modifier le statut estimé et piloter les clients sous-jacents. La tendance est matérialisée par une icône : ▲ aggravation, • stabilité, ▼ amélioration.</div>",
             unsafe_allow_html=True,
         )
     with hint_cols[1]:
@@ -2310,33 +2379,47 @@ def render_review_simulations_screen(portfolio: pd.DataFrame, user: dict) -> Non
     with hint_cols[2]:
         st.markdown("<div style='height:0.15rem'></div>", unsafe_allow_html=True)
         if st.button("Effacer la sélection", key="review_sim_clear_selection", type="secondary", use_container_width=True):
+            st.session_state["review_sim_selected_keys"] = []
             st.session_state["review_sim_table_version"] = int(st.session_state.get("review_sim_table_version", 0)) + 1
             st.rerun()
 
     table_version = int(st.session_state.get("review_sim_table_version", 0))
-    selected_rows = render_review_simulation_table(working_df, key=f"review_sim_table_{selected_review_type}_{table_version}")
+    table_selected_rows = render_review_simulation_table(working_df, key=f"review_sim_table_{selected_review_type}_{table_version}")
 
+    if table_selected_rows:
+        st.session_state["review_sim_selected_keys"] = review_sim_selection_keys(working_df, table_selected_rows)
+    elif "review_sim_selected_keys" not in st.session_state:
+        st.session_state["review_sim_selected_keys"] = []
+
+    selected_keys = st.session_state.get("review_sim_selected_keys", [])
+    selected_rows = review_sim_rows_from_selection(working_df, selected_keys)
     selected_count = len(selected_rows)
-    c1, c2, c3 = st.columns([2.8, 2.2, 1.4])
+
+    c1, c2, c3 = st.columns([3.1, 2.2, 1.5])
     with c1:
-        st.caption("Sélectionnez jusqu’à 10 SIREN directement dans le tableau. La colonne « Explique moi » stocke pour l’instant une simulation locale avant branchement Gemini.")
-        if selected_count:
-            status_options = list(VIGILANCE_ORDER)
+        st.caption("Le statut de vigilance estimé peut être ajusté pour toutes les lignes sélectionnées. Les jauges estimées se recalculent après chaque mise à jour.")
+        status_options = list(VIGILANCE_ORDER)
+        default_value = "Vigilance Modérée"
+        if selected_rows:
             current_values = working_df.iloc[selected_rows][REVIEW_SIM_EST_LABEL].astype(str).dropna().unique().tolist()
-            default_value = current_values[0] if len(current_values) == 1 and current_values[0] in status_options else working_df.iloc[selected_rows[0]][REVIEW_SIM_EST_LABEL]
-            if default_value not in status_options:
-                default_value = "Vigilance Modérée"
-            manual_status = st.selectbox(
-                "Statut de vigilance estimé à appliquer aux lignes sélectionnées",
-                options=status_options,
-                index=status_options.index(default_value),
-                key=f"review_sim_manual_status_{selected_review_type}",
-            )
-            if st.button("Appliquer le statut estimé sélectionné", type="secondary", key="review_sim_apply_manual_status", use_container_width=True):
-                updated_df, updated_count = apply_manual_estimated_status(working_df, selected_rows, manual_status)
-                persist_review_simulation_subset(updated_df)
-                st.session_state["review_sim_notice"] = f"{updated_count} SIREN mis à jour avec le statut estimé « {manual_status} »."
-                st.rerun()
+            if len(current_values) == 1 and current_values[0] in status_options:
+                default_value = current_values[0]
+            else:
+                first_value = str(working_df.iloc[selected_rows[0]][REVIEW_SIM_EST_LABEL]).strip()
+                if first_value in status_options:
+                    default_value = first_value
+        manual_status = st.selectbox(
+            "Statut de vigilance estimé à appliquer aux lignes sélectionnées",
+            options=status_options,
+            index=status_options.index(default_value),
+            key=f"review_sim_manual_status_{selected_review_type}",
+            disabled=(selected_count == 0),
+        )
+        if st.button("Mettre à jour le statut estimé", type="secondary", key="review_sim_apply_manual_status", use_container_width=True, disabled=(selected_count == 0)):
+            updated_df, updated_count = apply_manual_estimated_status(working_df, selected_rows, manual_status)
+            persist_review_simulation_subset(updated_df)
+            st.session_state["review_sim_notice"] = f"{updated_count} SIREN mis à jour avec le statut estimé « {manual_status} »."
+            st.rerun()
     with c2:
         st.markdown(
             f"<div class='cm-analysis-mode-note'><strong>{selected_count}</strong> ligne(s) sélectionnée(s)</div>",
@@ -2391,6 +2474,25 @@ def render_review_simulations_screen(portfolio: pd.DataFrame, user: dict) -> Non
             value=build_row_review_prompt(preview_row),
             height=230,
             key="review_sim_prompt_selected",
+        )
+
+    st.divider()
+    st.markdown("<div id='clients-sous-jacents'></div>", unsafe_allow_html=True)
+    st.markdown('<h3 class="cm-section-title">Clients sous-jacents</h3>', unsafe_allow_html=True)
+    detail_df = build_review_simulation_detail_df(portfolio, working_df, selected_keys)
+    if selected_count:
+        st.caption(f"Clients sous-jacents pilotés par les {selected_count} SIREN sélectionnés dans le tableau.")
+    else:
+        st.caption("Aucune ligne sélectionnée : les clients sous-jacents reprennent l’ensemble des SIREN actuellement visibles dans le tableau.")
+    if detail_df.empty:
+        st.info("Aucun client sous-jacent à afficher pour la sélection courante.")
+    else:
+        render_clickable_styled_dataframe(
+            style_dataframe(detail_df),
+            detail_df,
+            height=460,
+            hide_index=True,
+            key_prefix="review_sim_detail_clients",
         )
 
 
