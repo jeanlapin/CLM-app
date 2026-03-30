@@ -13,6 +13,7 @@ from urllib.parse import quote_plus
 
 import numpy as np
 import pandas as pd
+import altair as alt
 import streamlit as st
 
 PAGE_TITLE = "CLASSIFICATION MANAGEMENT"
@@ -3453,6 +3454,80 @@ def render_indicator_contribution_chart(indicator_table: pd.DataFrame) -> None:
     st.markdown(html, unsafe_allow_html=True)
 
 
+def render_analysis_trend_chart(trend_df: pd.DataFrame) -> None:
+    if trend_df is None or trend_df.empty:
+        st.info("Aucune date exploitable n'est disponible sur le périmètre filtré.")
+        return
+
+    chart_df = trend_df.copy()
+    metric_cols = ["Mises à jour vigilance", "Dernières revues", "Prochaines revues"]
+    for col in metric_cols:
+        if col in chart_df.columns:
+            chart_df[col] = pd.to_numeric(chart_df[col], errors="coerce").fillna(0).round(0).astype(int)
+
+    month_order = chart_df["Mois"].astype(str).tolist()
+    melted = chart_df.melt(
+        id_vars=["Mois"],
+        value_vars=metric_cols,
+        var_name="Jalon",
+        value_name="Cas",
+    )
+    melted["Mois"] = melted["Mois"].astype(str)
+    melted["Cas"] = pd.to_numeric(melted["Cas"], errors="coerce").fillna(0).astype(int)
+
+    color_scale = alt.Scale(
+        domain=metric_cols,
+        range=[PRIMARY_COLOR, SECONDARY_COLOR, "#8FB8E8"],
+    )
+
+    base = alt.Chart(melted).encode(
+        x=alt.X(
+            "Mois:N",
+            sort=month_order,
+            title=None,
+            axis=alt.Axis(labelAngle=0, labelPadding=10, labelFontSize=12, labelColor="#163A59"),
+        ),
+        xOffset=alt.XOffset("Jalon:N", sort=metric_cols),
+        y=alt.Y(
+            "Cas:Q",
+            title=None,
+            axis=alt.Axis(grid=True, tickMinStep=1, labelFontSize=12, labelColor="#526273"),
+            scale=alt.Scale(nice=True, zero=True),
+        ),
+        color=alt.Color(
+            "Jalon:N",
+            sort=metric_cols,
+            scale=color_scale,
+            legend=alt.Legend(title=None, orient="top", direction="horizontal", labelFontSize=12, symbolType="square"),
+        ),
+        tooltip=[
+            alt.Tooltip("Mois:N", title="Mois"),
+            alt.Tooltip("Jalon:N", title="Jalon"),
+            alt.Tooltip("Cas:Q", title="Cas", format=".0f"),
+        ],
+    )
+
+    bars = base.mark_bar(size=22, cornerRadiusTopLeft=5, cornerRadiusTopRight=5)
+    labels = base.mark_text(
+        dy=-10,
+        font="Sora",
+        fontSize=11,
+        fontWeight="bold",
+        color="#163A59",
+    ).encode(text=alt.Text("Cas:Q", format=".0f"))
+
+    chart = (
+        (bars + labels)
+        .properties(height=320)
+        .configure_view(strokeOpacity=0)
+        .configure_axis(domain=False, gridColor="#E6EEF6", tickColor="#E6EEF6", titleColor="#163A59")
+        .configure_legend(labelColor="#163A59")
+    )
+
+    st.altair_chart(chart, use_container_width=True)
+    st.caption("Lecture mensuelle des mises à jour vigilance, dernières revues et prochaines revues.")
+
+
 def normalize_analysis_category(series: pd.Series) -> pd.Series:
     return series.fillna("Non renseigné").astype(str).replace({"": "Non renseigné"})
 
@@ -3920,16 +3995,7 @@ def render_analysis_screen(portfolio: pd.DataFrame, indicators: pd.DataFrame) ->
 
     st.markdown('<h3 class="cm-section-title">Jalons temporels</h3>', unsafe_allow_html=True)
     trend_df = build_analysis_trend_table(filtered)
-    if trend_df.empty:
-        st.info("Aucune date exploitable n'est disponible sur le périmètre filtré.")
-    else:
-        trend_table = trend_df.copy()
-        for col in ["Mises à jour vigilance", "Dernières revues", "Prochaines revues"]:
-            if col in trend_table.columns:
-                trend_table[col] = trend_table[col].fillna(0).round(0).astype(int)
-        if "% clients revus" in trend_table.columns:
-            trend_table["% clients revus"] = trend_table["% clients revus"].map(lambda x: f"{x:.0%}")
-        render_small_table(trend_table, bold_numbers=False)
+    render_analysis_trend_chart(trend_df)
 
     st.divider()
     st.markdown("<div id='clients-sous-jacents'></div>", unsafe_allow_html=True)
