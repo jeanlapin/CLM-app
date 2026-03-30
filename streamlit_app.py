@@ -3370,19 +3370,87 @@ def normalize_indicators_current(indicators_df: pd.DataFrame) -> pd.DataFrame:
 
 def build_indicator_analysis_table(filtered_portfolio: pd.DataFrame, indicators_df: pd.DataFrame) -> pd.DataFrame:
     normalized = normalize_indicators_current(indicators_df)
+    columns = ["Indicateur", "Risque avéré", "Risque potentiel", "Risque mitigé", "Non calculable", "Total cas"]
     if normalized.empty:
-        return pd.DataFrame(columns=["Indicateur", "Risque avéré", "Risque potentiel", "Risque mitigé", "Non calculable", "Total cas"])
+        return pd.DataFrame(columns=columns)
     keys = filtered_portfolio[[SOC_COL, "SIREN"]].drop_duplicates()
     normalized = normalized.merge(keys, how="inner", on=[SOC_COL, "SIREN"])
     if normalized.empty:
-        return pd.DataFrame(columns=["Indicateur", "Risque avéré", "Risque potentiel", "Risque mitigé", "Non calculable", "Total cas"])
+        return pd.DataFrame(columns=columns)
     crosstab = pd.crosstab(normalized["Indicateur"], normalized["Statut"])
     for status in ["Risque avéré", "Risque potentiel", "Risque mitigé", "Non calculable"]:
         if status not in crosstab.columns:
             crosstab[status] = 0
     crosstab["Total cas"] = crosstab[["Risque avéré", "Risque potentiel", "Risque mitigé", "Non calculable"]].sum(axis=1)
     result = crosstab.reset_index().sort_values(["Total cas", "Indicateur"], ascending=[False, True], kind="stable")
-    return result[["Indicateur", "Risque avéré", "Risque potentiel", "Risque mitigé", "Non calculable", "Total cas"]].head(12).reset_index(drop=True)
+    return result[columns].head(10).reset_index(drop=True)
+
+
+def render_indicator_contribution_chart(indicator_table: pd.DataFrame) -> None:
+    if indicator_table is None or indicator_table.empty:
+        st.info("Aucun indicateur exploitable n'est disponible sur le périmètre filtré.")
+        return
+
+    df = indicator_table.copy().head(10).reset_index(drop=True)
+    numeric_cols = ["Risque avéré", "Risque potentiel", "Risque mitigé", "Non calculable", "Total cas"]
+    for col in numeric_cols:
+        if col in df.columns:
+            df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0).astype(int)
+
+    max_total = int(df["Total cas"].max()) if "Total cas" in df.columns and not df.empty else 0
+    if max_total <= 0:
+        max_total = 1
+
+    rows: list[str] = []
+    for rank, row in enumerate(df.to_dict("records"), start=1):
+        total = int(row.get("Total cas", 0))
+        width = max(6.0, round((total / max_total) * 100, 1))
+        rank_bg = PRIMARY_COLOR if rank == 1 else (SECONDARY_COLOR if rank <= 3 else "#E9F1FA")
+        rank_fg = "#FFFFFF" if rank <= 3 else PRIMARY_COLOR
+        label = escape(str(row.get("Indicateur", "")))
+        breakdown = [
+            ("Avéré", int(row.get("Risque avéré", 0)), "#B42318"),
+            ("Potentiel", int(row.get("Risque potentiel", 0)), "#175CD3"),
+            ("Mitigé", int(row.get("Risque mitigé", 0)), "#027A48"),
+            ("Non calc.", int(row.get("Non calculable", 0)), "#667085"),
+        ]
+        chips = []
+        for chip_label, chip_value, chip_color in breakdown:
+            chips.append(
+                f"<span style='display:inline-flex;align-items:center;gap:6px;padding:4px 8px;border-radius:999px;background:#F5F8FC;border:1px solid rgba(22,58,89,0.08);font-size:11px;color:#445469;'>"
+                f"<span style='width:8px;height:8px;border-radius:999px;background:{chip_color};display:inline-block;'></span>"
+                f"{escape(chip_label)} : <strong style='color:#163A59;font-weight:700;'>{chip_value}</strong>"
+                f"</span>"
+            )
+        rows.append(
+            f"<div style='display:flex;gap:12px;align-items:flex-start;padding:12px 0;border-bottom:1px solid rgba(22,58,89,0.08);'>"
+            f"<div style='min-width:34px;width:34px;height:34px;border-radius:999px;background:{rank_bg};color:{rank_fg};display:flex;align-items:center;justify-content:center;font-family:Sora,sans-serif;font-weight:800;font-size:14px;'>{rank}</div>"
+            f"<div style='flex:1;min-width:0;'>"
+            f"<div style='display:flex;justify-content:space-between;align-items:flex-start;gap:16px;'>"
+            f"<div style='font-family:Sora,sans-serif;font-weight:700;font-size:15px;line-height:1.35;color:#163A59;'>{label}</div>"
+            f"<div style='white-space:nowrap;font-family:Sora,sans-serif;font-weight:800;font-size:16px;color:#163A59;'>{total} cas</div>"
+            f"</div>"
+            f"<div style='margin-top:8px;height:14px;border-radius:999px;background:#E8EFF7;overflow:hidden;'>"
+            f"<div style='width:{width}%;height:100%;border-radius:999px;background:linear-gradient(90deg, {PRIMARY_COLOR} 0%, {SECONDARY_COLOR} 100%);'></div>"
+            f"</div>"
+            f"<div style='display:flex;flex-wrap:wrap;gap:8px;margin-top:10px;'>{''.join(chips)}</div>"
+            f"</div>"
+            f"</div>"
+        )
+
+    html = (
+        "<div style='background:#FFFFFF;border:1px solid rgba(22,58,89,0.08);border-radius:20px;padding:18px 20px 10px 20px;box-shadow:0 12px 30px rgba(15,23,42,0.06);'>"
+        "<div style='display:flex;justify-content:space-between;align-items:flex-end;gap:16px;margin-bottom:6px;'>"
+        "<div>"
+        "<div style='font-size:11px;letter-spacing:0.18em;text-transform:uppercase;font-weight:800;color:#5E8FC7;'>Top 10</div>"
+        "<div style='font-family:Sora,sans-serif;font-weight:800;font-size:20px;color:#163A59;'>Indicateurs les plus contributifs</div>"
+        "</div>"
+        "<div style='font-size:12px;color:#526273;text-align:right;'>Classement établi sur le <strong style='color:#163A59;'>total de cas</strong>.</div>"
+        "</div>"
+        + ''.join(rows)
+        + "</div>"
+    )
+    st.markdown(html, unsafe_allow_html=True)
 
 
 def normalize_analysis_category(series: pd.Series) -> pd.Series:
@@ -3847,12 +3915,8 @@ def render_analysis_screen(portfolio: pd.DataFrame, indicators: pd.DataFrame) ->
         st.info("Aucune ligne ne correspond aux contrôles intégrés du tableau d’analyse.")
 
     st.divider()
-    st.markdown('<h3 class="cm-section-title">Indicateurs les plus contributifs</h3>', unsafe_allow_html=True)
     indicator_table = build_indicator_analysis_table(filtered, indicators)
-    if indicator_table.empty:
-        st.info("Aucun indicateur exploitable n'est disponible sur le périmètre filtré.")
-    else:
-        render_small_table(indicator_table, bold_numbers=False)
+    render_indicator_contribution_chart(indicator_table)
 
     st.markdown('<h3 class="cm-section-title">Jalons temporels</h3>', unsafe_allow_html=True)
     trend_df = build_analysis_trend_table(filtered)
