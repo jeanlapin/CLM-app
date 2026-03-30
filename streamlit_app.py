@@ -3185,67 +3185,66 @@ def render_selectable_analysis_table(
 ) -> tuple[str, pd.Series | None]:
     if df is None or df.empty:
         st.info("Aucune donnée à afficher.")
-        st.session_state.pop(f"analysis_selected_option_{key_prefix}", None)
         return "empty", None
 
     raw_df = df.copy().reset_index(drop=True)
+    display_df = format_table_display_dataframe(raw_df)
 
-    st.markdown(
-        """
-        <div class='cm-analysis-hint-row'>
-            <div class='cm-analysis-hint-text'>Sélectionnez une ligne dans la liste ci-dessous pour définir le focus analytique et mettre à jour les clients sous-jacents.</div>
-            <a class='cm-analysis-jump-btn' href='#clients-sous-jacents'>Voir les clients sous-jacents</a>
-        </div>
-        """,
-        unsafe_allow_html=True,
+    hint_left, hint_right, hint_clear = st.columns([6.0, 2.3, 1.5])
+    with hint_left:
+        st.markdown(
+            "<div class='cm-analysis-hint-text'>Cliquez directement sur une ligne du tableau pour définir le focus analytique et mettre à jour les clients sous-jacents.</div>",
+            unsafe_allow_html=True,
+        )
+    with hint_right:
+        st.markdown(
+            "<div class='cm-analysis-hint-action'><a class='cm-analysis-jump-btn' href='#clients-sous-jacents'>Voir les clients sous-jacents</a></div>",
+            unsafe_allow_html=True,
+        )
+    reset_counter_key = f"analysis_table_reset_counter_{key_prefix}"
+    with hint_clear:
+        st.markdown("<div style='height:0.15rem'></div>", unsafe_allow_html=True)
+        if st.button("Effacer le focus", key=f"analysis_clear_{key_prefix}", type="secondary"):
+            st.session_state[reset_counter_key] = int(st.session_state.get(reset_counter_key, 0)) + 1
+            return "cleared", None
+
+    column_config: dict[str, object] = {}
+    for col in display_df.columns:
+        if col in {"Vigilance", "Risque"}:
+            column_config[col] = st.column_config.TextColumn(col, width="medium")
+        elif col in {"EDD", "Segment", "Produit", "Analyste", "Valideur"}:
+            column_config[col] = st.column_config.TextColumn(col, width="medium")
+        elif col in {"Pays", "Canal"}:
+            column_config[col] = st.column_config.TextColumn(col, width="small")
+        else:
+            column_config[col] = st.column_config.TextColumn(col, width="medium")
+
+    table_version = int(st.session_state.get(reset_counter_key, 0))
+    event = st.dataframe(
+        style_interactive_table(display_df, raw_df),
+        width="stretch",
+        height=height,
+        hide_index=True,
+        column_order=list(display_df.columns),
+        column_config=column_config,
+        on_select="rerun",
+        selection_mode="single-row",
+        row_height=40,
+        key=f"cm_analysis_select_{key_prefix}_{table_version}",
     )
 
-    def option_label(option: int) -> str:
-        if option == 0:
-            return "Aucune ligne sélectionnée"
-        row = raw_df.iloc[option - 1]
-        parts: list[str] = []
-        for label, _source in ANALYSIS_FILTER_COLUMNS:
-            if label not in row.index:
-                continue
-            value = str(row[label]).strip()
-            if value and value != "Non renseigné":
-                parts.append(value)
-            if len(parts) >= 5:
-                break
-        summary = " | ".join(parts) if parts else "Ligne sans libellé"
-        return f"Ligne {option} — {summary}"
+    selected_rows: list[int] = []
+    if event is not None:
+        try:
+            selected_rows = [int(i) for i in event.selection.get("rows", [])]
+        except Exception:
+            selected_rows = []
 
-    options = [0] + [idx + 1 for idx in range(len(raw_df))]
-    state_key = f"analysis_selected_option_{key_prefix}"
-    if st.session_state.get(state_key) not in options:
-        st.session_state[state_key] = 0
-
-    selector_left, selector_right = st.columns([4.8, 1.2])
-    with selector_left:
-        selected_option = st.selectbox(
-            "Ligne active",
-            options=options,
-            format_func=option_label,
-            key=state_key,
-        )
-    with selector_right:
-        st.markdown("<div style='height:1.85rem'></div>", unsafe_allow_html=True)
-        if st.button(
-            "Effacer le focus",
-            key=f"{state_key}_clear",
-            type="secondary",
-            disabled=selected_option == 0,
-        ):
-            st.session_state[state_key] = 0
-            st.rerun()
-
-    selected_idx = selected_option - 1 if selected_option else None
-    render_analysis_main_table(raw_df, selected_row_idx=selected_idx)
-
-    if selected_idx is None:
-        return "cleared", None
-    return "selected", raw_df.iloc[selected_idx]
+    if selected_rows:
+        selected_idx = selected_rows[0]
+        if 0 <= selected_idx < len(raw_df):
+            return "selected", raw_df.iloc[selected_idx]
+    return "unchanged", None
 
 
 
@@ -3841,6 +3840,7 @@ def render_analysis_screen(portfolio: pd.DataFrame, indicators: pd.DataFrame) ->
         st.session_state["analysis_focus_selection"] = selected_main.to_dict()
     elif main_action == "cleared":
         st.session_state.pop("analysis_focus_selection", None)
+        st.rerun()
 
     if analysis_table.empty:
         st.info("Aucun résultat à afficher pour les paramètres sélectionnés.")
