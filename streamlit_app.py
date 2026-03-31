@@ -118,6 +118,7 @@ GEMINI_MAX_BATCH_SIZE = 10
 GEMINI_API_TIMEOUT_SECONDS = 60
 REVIEW_SIM_GEMINI_KEY_STATE = "review_sim_gemini_api_key"
 AGENT_IA_PROMPT_STATE = "agent_ia_review_edd_prompt"
+AGENT_IA_PROMPT_WIDGET_STATE = "agent_ia_review_edd_prompt_widget"
 AGENT_IA_ADMIN_SUBMENU_STATE = "admin_data_submenu"
 DEFAULT_REVIEW_EDD_PROMPT = (
     "Tu es un analyste conformité. Pour chaque SIREN sélectionné, prépare les consignes de revue en analysant l’ensemble des données "
@@ -1690,6 +1691,7 @@ def logout_button() -> None:
     if st.button("Se déconnecter"):
         st.session_state.pop(REVIEW_SIM_GEMINI_KEY_STATE, None)
         st.session_state.pop(AGENT_IA_PROMPT_STATE, None)
+        st.session_state.pop(AGENT_IA_PROMPT_WIDGET_STATE, None)
         st.session_state.pop(AGENT_IA_ADMIN_SUBMENU_STATE, None)
         st.session_state.pop("authenticated_user", None)
         st.rerun()
@@ -1842,19 +1844,31 @@ def persist_agent_ia_settings(review_edd_prompt: str, user: dict | None = None) 
 
 
 
-def sync_agent_ia_prompt_session(saved_prompt: str | None = None) -> None:
+def sync_agent_ia_prompt_session(saved_prompt: str | None = None, *, force: bool = False) -> None:
     normalized_prompt = str(saved_prompt or "").strip() or DEFAULT_REVIEW_EDD_PROMPT
-    current_prompt = str(st.session_state.get(AGENT_IA_PROMPT_STATE, "") or "")
-    if not current_prompt.strip():
+    stored_prompt = str(st.session_state.get(AGENT_IA_PROMPT_STATE, "") or "")
+    widget_prompt = str(st.session_state.get(AGENT_IA_PROMPT_WIDGET_STATE, "") or "")
+    if force or not stored_prompt.strip():
         st.session_state[AGENT_IA_PROMPT_STATE] = normalized_prompt
+    if force or not widget_prompt.strip():
+        st.session_state[AGENT_IA_PROMPT_WIDGET_STATE] = normalized_prompt
 
 
 
 def autosave_agent_ia_prompt(user: dict | None = None) -> None:
-    prompt = str(st.session_state.get(AGENT_IA_PROMPT_STATE, "") or "").strip() or DEFAULT_REVIEW_EDD_PROMPT
+    prompt = str(st.session_state.get(AGENT_IA_PROMPT_WIDGET_STATE, "") or "").strip() or DEFAULT_REVIEW_EDD_PROMPT
     st.session_state[AGENT_IA_PROMPT_STATE] = prompt
+    st.session_state[AGENT_IA_PROMPT_WIDGET_STATE] = prompt
     persist_agent_ia_settings(prompt, user=user)
     st.session_state["agent_ia_prompt_notice"] = "Le prompt Revue EDD a été enregistré."
+
+
+
+def reset_agent_ia_prompt(user: dict | None = None) -> None:
+    st.session_state[AGENT_IA_PROMPT_STATE] = DEFAULT_REVIEW_EDD_PROMPT
+    st.session_state[AGENT_IA_PROMPT_WIDGET_STATE] = DEFAULT_REVIEW_EDD_PROMPT
+    persist_agent_ia_settings(DEFAULT_REVIEW_EDD_PROMPT, user=user)
+    st.session_state["agent_ia_prompt_notice"] = "Le prompt Revue EDD a été réinitialisé puis enregistré."
 
 
 
@@ -3190,6 +3204,26 @@ def render_review_simulations_screen(portfolio: pd.DataFrame, user: dict) -> Non
         open_review_dates_view()
         st.rerun()
 
+    st.markdown(
+        """
+        <style>
+        div[data-testid="stAppViewContainer"]:has(.review-screen-theme-scope),
+        div[data-testid="stAppViewContainer"]:has(.review-screen-theme-scope) [data-testid="stMain"],
+        div[data-testid="stAppViewContainer"]:has(.review-screen-theme-scope) section.main,
+        div[data-testid="stAppViewContainer"]:has(.review-screen-theme-scope) .main {
+            background: #F5F8FB;
+        }
+        div[data-testid="stAppViewContainer"]:has(.review-screen-theme-scope) [data-testid="stMainBlockContainer"] {
+            background: transparent;
+            padding-top: 0.35rem;
+            padding-bottom: 2rem;
+        }
+        </style>
+        <div class='review-screen-theme-scope'></div>
+        """,
+        unsafe_allow_html=True,
+    )
+
     base_df = build_review_simulation_working_table(portfolio)
     if base_df.empty:
         st.info("Aucun SIREN disponible pour préparer une revue sur le périmètre courant.")
@@ -3212,7 +3246,7 @@ def render_review_simulations_screen(portfolio: pd.DataFrame, user: dict) -> Non
             padding: 0.78rem 0.96rem;
             border-radius: 18px;
             border: 1px solid rgba(22, 58, 89, 0.12);
-            background: rgba(255, 255, 255, 0.92);
+            background: rgba(245, 248, 251, 0.94);
             box-shadow: 0 8px 18px rgba(22, 58, 89, 0.04);
         }}
         .review-screen-compact-title {{
@@ -4204,7 +4238,7 @@ def render_dataset_admin_submenu(manifest: dict | None, user: dict) -> None:
 def render_agent_ia_admin_submenu(user: dict, manifest: dict | None = None) -> None:
     settings = (manifest or load_manifest() or {}).get("agent_ia_settings") or {}
     saved_prompt = str(settings.get("review_edd_prompt") or "").strip() or DEFAULT_REVIEW_EDD_PROMPT
-    sync_agent_ia_prompt_session(saved_prompt)
+    sync_agent_ia_prompt_session(saved_prompt, force=True)
 
     st.markdown("**Agent IA**")
     st.text_input(
@@ -4219,7 +4253,7 @@ def render_agent_ia_admin_submenu(user: dict, manifest: dict | None = None) -> N
     if user.get("role") == "admin":
         st.text_area(
             "Prompt Revue EDD",
-            key=AGENT_IA_PROMPT_STATE,
+            key=AGENT_IA_PROMPT_WIDGET_STATE,
             height=220,
             help="Prompt central utilisé par l’écran Revues & Simulations pour construire la consigne envoyée à Gemini.",
             on_change=autosave_agent_ia_prompt,
@@ -4227,11 +4261,13 @@ def render_agent_ia_admin_submenu(user: dict, manifest: dict | None = None) -> N
         )
         action_col, note_col = st.columns([1.1, 1.9])
         with action_col:
-            if st.button("Réinitialiser le prompt", use_container_width=True, key="agent_ia_reset_prompt"):
-                st.session_state[AGENT_IA_PROMPT_STATE] = DEFAULT_REVIEW_EDD_PROMPT
-                persist_agent_ia_settings(DEFAULT_REVIEW_EDD_PROMPT, user=user)
-                st.session_state["agent_ia_prompt_notice"] = "Le prompt Revue EDD a été réinitialisé puis enregistré."
-                st.rerun()
+            st.button(
+                "Réinitialiser le prompt",
+                use_container_width=True,
+                key="agent_ia_reset_prompt",
+                on_click=reset_agent_ia_prompt,
+                kwargs={"user": user},
+            )
         with note_col:
             st.caption("Le prompt est enregistré automatiquement dès qu’il est modifié.")
 
