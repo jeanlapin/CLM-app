@@ -4290,9 +4290,27 @@ def render_agent_ia_content(user: dict, manifest: dict | None = None) -> None:
 
 
 
+
+def render_navigation_back_to_operational_screens(widget_key: str = "cm_admin_nav") -> None:
+    st.markdown("<div class='cm-premium-card'><strong>Accès aux écrans métier</strong></div>", unsafe_allow_html=True)
+    cols = st.columns(4)
+    actions = [
+        ("Portefeuille", open_portfolio_view),
+        ("Analyse", open_analysis_view),
+        ("Planification des revues", open_review_dates_view),
+        ("Revues & Simulations", open_review_simulations_view),
+    ]
+    for idx, (label, handler) in enumerate(actions):
+        with cols[idx]:
+            if st.button(label, use_container_width=True, key=f"{widget_key}_{idx}"):
+                handler()
+                st.rerun()
+
+
 def render_agent_ia_screen(user: dict) -> None:
     render_home_hero("Agent IA")
     st.caption("Administration des données")
+    render_navigation_back_to_operational_screens("cm_agent_ia_back_to_screens")
     st.markdown(
         "<div class='cm-premium-card'><strong>Configuration centralisée de l’agent.</strong> La clé API reste éphémère et le prompt <em>Revue EDD</em> est utilisé par l’écran Revues &amp; Simulations.</div>",
         unsafe_allow_html=True,
@@ -4304,6 +4322,7 @@ def render_agent_ia_screen(user: dict) -> None:
 def render_dataset_admin_screen(user: dict) -> None:
     render_home_hero("Jeu de données")
     st.caption("Administration des données")
+    render_navigation_back_to_operational_screens("cm_dataset_admin_back_to_screens")
     render_dataset_admin_submenu(load_manifest(), user)
 
 
