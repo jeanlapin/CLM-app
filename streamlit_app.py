@@ -3124,7 +3124,6 @@ def render_review_simulation_table(df: pd.DataFrame, key: str) -> list[int]:
 
 
 def render_review_simulations_screen(portfolio: pd.DataFrame, user: dict) -> None:
-    render_home_hero("Revues & Simulations")
     nav = render_primary_navigation("review_simulations")
     if nav == "portfolio":
         open_portfolio_view()
@@ -3148,44 +3147,6 @@ def render_review_simulations_screen(portfolio: pd.DataFrame, user: dict) -> Non
         "points de contrôle, et statut de vigilance estimé après remédiation."
     )
 
-    st.markdown(
-        f"""
-        <style>
-        .review-screen-inline-head {{
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            gap: 0.6rem;
-            flex-wrap: wrap;
-            margin: 0.06rem 0 0.42rem 0;
-        }}
-        .review-screen-inline-title {{
-            font-family: 'Montserrat', sans-serif;
-            font-size: 0.98rem;
-            font-weight: 800;
-            color: {PRIMARY_COLOR};
-            line-height: 1.15;
-        }}
-        .review-screen-inline-badge {{
-            display: inline-flex;
-            align-items: center;
-            padding: 0.16rem 0.5rem;
-            border-radius: 999px;
-            border: 1px solid rgba(22, 58, 89, 0.10);
-            background: rgba(255, 255, 255, 0.92);
-            color: #5B7084;
-            font-size: 0.73rem;
-            font-weight: 600;
-            line-height: 1.2;
-        }}
-        </style>
-        <div class='review-screen-inline-head'>
-            <div class='review-screen-inline-title'>Revues &amp; Simulations</div>
-            <div class='review-screen-inline-badge'>Modèle : {escape(GEMINI_MODEL_DEFAULT)}</div>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
 
     top_left, top_right = st.columns([1.15, 3.85], gap="small")
     with top_left:
@@ -3204,21 +3165,39 @@ def render_review_simulations_screen(portfolio: pd.DataFrame, user: dict) -> Non
             height=105,
             key="review_sim_prompt_preview",
         ).strip() or default_prompt
+        st.caption(f"Modèle utilisé : {GEMINI_MODEL_DEFAULT}")
 
-    search_term = st.text_input(
+    search_catalog = (
+        base_df[["SIREN", "Dénomination"]]
+        .copy()
+        .assign(
+            SIREN=lambda df: df["SIREN"].astype(str).str.strip(),
+            Dénomination=lambda df: df["Dénomination"].fillna("").astype(str).str.strip(),
+        )
+        .drop_duplicates(subset=["SIREN"])
+        .sort_values(["Dénomination", "SIREN"], kind="stable")
+    )
+    search_options: list[tuple[str, str]] = [("", "")] + [
+        (row["SIREN"], row["Dénomination"]) for _, row in search_catalog.iterrows()
+    ]
+
+    search_choice = st.selectbox(
         "Rechercher un SIREN ou une dénomination",
-        key="review_sim_search",
-        placeholder="Ex. 123456789 ou NOM CLIENT",
-    ).strip()
+        options=search_options,
+        index=0,
+        format_func=lambda item: (
+            "Tous les SIREN / dénominations"
+            if not item[0]
+            else f"{item[0]} — {item[1]}" if item[1] else item[0]
+        ),
+        key="review_sim_search_choice",
+        help="Commencez à saisir un SIREN ou une dénomination puis choisissez une ligne dans la liste.",
+    )
 
     working_df = base_df.copy()
-    if search_term:
-        mask = (
-            working_df["SIREN"].astype(str).str.contains(search_term, case=False, na=False)
-            | working_df["Dénomination"].astype(str).str.contains(search_term, case=False, na=False)
-            | working_df["Alertes actives"].astype(str).str.contains(search_term, case=False, na=False)
-        )
-        working_df = working_df[mask].copy()
+    if search_choice and search_choice[0]:
+        selected_siren = str(search_choice[0]).strip()
+        working_df = working_df[working_df["SIREN"].astype(str).str.strip() == selected_siren].copy()
 
     if working_df.empty:
         st.info("Aucun SIREN ne correspond au critère de recherche retenu.")
