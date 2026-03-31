@@ -114,6 +114,10 @@ REVIEW_TYPE_BY_VIGILANCE = {
 REVIEW_SIM_REAL_LABEL = "Statut de vigilance réel"
 REVIEW_SIM_EST_LABEL = "Statut de vigilance estimé après remédiation"
 REVIEW_SIM_TREND_LABEL = "Indicateur de tendance"
+REVIEW_SIM_REAL_DISPLAY_LABEL = "Statut réel"
+REVIEW_SIM_EST_DISPLAY_LABEL = "Statut estimé"
+REVIEW_SIM_TREND_DISPLAY_LABEL = "Tendance"
+REVIEW_SIM_NEXT_REVIEW_DISPLAY_LABEL = "Prochaine revue"
 GEMINI_MODEL_DEFAULT = "gemini-2.5-flash"
 GEMINI_MAX_BATCH_SIZE = 10
 GEMINI_API_TIMEOUT_SECONDS = 60
@@ -2959,7 +2963,15 @@ def build_review_simulation_export_dataframe(df: pd.DataFrame) -> pd.DataFrame:
         REVIEW_SIM_TREND_LABEL,
         REVIEW_SIM_EST_LABEL,
     ]
-    return export_df[[c for c in keep_cols if c in export_df.columns]].copy()
+    export_df = export_df[[c for c in keep_cols if c in export_df.columns]].copy()
+    return export_df.rename(
+        columns={
+            REVIEW_SIM_REAL_LABEL: REVIEW_SIM_REAL_DISPLAY_LABEL,
+            REVIEW_SIM_EST_LABEL: REVIEW_SIM_EST_DISPLAY_LABEL,
+            REVIEW_SIM_TREND_LABEL: REVIEW_SIM_TREND_DISPLAY_LABEL,
+            "Date prochaine revue": REVIEW_SIM_NEXT_REVIEW_DISPLAY_LABEL,
+        }
+    )
 
 
 def style_review_simulation_table(display_df: pd.DataFrame) -> pd.io.formats.style.Styler:
@@ -2969,21 +2981,21 @@ def style_review_simulation_table(display_df: pd.DataFrame) -> pd.io.formats.sty
             return base + "color: #163A59; font-weight: 800; text-decoration: underline;"
         if column_name == "Dénomination":
             return base + "font-weight: 700; color: #163A59; text-align:left;"
-        if column_name in {REVIEW_SIM_REAL_LABEL, REVIEW_SIM_EST_LABEL}:
+        if column_name in {REVIEW_SIM_REAL_LABEL, REVIEW_SIM_EST_LABEL, REVIEW_SIM_REAL_DISPLAY_LABEL, REVIEW_SIM_EST_DISPLAY_LABEL}:
             bg, fg = status_palette(value, "vigilance")
             return base + f"background-color:{bg}; color:{fg}; font-weight:700; border-radius:999px;"
-        if column_name == REVIEW_SIM_TREND_LABEL:
+        if column_name in {REVIEW_SIM_TREND_LABEL, REVIEW_SIM_TREND_DISPLAY_LABEL}:
             text = str(value).strip()
-            if text == "S’aggrave":
+            if text.startswith("🔴") or text == "S’aggrave":
                 return base + "background-color: rgba(217,45,32,0.10); color:#B42318; font-weight:700;"
-            if text == "S’améliore":
+            if text.startswith("🟢") or text == "S’améliore":
                 return base + "background-color: rgba(18,183,106,0.10); color:#027A48; font-weight:700;"
-            return base + "background-color: rgba(22,58,89,0.08); color:#163A59; font-weight:700;"
+            return base + "background-color: rgba(249,115,22,0.10); color:#B54708; font-weight:700;"
         if column_name == "Explique moi":
-            text = str(value)
-            if text.endswith("#●"):
-                return base + "color:#163A59; font-weight:800; font-size:1.04rem;"
-            return base + "color:#B7C4D1; font-weight:700; font-size:1.02rem;"
+            text = str(value).strip()
+            if text == "Pleine":
+                return base + "background-color: rgba(22,58,89,0.08); color:#163A59; font-weight:700; letter-spacing:0.01em;"
+            return base + "background-color: rgba(148,163,184,0.12); color:#66788A; font-weight:600;"
         return base
 
     zebra = pd.DataFrame("", index=display_df.index, columns=display_df.columns)
@@ -3034,6 +3046,21 @@ def render_review_status_gauges(df: pd.DataFrame) -> None:
     grid_style = "display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:0.85rem;"
     st.markdown(f"<div style='{grid_style} margin:0.2rem 0 0.55rem 0;'>" + "".join(real_cards) + "</div>", unsafe_allow_html=True)
     st.markdown(f"<div style='{grid_style} margin:0.0rem 0 0.95rem 0;'>" + "".join(est_cards) + "</div>", unsafe_allow_html=True)
+
+
+def render_review_simulation_vigilance_legend(status_labels: list[str]) -> None:
+    chips: list[str] = []
+    for label in status_labels:
+        bg, fg = status_palette(label, "vigilance")
+        short_label = escape(str(label).replace("Vigilance ", "").strip())
+        chips.append(
+            f'<span style="display:inline-flex; align-items:center; justify-content:center; padding:0.20rem 0.62rem; border-radius:999px; background:{bg}; color:{fg}; font-family:Source Sans Pro,sans-serif; font-size:0.82rem; font-weight:700; line-height:1; box-shadow: inset 0 0 0 1px rgba(22,58,89,0.04);">{short_label}</span>'
+        )
+    if chips:
+        st.markdown(
+            "<div style='display:flex; flex-wrap:wrap; gap:0.45rem; margin:0.18rem 0 0.72rem 0;'>" + "".join(chips) + "</div>",
+            unsafe_allow_html=True,
+        )
 
 
 def review_sim_selection_keys(df: pd.DataFrame, row_indices: list[int]) -> list[str]:
@@ -3125,7 +3152,7 @@ if hasattr(st, "dialog"):
         st.markdown(
             f"""
             <div style="margin:0.1rem 0 0.65rem 0;">
-                <div style="color:#5B7084;font-family:'Source Sans Pro',sans-serif;font-size:0.95rem;line-height:1.35;">{denomination} • {siren_label}</div>
+                <div style="color:#5B7084;font-family:Source Sans Pro,sans-serif;font-size:0.95rem;line-height:1.35;">{denomination} • {siren_label}</div>
             </div>
             <style>
             .review-explain-dialog-body {{
@@ -3158,8 +3185,8 @@ else:
             st.markdown(
                 f"""
                 <div style="margin:0.35rem 0 0.25rem 0;">
-                    <div style="color:#163A59;font-family:'Source Sans Pro',sans-serif;font-size:1.18rem;font-weight:700;line-height:1.2;">Explique moi</div>
-                    <div style="margin-top:0.12rem;color:#5B7084;font-family:'Source Sans Pro',sans-serif;font-size:0.92rem;line-height:1.35;">{denomination} • {siren_label}</div>
+                    <div style="color:#163A59;font-family:Source Sans Pro,sans-serif;font-size:1.18rem;font-weight:700;line-height:1.2;">Explique moi</div>
+                    <div style="margin-top:0.12rem;color:#5B7084;font-family:Source Sans Pro,sans-serif;font-size:0.92rem;line-height:1.35;">{denomination} • {siren_label}</div>
                 </div>
                 """,
                 unsafe_allow_html=True,
@@ -3277,7 +3304,7 @@ def render_review_simulation_table(df: pd.DataFrame, key: str) -> list[int]:
     display_df = raw_df.copy()
     display_df["Date prochaine revue"] = display_df["Date prochaine revue"].apply(format_short_date)
     display_df["Explique moi"] = display_df["Explique moi"].apply(
-        lambda value: "●" if str(value or "").strip() else "○"
+        lambda value: "Pleine" if str(value or "").strip() else "Vide"
     )
     display_df[REVIEW_SIM_TREND_LABEL] = display_df[REVIEW_SIM_TREND_LABEL].apply(review_trend_icon)
 
@@ -3292,6 +3319,14 @@ def render_review_simulation_table(df: pd.DataFrame, key: str) -> list[int]:
         "Date prochaine revue",
     ]
     display_df = display_df[[c for c in column_order if c in display_df.columns]].copy()
+    display_df = display_df.rename(
+        columns={
+            REVIEW_SIM_REAL_LABEL: REVIEW_SIM_REAL_DISPLAY_LABEL,
+            REVIEW_SIM_TREND_LABEL: REVIEW_SIM_TREND_DISPLAY_LABEL,
+            REVIEW_SIM_EST_LABEL: REVIEW_SIM_EST_DISPLAY_LABEL,
+            "Date prochaine revue": REVIEW_SIM_NEXT_REVIEW_DISPLAY_LABEL,
+        }
+    )
 
     column_config = {
         SOC_COL: st.column_config.TextColumn("Société", width="small"),
@@ -3301,15 +3336,15 @@ def render_review_simulation_table(df: pd.DataFrame, key: str) -> list[int]:
             help="Cliquez sur une cellule SIREN pour ouvrir la fiche client dans l’application.",
         ),
         "Dénomination": st.column_config.TextColumn("Dénomination", width="medium"),
-        REVIEW_SIM_REAL_LABEL: st.column_config.TextColumn(REVIEW_SIM_REAL_LABEL, width="medium"),
+        REVIEW_SIM_REAL_DISPLAY_LABEL: st.column_config.TextColumn(REVIEW_SIM_REAL_DISPLAY_LABEL, width="small"),
         "Explique moi": st.column_config.TextColumn(
             "Explique moi",
             width="small",
-            help="○ : champ vide • ● : contenu disponible en grand format dans l’écran.",
+            help="Vide : aucun contenu • Pleine : cliquez pour ouvrir le contenu en grand format.",
         ),
-        REVIEW_SIM_TREND_LABEL: st.column_config.TextColumn(REVIEW_SIM_TREND_LABEL, width="small"),
-        REVIEW_SIM_EST_LABEL: st.column_config.TextColumn(REVIEW_SIM_EST_LABEL, width="medium"),
-        "Date prochaine revue": st.column_config.TextColumn("Date prochaine revue", width="small"),
+        REVIEW_SIM_TREND_DISPLAY_LABEL: st.column_config.TextColumn(REVIEW_SIM_TREND_DISPLAY_LABEL, width="small"),
+        REVIEW_SIM_EST_DISPLAY_LABEL: st.column_config.TextColumn(REVIEW_SIM_EST_DISPLAY_LABEL, width="small"),
+        REVIEW_SIM_NEXT_REVIEW_DISPLAY_LABEL: st.column_config.TextColumn(REVIEW_SIM_NEXT_REVIEW_DISPLAY_LABEL, width="small"),
     }
 
     event = st.dataframe(
@@ -3461,8 +3496,9 @@ def render_review_simulations_screen(portfolio: pd.DataFrame, user: dict) -> Non
         options=status_filter_options,
         default=[v for v in default_real_filter if v in status_filter_options] or list(status_filter_options),
         key="review_sim_real_filter",
-        help="Ce filtre agit sur le tableau Revues & Simulations et sur les clients sous-jacents affichés plus bas.",
+        help="Ce filtre agit sur le tableau Revues & Simulations.",
     )
+    render_review_simulation_vigilance_legend(status_filter_options)
     if current_filter:
         working_df = working_df[working_df[REVIEW_SIM_REAL_LABEL].astype(str).isin(current_filter)].copy()
     else:
