@@ -3379,9 +3379,9 @@ def render_review_simulations_screen(portfolio: pd.DataFrame, user: dict) -> Non
                 background: transparent !important;
                 border: none !important;
                 font-family: "Source Sans Pro", sans-serif !important;
-                font-size: 0.92rem !important;
+                font-size: 1rem !important;
                 font-weight: 400 !important;
-                line-height: 1.2 !important;
+                line-height: 1.25 !important;
                 white-space: nowrap;
             }}
             .review-toolbar-nav-item::before,
@@ -3432,9 +3432,18 @@ def render_review_simulations_screen(portfolio: pd.DataFrame, user: dict) -> Non
             div[data-testid="stVerticalBlock"]:has(.review-toolbar-nav-scope) div[data-baseweb="select"] input {{
                 color: #4E6276 !important;
                 font-family: "Source Sans Pro", sans-serif !important;
-                font-size: 0.92rem !important;
+                font-size: 0.88rem !important;
                 font-weight: 400 !important;
-                line-height: 1.2 !important;
+                line-height: 1.15 !important;
+            }}
+            div[role="listbox"] [role="option"],
+            div[role="listbox"] [role="option"] span,
+            ul[role="listbox"] li,
+            ul[role="listbox"] li span {{
+                font-family: "Source Sans Pro", sans-serif !important;
+                font-size: 0.88rem !important;
+                font-weight: 400 !important;
+                line-height: 1.15 !important;
             }}
             .review-toolbar-minor-note {{
                 margin-top: 0.08rem;
