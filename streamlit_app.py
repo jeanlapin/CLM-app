@@ -117,15 +117,6 @@ GEMINI_MODEL_DEFAULT = "gemini-2.5-flash"
 GEMINI_MAX_BATCH_SIZE = 10
 GEMINI_API_TIMEOUT_SECONDS = 60
 REVIEW_SIM_GEMINI_KEY_STATE = "review_sim_gemini_api_key"
-AGENT_IA_PROMPT_STATE = "agent_ia_review_edd_prompt"
-AGENT_IA_PROMPT_WIDGET_STATE = "agent_ia_review_edd_prompt_widget"
-AGENT_IA_ADMIN_SUBMENU_STATE = "admin_data_submenu"
-DEFAULT_REVIEW_EDD_PROMPT = (
-    "Tu es un analyste conformité. Pour chaque SIREN sélectionné, prépare les consignes de revue en analysant l’ensemble des données "
-    "de base source, l’ensemble des indicateurs source, ainsi que le contexte de simulation (statut de vigilance réel, alertes calculées, "
-    "risque, statut EDD et dates de revue). La réponse doit contenir : diagnostic, actions prioritaires, justificatifs à demander, "
-    "points de contrôle, et statut de vigilance estimé après remédiation."
-)
 REVIEW_SIM_PDF_DIR = "review_simulation_pdfs"
 REVIEW_SIM_PDF_FONT_REGULAR = "CMDejaVuSans"
 REVIEW_SIM_PDF_FONT_BOLD = "CMDejaVuSans-Bold"
@@ -1387,7 +1378,7 @@ def render_sidebar_brand(user: dict | None = None) -> None:
             <div class="cm-sidebar-brand">
                 <img src="{LOGO_DATA_URI}" alt="Logo Classification Management" />
                 <div>
-                    <div class="cm-sidebar-brand-title">CLASSIFICATION MANAGEMENT</div>
+                    <div class="cm-sidebar-brand-title">CLASSIFICATION<br/>MANAGEMENT</div>
                     <div class="cm-sidebar-brand-subtitle">Portefeuille & gouvernance des risques</div>
                 </div>
             </div>
@@ -1395,7 +1386,7 @@ def render_sidebar_brand(user: dict | None = None) -> None:
             unsafe_allow_html=True,
         )
         if user is not None:
-            st.caption(f"{user['display_name']} · {user['role']}")
+            st.caption(f"Connecté en tant que {user['display_name']}")
 
 
 
@@ -1447,10 +1438,10 @@ def render_home_showcase(user: dict | None = None) -> None:
         else:
             scope_value = str(len(user["societes_autorisees"]))
             scope_text = "Votre périmètre est limité aux sociétés autorisées sur votre compte."
-        published_value = format_manifest_date(manifest.get("published_at_utc")) if (manifest and manifest.get("published_at_utc")) else "En attente"
+        published_value = format_manifest_date(manifest.get("published_at_utc")) if manifest else "En attente"
         published_text = (
             "Jeu actif publié par {}.".format(manifest.get("published_by_name") or manifest.get("published_by") or "inconnu")
-            if (manifest and manifest.get("published_at_utc")) else
+            if manifest else
             "Aucun jeu de données n’a encore été publié."
         )
         cards = [
@@ -1468,7 +1459,7 @@ def render_home_showcase(user: dict | None = None) -> None:
                 "text": published_text,
                 "foot": (
                     "Sociétés : {}".format(manifest.get("societes_count", 0))
-                    if (manifest and manifest.get("published_at_utc")) else "Publication requise"
+                    if manifest else "Publication requise"
                 ),
             },
             {
@@ -1689,10 +1680,6 @@ def login_form() -> None:
 
 def logout_button() -> None:
     if st.button("Se déconnecter"):
-        st.session_state.pop(REVIEW_SIM_GEMINI_KEY_STATE, None)
-        st.session_state.pop(AGENT_IA_PROMPT_STATE, None)
-        st.session_state.pop(AGENT_IA_PROMPT_WIDGET_STATE, None)
-        st.session_state.pop(AGENT_IA_ADMIN_SUBMENU_STATE, None)
         st.session_state.pop("authenticated_user", None)
         st.rerun()
 
@@ -1819,65 +1806,10 @@ def persist_review_planning_settings(freq_map: dict[str, int], cap_map: dict[str
     save_manifest(manifest)
 
 
-def load_agent_ia_settings() -> dict[str, object]:
-    manifest = load_manifest() or {}
-    saved = manifest.get("agent_ia_settings") or {}
-    prompt = str(saved.get("review_edd_prompt") or "").strip() or DEFAULT_REVIEW_EDD_PROMPT
-    return {
-        "review_edd_prompt": prompt,
-        "saved_at_utc": saved.get("saved_at_utc"),
-        "saved_by": saved.get("saved_by"),
-        "saved_by_name": saved.get("saved_by_name"),
-    }
-
-
-def persist_agent_ia_settings(review_edd_prompt: str, user: dict | None = None) -> None:
-    prompt = str(review_edd_prompt or "").strip() or DEFAULT_REVIEW_EDD_PROMPT
-    manifest = load_manifest() or {}
-    manifest["agent_ia_settings"] = {
-        "review_edd_prompt": prompt,
-        "saved_at_utc": datetime.now(timezone.utc).isoformat(),
-        "saved_by": (user or {}).get("username"),
-        "saved_by_name": (user or {}).get("display_name"),
-    }
-    save_manifest(manifest)
-
-
-
-def sync_agent_ia_prompt_session(saved_prompt: str | None = None, *, force: bool = False) -> None:
-    normalized_prompt = str(saved_prompt or "").strip() or DEFAULT_REVIEW_EDD_PROMPT
-    stored_prompt = str(st.session_state.get(AGENT_IA_PROMPT_STATE, "") or "")
-    widget_prompt = str(st.session_state.get(AGENT_IA_PROMPT_WIDGET_STATE, "") or "")
-    if force or not stored_prompt.strip():
-        st.session_state[AGENT_IA_PROMPT_STATE] = normalized_prompt
-    if force or not widget_prompt.strip():
-        st.session_state[AGENT_IA_PROMPT_WIDGET_STATE] = normalized_prompt
-
-
-
-def autosave_agent_ia_prompt(user: dict | None = None) -> None:
-    prompt = str(st.session_state.get(AGENT_IA_PROMPT_WIDGET_STATE, "") or "").strip() or DEFAULT_REVIEW_EDD_PROMPT
-    st.session_state[AGENT_IA_PROMPT_STATE] = prompt
-    st.session_state[AGENT_IA_PROMPT_WIDGET_STATE] = prompt
-    persist_agent_ia_settings(prompt, user=user)
-    st.session_state["agent_ia_prompt_notice"] = "Le prompt Revue EDD a été enregistré."
-
-
-
-def reset_agent_ia_prompt(user: dict | None = None) -> None:
-    st.session_state[AGENT_IA_PROMPT_STATE] = DEFAULT_REVIEW_EDD_PROMPT
-    st.session_state[AGENT_IA_PROMPT_WIDGET_STATE] = DEFAULT_REVIEW_EDD_PROMPT
-    persist_agent_ia_settings(DEFAULT_REVIEW_EDD_PROMPT, user=user)
-    st.session_state["agent_ia_prompt_notice"] = "Le prompt Revue EDD a été réinitialisé puis enregistré."
-
 
 
 def clear_review_simulation_ephemeral_state() -> None:
-    # La clé API Gemini est désormais saisie dans le menu latéral "Agent IA"
-    # et reste disponible pendant toute la session courante. Elle n'est jamais
-    # persistée et disparaît naturellement à la fermeture de l'application ou
-    # lors d'une déconnexion explicite.
-    return
+    st.session_state.pop(REVIEW_SIM_GEMINI_KEY_STATE, None)
 
 
 def clear_ephemeral_state_if_view_changes(next_view: str) -> None:
@@ -3193,19 +3125,27 @@ def render_review_simulation_table(df: pd.DataFrame, key: str) -> list[int]:
 
 def render_review_simulations_screen(portfolio: pd.DataFrame, user: dict) -> None:
     render_home_hero("Revues & Simulations")
+    nav = render_primary_navigation("review_simulations")
+    if nav == "portfolio":
+        open_portfolio_view()
+        st.rerun()
+    if nav == "analysis":
+        open_analysis_view()
+        st.rerun()
+    if nav == "review_dates":
+        open_review_dates_view()
+        st.rerun()
 
     base_df = build_review_simulation_working_table(portfolio)
     if base_df.empty:
         st.info("Aucun SIREN disponible pour préparer une revue sur le périmètre courant.")
         return
 
-    agent_ia_settings = load_agent_ia_settings()
-    prompt_value = str(agent_ia_settings.get("review_edd_prompt") or "").strip() or DEFAULT_REVIEW_EDD_PROMPT
-    gemini_api_key = str(st.session_state.get(REVIEW_SIM_GEMINI_KEY_STATE, "") or "").strip()
-    gemini_status_label = (
-        "chargée pour cette session"
-        if gemini_api_key else
-        "à saisir dans Administration des données > Agent IA"
+    default_prompt = (
+        "Tu es un analyste conformité. Pour chaque SIREN sélectionné, prépare les consignes de revue en analysant l’ensemble des données "
+        "de base source, l’ensemble des indicateurs source, ainsi que le contexte de simulation (statut de vigilance réel, alertes calculées, "
+        "risque, statut EDD et dates de revue). La réponse doit contenir : diagnostic, actions prioritaires, justificatifs à demander, "
+        "points de contrôle, et statut de vigilance estimé après remédiation."
     )
 
     st.markdown(
@@ -3216,8 +3156,8 @@ def render_review_simulations_screen(portfolio: pd.DataFrame, user: dict) -> Non
             padding: 0.78rem 0.96rem;
             border-radius: 18px;
             border: 1px solid rgba(22, 58, 89, 0.12);
-            background: rgba(255, 255, 255, 0.78);
-            box-shadow: 0 10px 22px rgba(22, 58, 89, 0.06);
+            background: rgba(255, 255, 255, 0.92);
+            box-shadow: 0 8px 18px rgba(22, 58, 89, 0.04);
         }}
         .review-screen-compact-title {{
             font-family: 'Montserrat', sans-serif;
@@ -3239,16 +3179,31 @@ def render_review_simulations_screen(portfolio: pd.DataFrame, user: dict) -> Non
         <div class='review-screen-compact-shell'>
             <div class='review-screen-compact-title'>Revues &amp; Simulations</div>
             <div class='review-screen-compact-note'>
-                Sélectionnez un lot de SIREN, mettez à jour le statut estimé ou lancez Gemini.
-                <strong>Modèle :</strong> {escape(GEMINI_MODEL_DEFAULT)} ·
-                <strong>Prompt :</strong> Revue EDD central ·
-                <strong>Clé API :</strong> {escape(gemini_status_label)}
+                Sélectionnez un lot de SIREN, ajustez le statut estimé, lancez Gemini puis exportez les résultats.
+                <strong>Modèle :</strong> {escape(GEMINI_MODEL_DEFAULT)}
             </div>
         </div>
         """,
         unsafe_allow_html=True,
     )
-    base_prompt = prompt_value
+
+    top_left, top_right = st.columns([1.45, 3.55])
+    with top_left:
+        gemini_api_key = st.text_input(
+            "Clé API Gemini",
+            type="password",
+            key=REVIEW_SIM_GEMINI_KEY_STATE,
+            placeholder="AIza...",
+            help="Clé éphémère : elle n’est pas sauvegardée et est effacée lorsque vous changez d’écran ou fermez l’application.",
+        ).strip()
+        st.caption(f"Modèle utilisé : {GEMINI_MODEL_DEFAULT}. La clé n’est conservée qu’en mémoire de session.")
+    with top_right:
+        base_prompt = st.text_area(
+            "Prompt Gemini prêt à l’emploi",
+            value=default_prompt,
+            height=150,
+            key="review_sim_prompt_preview",
+        ).strip() or default_prompt
 
     search_term = st.text_input(
         "Rechercher un SIREN ou une dénomination",
@@ -3293,18 +3248,26 @@ def render_review_simulations_screen(portfolio: pd.DataFrame, user: dict) -> Non
         st.info("Aucun SIREN ne correspond au filtre de statut de vigilance retenu.")
         return
 
-    st.markdown(
-        "<div class='cm-analysis-hint-text'>Sélectionnez une ou plusieurs lignes du tableau ci-dessous pour alimenter le menu d’actions placé au-dessus. La tendance est matérialisée par une icône colorée : 🔴 ▲ aggravation, 🟠 • stabilité, 🟢 ▼ amélioration.</div>",
-        unsafe_allow_html=True,
-    )
-
-    action_menu_placeholder = st.empty()
-    table_placeholder = st.empty()
+    hint_cols = st.columns([6.0, 2.4, 2.0])
+    with hint_cols[0]:
+        st.markdown(
+            "<div class='cm-analysis-hint-text'>Sélectionnez une ou plusieurs lignes du tableau pour préparer un lot, modifier le statut estimé et piloter les clients sous-jacents. La tendance est matérialisée par une icône colorée : 🔴 ▲ aggravation, 🟠 • stabilité, 🟢 ▼ amélioration.</div>",
+            unsafe_allow_html=True,
+        )
+    with hint_cols[1]:
+        st.markdown(
+            "<div class='cm-analysis-hint-action'><a class='cm-analysis-jump-btn' href='#clients-sous-jacents'>Voir les clients sous-jacents</a></div>",
+            unsafe_allow_html=True,
+        )
+    with hint_cols[2]:
+        st.markdown("<div style='height:0.15rem'></div>", unsafe_allow_html=True)
+        if st.button("Effacer la sélection", key="review_sim_clear_selection", type="secondary", use_container_width=True):
+            st.session_state["review_sim_selected_keys"] = []
+            st.session_state["review_sim_table_version"] = int(st.session_state.get("review_sim_table_version", 0)) + 1
+            st.rerun()
 
     table_version = int(st.session_state.get("review_sim_table_version", 0))
-    with table_placeholder.container():
-        st.markdown('<h3 class="cm-section-title">Sociétés du lot à traiter</h3>', unsafe_allow_html=True)
-        table_selected_rows = render_review_simulation_table(working_df, key=f"review_sim_table_{table_version}")
+    table_selected_rows = render_review_simulation_table(working_df, key=f"review_sim_table_{table_version}")
 
     if table_selected_rows:
         st.session_state["review_sim_selected_keys"] = review_sim_selection_keys(working_df, table_selected_rows)
@@ -3312,420 +3275,135 @@ def render_review_simulations_screen(portfolio: pd.DataFrame, user: dict) -> Non
         st.session_state["review_sim_selected_keys"] = []
 
     selected_keys = st.session_state.get("review_sim_selected_keys", [])
-    has_saved_selection = bool(selected_keys)
     selected_rows = review_sim_rows_from_selection(working_df, selected_keys)
     selected_count = len(selected_rows)
-    selected_df = working_df.iloc[selected_rows].copy() if selected_rows else working_df.iloc[0:0].copy()
-    pdf_items = review_simulation_available_pdfs(working_df, selected_rows)
 
-    status_options = list(VIGILANCE_ORDER)
-    default_value = "Vigilance Modérée"
-    if selected_rows:
-        current_values = working_df.iloc[selected_rows][REVIEW_SIM_EST_LABEL].astype(str).dropna().unique().tolist()
-        if len(current_values) == 1 and current_values[0] in status_options:
-            default_value = current_values[0]
-        else:
-            first_value = str(working_df.iloc[selected_rows[0]][REVIEW_SIM_EST_LABEL]).strip()
-            if first_value in status_options:
-                default_value = first_value
-
-    preview_text = ""
-    if selected_count:
-        preview_labels = []
-        for _, row in selected_df[["SIREN", "Dénomination"]].head(3).iterrows():
-            preview_labels.append(f"{row.get('SIREN', '')} — {row.get('Dénomination', '')}")
-        preview_text = " • ".join(preview_labels)
-        if selected_count > 3:
-            preview_text += f" • +{selected_count - 3} autre(s)"
-
-    with action_menu_placeholder.container():
+    c1, c2, c3 = st.columns([3.1, 2.2, 1.5])
+    with c1:
+        st.caption("Le statut de vigilance estimé peut être ajusté pour toutes les lignes sélectionnées. Les jauges estimées se recalculent après chaque mise à jour.")
+        status_options = list(VIGILANCE_ORDER)
+        default_value = "Vigilance Modérée"
+        if selected_rows:
+            current_values = working_df.iloc[selected_rows][REVIEW_SIM_EST_LABEL].astype(str).dropna().unique().tolist()
+            if len(current_values) == 1 and current_values[0] in status_options:
+                default_value = current_values[0]
+            else:
+                first_value = str(working_df.iloc[selected_rows[0]][REVIEW_SIM_EST_LABEL]).strip()
+                if first_value in status_options:
+                    default_value = first_value
+        manual_status = st.selectbox(
+            "Statut de vigilance estimé à appliquer aux lignes sélectionnées",
+            options=status_options,
+            index=status_options.index(default_value),
+            key="review_sim_manual_status",
+            disabled=(selected_count == 0),
+        )
+        if st.button("Mettre à jour le statut estimé", type="secondary", key="review_sim_apply_manual_status", use_container_width=True, disabled=(selected_count == 0)):
+            updated_df, updated_count = apply_manual_estimated_status(working_df, selected_rows, manual_status)
+            pdf_count, pdf_errors = persist_review_simulation_subset(updated_df, selected_rows)
+            notice = f"{updated_count} SIREN mis à jour avec le statut estimé « {manual_status} »."
+            if pdf_count:
+                notice += f" {pdf_count} PDF structuré(s) généré(s) ou mis à jour."
+            st.session_state["review_sim_notice"] = notice
+            if pdf_errors:
+                st.session_state["review_sim_warning"] = " | ".join(pdf_errors[:3])
+            st.rerun()
+    with c2:
         st.markdown(
-            f"""
-            <style>
-            .review-toolbar-shell {{
-                margin: 0.2rem 0 0.8rem 0;
-                padding: 1rem 1.08rem 0.92rem 1.08rem;
-                border-radius: 20px;
-                border: 1px solid rgba(22, 58, 89, 0.12);
-                background: linear-gradient(180deg, rgba(255,255,255,0.98), rgba(243,247,252,0.96));
-                box-shadow: 0 10px 24px rgba(22, 58, 89, 0.06);
-            }}
-            .review-toolbar-kicker {{
-                font-family: 'Sora', sans-serif;
-                font-size: 0.74rem;
-                font-weight: 800;
-                letter-spacing: 0.08em;
-                text-transform: uppercase;
-                color: {PRIMARY_COLOR};
-                margin-bottom: 0.18rem;
-            }}
-            .review-toolbar-title {{
-                font-family: 'Montserrat', sans-serif;
-                font-size: 1.02rem;
-                font-weight: 800;
-                color: {PRIMARY_COLOR};
-                margin-bottom: 0.2rem;
-            }}
-            .review-toolbar-note {{
-                color: #5B7084;
-                font-size: 0.84rem;
-                line-height: 1.45;
-                margin-bottom: 0.65rem;
-            }}
-            .review-toolbar-band {{
-                display: flex;
-                flex-wrap: wrap;
-                gap: 0.5rem;
-                margin-bottom: 0.45rem;
-            }}
-            .review-toolbar-chip {{
-                display: inline-flex;
-                align-items: center;
-                gap: 0.42rem;
-                padding: 0.34rem 0.72rem;
-                border-radius: 999px;
-                background: rgba(22, 58, 89, 0.07);
-                color: {PRIMARY_COLOR};
-                font-size: 0.8rem;
-                font-weight: 700;
-                border: 1px solid rgba(22, 58, 89, 0.08);
-            }}
-            .review-toolbar-chip strong {{
-                font-weight: 800;
-            }}
-            .review-toolbar-preview {{
-                color: #40607B;
-                font-size: 0.82rem;
-                line-height: 1.42;
-                margin-top: 0.05rem;
-            }}
-            .review-toolbar-group-title {{
-                font-family: 'Sora', sans-serif;
-                font-size: 0.79rem;
-                font-weight: 800;
-                letter-spacing: 0.05em;
-                text-transform: uppercase;
-                color: {PRIMARY_COLOR};
-                margin: 0 0 0.18rem 0;
-            }}
-            .review-toolbar-group-note {{
-                color: #5B7084;
-                font-size: 0.78rem;
-                line-height: 1.42;
-                margin-bottom: 0.2rem;
-                min-height: 2.2rem;
-            }}
-            .review-toolbar-link {{
-                display: inline-flex;
-                align-items: center;
-                justify-content: center;
-                width: 100%;
-                min-height: 2.9rem;
-                padding: 0 0.95rem;
-                border-radius: 14px;
-                background: #FFFFFF;
-                color: {PRIMARY_COLOR} !important;
-                text-decoration: none !important;
-                border: 1.5px solid rgba(22, 58, 89, 0.18);
-                font-family: 'Sora', sans-serif;
-                font-size: 0.82rem;
-                font-weight: 700;
-                text-align: center;
-                line-height: 1.15;
-                box-shadow: none;
-                transition: background 0.18s ease, border-color 0.18s ease, transform 0.18s ease;
-            }}
-            .review-toolbar-link:hover {{
-                background: #F4F8FC;
-                border-color: rgba(22, 58, 89, 0.28);
-                color: {PRIMARY_COLOR} !important;
-                transform: translateY(-1px);
-            }}
-            div[data-testid="stVerticalBlock"]:has(.review-toolbar-actions-scope) {{
-                gap: 0.8rem;
-            }}
-            div[data-testid="stVerticalBlock"]:has(.review-toolbar-group-scope) {{
-                background: rgba(255, 255, 255, 0.98);
-                border: 1px solid rgba(22, 58, 89, 0.12);
-                border-radius: 18px;
-                padding: 0.92rem 0.92rem 1rem 0.92rem;
-                box-shadow: 0 8px 18px rgba(22, 58, 89, 0.05);
-                height: 100%;
-            }}
-            div[data-testid="stVerticalBlock"]:has(.review-toolbar-group-scope) > div {{
-                gap: 0.62rem;
-            }}
-            div[data-testid="stVerticalBlock"]:has(.review-toolbar-group-scope) .stButton > button,
-            div[data-testid="stVerticalBlock"]:has(.review-toolbar-group-scope) .stDownloadButton > button {{
-                min-height: 2.9rem !important;
-                height: 2.9rem !important;
-                border-radius: 14px !important;
-                font-family: 'Sora', sans-serif !important;
-                font-size: 0.82rem !important;
-                font-weight: 700 !important;
-                letter-spacing: 0.01em !important;
-                box-shadow: none !important;
-                white-space: nowrap !important;
-                padding: 0 0.95rem !important;
-                justify-content: center !important;
-            }}
-            div[data-testid="stVerticalBlock"]:has(.review-toolbar-group-scope) .stButton > button[kind="secondary"],
-            div[data-testid="stVerticalBlock"]:has(.review-toolbar-group-scope) .stDownloadButton > button[kind="secondary"] {{
-                background: #FFFFFF !important;
-                color: {PRIMARY_COLOR} !important;
-                border: 1.5px solid rgba(22, 58, 89, 0.18) !important;
-            }}
-            div[data-testid="stVerticalBlock"]:has(.review-toolbar-group-scope) .stButton > button[kind="secondary"]:hover,
-            div[data-testid="stVerticalBlock"]:has(.review-toolbar-group-scope) .stDownloadButton > button[kind="secondary"]:hover {{
-                background: #F4F8FC !important;
-                color: {PRIMARY_COLOR} !important;
-                border-color: rgba(22, 58, 89, 0.28) !important;
-                filter: none !important;
-            }}
-            div[data-testid="stVerticalBlock"]:has(.review-toolbar-group-scope) .stButton > button[kind="primary"],
-            div[data-testid="stVerticalBlock"]:has(.review-toolbar-group-scope) .stDownloadButton > button[kind="primary"] {{
-                background: linear-gradient(135deg, {PRIMARY_COLOR}, #245782) !important;
-                color: #FFFFFF !important;
-                border: 1px solid {PRIMARY_COLOR} !important;
-            }}
-            div[data-testid="stVerticalBlock"]:has(.review-toolbar-group-scope) .stButton > button:disabled,
-            div[data-testid="stVerticalBlock"]:has(.review-toolbar-group-scope) .stDownloadButton > button:disabled {{
-                background: #F5F8FB !important;
-                color: #8CA1B4 !important;
-                border: 1px solid #D8E3EE !important;
-                box-shadow: none !important;
-                filter: none !important;
-                transform: none !important;
-            }}
-            div[data-testid="stVerticalBlock"]:has(.review-toolbar-group-scope) .stButton > button:hover,
-            div[data-testid="stVerticalBlock"]:has(.review-toolbar-group-scope) .stDownloadButton > button:hover {{
-                transform: translateY(-1px);
-            }}
-            div[data-testid="stVerticalBlock"]:has(.review-toolbar-group-scope) .stSelectbox label,
-            div[data-testid="stVerticalBlock"]:has(.review-toolbar-group-scope) .stDownloadButton label {{
-                font-family: 'Sora', sans-serif !important;
-                font-size: 0.76rem !important;
-                font-weight: 700 !important;
-                color: {PRIMARY_COLOR} !important;
-                letter-spacing: 0.02em !important;
-            }}
-            div[data-testid="stVerticalBlock"]:has(.review-toolbar-group-scope) div[data-baseweb="select"] > div {{
-                min-height: 2.9rem;
-                border-radius: 14px;
-                border: 1.5px solid rgba(22, 58, 89, 0.18);
-                box-shadow: none;
-                background: #FFFFFF;
-            }}
-            div[data-testid="stVerticalBlock"]:has(.review-toolbar-group-scope) div[data-baseweb="select"] > div:hover {{
-                border-color: rgba(22, 58, 89, 0.28);
-            }}
-            div[data-testid="stVerticalBlock"]:has(.review-toolbar-group-scope) div[data-baseweb="select"] span,
-            div[data-testid="stVerticalBlock"]:has(.review-toolbar-group-scope) div[data-baseweb="select"] svg {{
-                color: {PRIMARY_COLOR} !important;
-                font-family: 'Sora', sans-serif !important;
-                font-size: 0.84rem !important;
-                font-weight: 700 !important;
-            }}
-            </style>
-            """,
+            f"<div class='cm-analysis-mode-note'><strong>{selected_count}</strong> ligne(s) sélectionnée(s)</div>",
             unsafe_allow_html=True,
         )
-
-        if selected_count:
-            summary_note = "Les actions ci-dessous s'appliquent directement à la sélection courante du tableau."
-        elif has_saved_selection:
-            summary_note = "La sélection mémorisée n'est plus visible avec les filtres actifs. Ajustez les filtres ou effacez la sélection."
-        else:
-            summary_note = "Sélectionnez une ou plusieurs sociétés dans le tableau pour activer le traitement, le PDF et les exports."
-
-        gemini_status = "Clé saisie" if gemini_api_key else "Clé requise"
-        summary_badges = [
-            f"<span class='review-toolbar-chip'><strong>{selected_count}</strong> société(s) sélectionnée(s)</span>",
-            f"<span class='review-toolbar-chip'><strong>{len(pdf_items)}</strong> PDF disponible(s)</span>",
-            f"<span class='review-toolbar-chip'><strong>{len(working_df)}</strong> société(s) visibles</span>",
-            f"<span class='review-toolbar-chip'>Gemini : <strong>{escape(gemini_status)}</strong></span>",
-        ]
-
-        st.markdown(
-            "<div class='review-toolbar-shell'>"
-            "<div class='review-toolbar-kicker'>Barre d’actions</div>"
-            "<div class='review-toolbar-title'>Pilotage des sociétés sélectionnées</div>"
-            f"<div class='review-toolbar-note'>{escape(summary_note)}</div>"
-            f"<div class='review-toolbar-band'>{''.join(summary_badges)}</div>"
-            + (f"<div class='review-toolbar-preview'><strong>Sélection courante :</strong> {escape(preview_text)}</div>" if preview_text else "")
-            + "</div>",
-            unsafe_allow_html=True,
-        )
-
-        st.markdown("<div class='review-toolbar-actions-scope'></div>", unsafe_allow_html=True)
-        group_selection_col, group_treatment_col, group_documents_col = st.columns([1, 1.08, 1.08], gap="medium")
-
-        with group_selection_col:
-            with st.container():
-                st.markdown(
-                    "<div class='review-toolbar-group-scope'></div>"
-                    "<div class='review-toolbar-group-title'>Sélection</div>"
-                    "<div class='review-toolbar-group-note'>Navigation vers les clients sous-jacents et remise à zéro de la sélection courante.</div>",
-                    unsafe_allow_html=True,
+        gemini_button_disabled = (selected_count == 0) or (not gemini_api_key)
+        if st.button(
+            f"Lancer Gemini sur la sélection (max {GEMINI_MAX_BATCH_SIZE})",
+            type="primary",
+            key="review_sim_generate_batch",
+            use_container_width=True,
+            disabled=gemini_button_disabled,
+        ):
+            base_source_df, indicators_source_df, _ = load_source_data()
+            source_df = build_review_simulation_source_dataset(portfolio, base_source_df, indicators_source_df)
+            with st.spinner("Analyse Gemini en cours sur les lignes sélectionnées…"):
+                updated_df, processed, errors = apply_gemini_review_simulation_batch(
+                    working_df,
+                    selected_rows,
+                    source_df,
+                    api_key=gemini_api_key,
+                    base_prompt=base_prompt,
+                    model=GEMINI_MODEL_DEFAULT,
                 )
-                st.markdown(
-                    "<a class='review-toolbar-link' href='#clients-sous-jacents' title='Afficher les clients sous-jacents liés à la sélection courante'>Voir les clients sous-jacents</a>",
-                    unsafe_allow_html=True,
-                )
-                if st.button(
-                    "Effacer la sélection",
-                    key="review_sim_clear_selection",
-                    type="secondary",
-                    use_container_width=True,
-                    disabled=(not has_saved_selection),
-                    help="Vide la sélection mémorisée du tableau des sociétés.",
-                ):
-                    st.session_state["review_sim_selected_keys"] = []
-                    st.session_state["review_sim_table_version"] = int(st.session_state.get("review_sim_table_version", 0)) + 1
-                    st.rerun()
-
-        with group_treatment_col:
-            with st.container():
-                st.markdown(
-                    "<div class='review-toolbar-group-scope'></div>"
-                    "<div class='review-toolbar-group-title'>Traitement</div>"
-                    "<div class='review-toolbar-group-note'>Mise à jour du statut estimé ou lancement de Gemini sur la sélection courante.</div>",
-                    unsafe_allow_html=True,
-                )
-                manual_status = st.selectbox(
-                    "Statut estimé",
-                    options=status_options,
-                    index=status_options.index(default_value),
-                    key="review_sim_manual_status",
-                    disabled=(selected_count == 0),
-                    help="Choisissez le statut estimé à appliquer à toutes les lignes sélectionnées.",
-                )
-                if st.button(
-                    "Appliquer le statut",
-                    type="secondary",
-                    key="review_sim_apply_manual_status",
-                    use_container_width=True,
-                    disabled=(selected_count == 0),
-                    help="Met à jour le statut estimé des sociétés sélectionnées.",
-                ):
-                    updated_df, updated_count = apply_manual_estimated_status(working_df, selected_rows, manual_status)
-                    pdf_count, pdf_errors = persist_review_simulation_subset(updated_df, selected_rows)
-                    notice = f"{updated_count} SIREN mis à jour avec le statut estimé « {manual_status} »."
-                    if pdf_count:
-                        notice += f" {pdf_count} PDF structuré(s) généré(s) ou mis à jour."
-                    st.session_state["review_sim_notice"] = notice
-                    if pdf_errors:
-                        st.session_state["review_sim_warning"] = " | ".join(pdf_errors[:3])
-                    st.rerun()
-
-                gemini_button_disabled = (selected_count == 0) or (not gemini_api_key)
-                if st.button(
-                    "Lancer Gemini",
-                    type="primary",
-                    key="review_sim_generate_batch",
-                    use_container_width=True,
-                    disabled=gemini_button_disabled,
-                    help=f"Analyse la sélection courante avec Gemini (maximum {GEMINI_MAX_BATCH_SIZE} SIREN envoyés).",
-                ):
-                    base_source_df, indicators_source_df, _ = load_source_data()
-                    source_df = build_review_simulation_source_dataset(portfolio, base_source_df, indicators_source_df)
-                    with st.spinner("Analyse Gemini en cours sur les lignes sélectionnées…"):
-                        updated_df, processed, errors = apply_gemini_review_simulation_batch(
-                            working_df,
-                            selected_rows,
-                            source_df,
-                            api_key=gemini_api_key,
-                            base_prompt=base_prompt,
-                            model=GEMINI_MODEL_DEFAULT,
-                        )
-                    pdf_count, pdf_errors = persist_review_simulation_subset(
-                        updated_df,
-                        selected_rows[:GEMINI_MAX_BATCH_SIZE],
-                        pdf_source_df=source_df,
-                        prompt_template=base_prompt,
-                    )
-                    combined_errors = list(errors)
-                    combined_errors.extend(pdf_errors)
-                    if processed == 0:
-                        st.session_state["review_sim_warning"] = combined_errors[0] if combined_errors else "Sélectionnez au moins un SIREN pour lancer Gemini."
-                    else:
-                        if selected_count > GEMINI_MAX_BATCH_SIZE:
-                            notice = f"{processed} SIREN traités par Gemini. Seuls les {GEMINI_MAX_BATCH_SIZE} premiers SIREN sélectionnés ont été envoyés."
-                        else:
-                            notice = f"{processed} SIREN traités par Gemini dans le lot courant."
-                        if pdf_count:
-                            notice += f" {pdf_count} PDF structuré(s) généré(s) ou mis à jour."
-                        st.session_state["review_sim_notice"] = notice
-                        if combined_errors:
-                            preview_errors = " | ".join(combined_errors[:3])
-                            if len(combined_errors) > 3:
-                                preview_errors += f" | +{len(combined_errors) - 3} autre(s) erreur(s)"
-                            st.session_state["review_sim_warning"] = preview_errors
-                    st.rerun()
-
-        with group_documents_col:
-            with st.container():
-                st.markdown(
-                    "<div class='review-toolbar-group-scope'></div>"
-                    "<div class='review-toolbar-group-title'>Documents</div>"
-                    "<div class='review-toolbar-group-note'>Téléchargement du PDF, export groupé des PDF et export du tableau visible.</div>",
-                    unsafe_allow_html=True,
-                )
-                if REPORTLAB_AVAILABLE and len(pdf_items) == 1:
-                    pdf_item = pdf_items[0]
-                    pdf_path = pdf_item.get("path")
-                    if isinstance(pdf_path, Path) and pdf_path.exists():
-                        st.download_button(
-                            label="Récupérer le PDF",
-                            data=pdf_path.read_bytes(),
-                            file_name=str(pdf_item.get("download_name", "revue_simulation.pdf")),
-                            mime="application/pdf",
-                            type="secondary",
-                            use_container_width=True,
-                            key="review_sim_single_pdf",
-                            help="Télécharge le PDF du SIREN sélectionné lorsque la sélection contient une seule société.",
-                        )
-                    else:
-                        st.button("Récupérer le PDF", disabled=True, type="secondary", use_container_width=True, key="review_sim_single_pdf_disabled")
+            pdf_count, pdf_errors = persist_review_simulation_subset(
+                updated_df,
+                selected_rows[:GEMINI_MAX_BATCH_SIZE],
+                pdf_source_df=source_df,
+                prompt_template=base_prompt,
+            )
+            combined_errors = list(errors)
+            combined_errors.extend(pdf_errors)
+            if processed == 0:
+                st.session_state["review_sim_warning"] = combined_errors[0] if combined_errors else "Sélectionnez au moins un SIREN pour lancer Gemini."
+            else:
+                if selected_count > GEMINI_MAX_BATCH_SIZE:
+                    notice = f"{processed} SIREN traités par Gemini. Seuls les {GEMINI_MAX_BATCH_SIZE} premiers SIREN sélectionnés ont été envoyés."
                 else:
-                    st.button("Récupérer le PDF", disabled=True, type="secondary", use_container_width=True, key="review_sim_single_pdf_placeholder")
-
-                if REPORTLAB_AVAILABLE and pdf_items:
-                    st.download_button(
-                        label="Exporter les PDF",
-                        data=review_simulation_pdfs_zip_bytes(pdf_items),
-                        file_name="revues_simulations_selection.zip",
-                        mime="application/zip",
-                        type="secondary",
-                        use_container_width=True,
-                        key="review_sim_pdf_zip",
-                        help="Télécharge tous les PDF disponibles sur la sélection courante dans un fichier ZIP.",
-                    )
-                else:
-                    st.button("Exporter les PDF", disabled=True, type="secondary", use_container_width=True, key="review_sim_pdf_zip_placeholder")
-
-                st.download_button(
-                    label="Exporter le CSV",
-                    data=dataframe_to_csv_bytes(build_review_simulation_export_dataframe(working_df)),
-                    file_name="revues_et_simulations.csv",
-                    mime="text/csv",
-                    type="secondary",
-                    use_container_width=True,
-                    key="review_sim_export_csv",
-                    help="Exporte le tableau Revues & Simulations visible, y compris la colonne « Explique moi ».",
-                )
-
+                    notice = f"{processed} SIREN traités par Gemini dans le lot courant."
+                if pdf_count:
+                    notice += f" {pdf_count} PDF structuré(s) généré(s) ou mis à jour."
+                st.session_state["review_sim_notice"] = notice
+                if combined_errors:
+                    preview_errors = " | ".join(combined_errors[:3])
+                    if len(combined_errors) > 3:
+                        preview_errors += f" | +{len(combined_errors) - 3} autre(s) erreur(s)"
+                    st.session_state["review_sim_warning"] = preview_errors
+            st.rerun()
         if not gemini_api_key:
-            st.caption("Saisissez la clé API Gemini dans la barre de gauche > Administration des données > Agent IA pour activer l’analyse automatique.")
-        elif REPORTLAB_AVAILABLE and selected_count == 1 and len(pdf_items) != 1:
-            st.caption("Le PDF devient téléchargeable après une simulation ayant renseigné « Explique moi » pour ce SIREN.")
-    if not REPORTLAB_AVAILABLE:
-        st.info(PDF_DEPENDENCY_ERROR_MESSAGE)
+            st.caption("Saisissez la clé API Gemini ci-dessus pour activer le traitement du lot.")
+    with c3:
+        st.download_button(
+            label="Exporter (.csv)",
+            data=dataframe_to_csv_bytes(build_review_simulation_export_dataframe(working_df)),
+            file_name="revues_et_simulations.csv",
+            mime="text/csv",
+            type="secondary",
+            use_container_width=True,
+            key="review_sim_export_csv",
+        )
 
     if st.session_state.get("review_sim_notice"):
         st.success(str(st.session_state.pop("review_sim_notice")))
     if st.session_state.get("review_sim_warning"):
         st.warning(str(st.session_state.pop("review_sim_warning")))
+
+    if not REPORTLAB_AVAILABLE:
+        st.info(PDF_DEPENDENCY_ERROR_MESSAGE)
+
+    pdf_items = review_simulation_available_pdfs(working_df, selected_rows)
+    if REPORTLAB_AVAILABLE and pdf_items:
+        with st.expander("PDF structurés disponibles pour la sélection", expanded=False):
+            st.caption("Chaque PDF est régénéré automatiquement quand la colonne « Explique moi » est renseignée ou mise à jour pour le SIREN concerné.")
+            if len(pdf_items) > 1:
+                st.download_button(
+                    label="Télécharger tous les PDF sélectionnés (.zip)",
+                    data=review_simulation_pdfs_zip_bytes(pdf_items),
+                    file_name="revues_simulations_selection.zip",
+                    mime="application/zip",
+                    type="secondary",
+                    use_container_width=True,
+                    key="review_sim_pdf_zip",
+                )
+            for idx, item in enumerate(pdf_items):
+                path = item.get("path")
+                if not isinstance(path, Path) or not path.exists():
+                    continue
+                st.download_button(
+                    label=f"Télécharger {item.get('label', 'PDF')}",
+                    data=path.read_bytes(),
+                    file_name=str(item.get("download_name", "revue_simulation.pdf")),
+                    mime="application/pdf",
+                    type="secondary",
+                    use_container_width=True,
+                    key=f"review_sim_pdf_{idx}",
+                )
 
     st.divider()
     st.markdown("<div id='clients-sous-jacents'></div>", unsafe_allow_html=True)
@@ -3743,8 +3421,9 @@ def render_review_simulations_screen(portfolio: pd.DataFrame, user: dict) -> Non
             detail_df,
             height=460,
             hide_index=True,
-            key="review_sim_detail_table",
+            key_prefix="review_sim_detail_clients",
         )
+
 
 def build_dataset_cache_signature() -> str:
     manifest = load_manifest() or {}
@@ -4148,199 +3827,66 @@ def style_dataframe(df: pd.DataFrame) -> pd.io.formats.style.Styler:
     return styler
 
 
-def render_dataset_admin_submenu(manifest: dict | None, user: dict) -> None:
-    if manifest and manifest.get("published_at_utc"):
-        st.success(
-            "Jeu actif : publié le {} par {}.".format(
-                format_manifest_date(manifest.get("published_at_utc")),
-                manifest.get("published_by_name") or manifest.get("published_by") or "inconnu",
+def render_admin_data_manager(user: dict) -> None:
+    if user["role"] != "admin":
+        return
+
+    manifest = load_manifest()
+    with st.sidebar.expander("Administration des données", expanded=False):
+        if manifest:
+            st.success(
+                "Jeu actif : publié le {} par {}.".format(
+                    format_manifest_date(manifest.get("published_at_utc")),
+                    manifest.get("published_by_name") or manifest.get("published_by") or "inconnu",
+                )
             )
-        )
-        st.caption(
-            "Sociétés : {} | Lignes 01/02/03 : {}/{}/{}".format(
-                manifest.get("societes_count", 0),
-                manifest.get("row_counts", {}).get("base", 0),
-                manifest.get("row_counts", {}).get("indicators", 0),
-                manifest.get("row_counts", {}).get("history", 0),
+            st.caption(
+                "Sociétés : {} | Lignes 01/02/03 : {}/{}/{}".format(
+                    manifest.get("societes_count", 0),
+                    manifest.get("row_counts", {}).get("base", 0),
+                    manifest.get("row_counts", {}).get("indicators", 0),
+                    manifest.get("row_counts", {}).get("history", 0),
+                )
             )
+        else:
+            st.warning("Aucun jeu de données publié pour le moment.")
+
+        st.markdown("**Publier un nouveau jeu de données**")
+        upload_base = st.file_uploader(
+            "01_Donnees_base_source.csv",
+            type=["csv"],
+            key="admin_upload_base",
         )
-    else:
-        st.warning("Aucun jeu de données publié pour le moment.")
-
-    st.markdown("**Publier un nouveau jeu de données**")
-    upload_base = st.file_uploader(
-        "01_Donnees_base_source.csv",
-        type=["csv"],
-        key="admin_upload_base",
-    )
-    upload_indicators = st.file_uploader(
-        "02_Indicateurs_source.csv",
-        type=["csv"],
-        key="admin_upload_indicators",
-    )
-    upload_history = st.file_uploader(
-        "03_Indicateurs_historique.csv",
-        type=["csv"],
-        key="admin_upload_history",
-    )
-
-    if st.button("Publier ces 3 fichiers", type="primary", key="publish_dataset"):
-        try:
-            publish_uploaded_dataset(
-                {
-                    "base": upload_base,
-                    "indicators": upload_indicators,
-                    "history": upload_history,
-                },
-                user,
-            )
-            st.success("Le nouveau jeu de données est maintenant actif pour tous les utilisateurs.")
-            st.rerun()
-        except Exception as exc:
-            st.error(str(exc))
-
-    if manifest and manifest.get("published_at_utc") and st.button("Supprimer le jeu actif", type="secondary", key="clear_dataset"):
-        clear_published_dataset()
-        st.warning("Le jeu actif a été supprimé.")
-        st.rerun()
-
-
-def render_agent_ia_content(user: dict, manifest: dict | None = None) -> None:
-    settings = (manifest or load_manifest() or {}).get("agent_ia_settings") or {}
-    saved_prompt = str(settings.get("review_edd_prompt") or "").strip() or DEFAULT_REVIEW_EDD_PROMPT
-    sync_agent_ia_prompt_session(saved_prompt)
-
-    st.text_input(
-        "Clé API Gemini",
-        type="password",
-        key=REVIEW_SIM_GEMINI_KEY_STATE,
-        placeholder="AIza...",
-        help="Clé éphémère : elle n’est jamais sauvegardée et disparaît lorsque vous fermez l’application ou vous déconnectez.",
-    )
-    st.caption(f"Modèle utilisé : {GEMINI_MODEL_DEFAULT}. La clé reste uniquement en mémoire pendant la session courante.")
-
-    if user.get("role") == "admin":
-        st.text_area(
-            "Prompt Revue EDD",
-            key=AGENT_IA_PROMPT_WIDGET_STATE,
-            height=260,
-            help="Prompt central utilisé par l’écran Revues & Simulations pour construire la consigne envoyée à Gemini.",
-            on_change=autosave_agent_ia_prompt,
-            kwargs={"user": user},
+        upload_indicators = st.file_uploader(
+            "02_Indicateurs_source.csv",
+            type=["csv"],
+            key="admin_upload_indicators",
         )
-        action_col, note_col = st.columns([1.1, 1.9])
-        with action_col:
-            st.button(
-                "Réinitialiser le prompt",
-                use_container_width=True,
-                key="agent_ia_reset_prompt",
-                on_click=reset_agent_ia_prompt,
-                kwargs={"user": user},
-            )
-        with note_col:
-            st.caption("Le prompt est enregistré automatiquement dès qu’il est modifié.")
-
-        prompt_notice = st.session_state.pop("agent_ia_prompt_notice", "")
-        if prompt_notice:
-            st.success(str(prompt_notice))
-
-        saved_meta = load_agent_ia_settings()
-        saved_at = format_manifest_date(saved_meta.get("saved_at_utc")) if saved_meta.get("saved_at_utc") else None
-        saved_by = saved_meta.get("saved_by_name") or saved_meta.get("saved_by") or "inconnu"
-        if saved_at:
-            st.caption(f"Dernier enregistrement : {saved_at} par {saved_by}.")
-    else:
-        st.text_area(
-            "Prompt Revue EDD",
-            value=saved_prompt,
-            height=260,
-            disabled=True,
+        upload_history = st.file_uploader(
+            "03_Indicateurs_historique.csv",
+            type=["csv"],
+            key="admin_upload_history",
         )
-        st.caption("Le prompt Revue EDD est piloté par un administrateur et utilisé tel quel dans Revues & Simulations.")
 
-
-
-def render_agent_ia_screen(user: dict) -> None:
-    render_home_hero("Agent IA")
-    st.caption("Administration des données")
-    st.markdown(
-        "<div class='cm-premium-card'><strong>Configuration centralisée de l’agent.</strong> La clé API reste éphémère et le prompt <em>Revue EDD</em> est utilisé par l’écran Revues &amp; Simulations.</div>",
-        unsafe_allow_html=True,
-    )
-    render_agent_ia_content(user, load_manifest())
-
-
-
-def render_dataset_admin_screen(user: dict) -> None:
-    render_home_hero("Jeu de données")
-    st.caption("Administration des données")
-    render_dataset_admin_submenu(load_manifest(), user)
-
-
-
-def render_sidebar_navigation(user: dict) -> None:
-    current_view = str(st.session_state.get("cm_view", "portfolio") or "portfolio")
-    main_views = {
-        "portfolio": ("Portefeuille", open_portfolio_view),
-        "analysis": ("Analyse", open_analysis_view),
-        "review_dates": ("Planification des revues", open_review_dates_view),
-        "review_simulations": ("Revues & Simulations", open_review_simulations_view),
-    }
-    admin_views = {"dataset_admin", "agent_ia"}
-
-    if current_view in main_views:
-        st.session_state["cm_last_main_view"] = current_view
-    active_main_view = str(st.session_state.get("cm_last_main_view", "portfolio") or "portfolio")
-    if active_main_view not in main_views:
-        active_main_view = "portfolio"
-        st.session_state["cm_last_main_view"] = active_main_view
-
-    with st.sidebar:
-        st.markdown("<div class='cm-sidebar-section-caption'>Navigation</div>", unsafe_allow_html=True)
-        main_options = list(main_views.keys())
-        main_select_key = "cm_sidebar_main_select"
-        desired_main_view = current_view if current_view in main_views else active_main_view
-        if st.session_state.get(main_select_key) not in main_options or current_view in main_views:
-            st.session_state[main_select_key] = desired_main_view
-        selected_main_view = st.selectbox(
-            "Navigation principale",
-            options=main_options,
-            format_func=lambda view_key: main_views[view_key][0],
-            key=main_select_key,
-            label_visibility="collapsed",
-        )
-        if selected_main_view != current_view and (current_view in main_views or selected_main_view != active_main_view):
-            main_views[selected_main_view][1]()
-            st.rerun()
-
-        with st.expander("Administration des données", expanded=current_view in admin_views):
-            admin_options = []
-            if user.get("role") == "admin":
-                admin_options.append("dataset_admin")
-            admin_options.append("agent_ia")
-            admin_labels = {
-                "dataset_admin": "Jeu de données",
-                "agent_ia": "Agent IA",
-            }
-            admin_select_key = "cm_sidebar_admin_select"
-            default_admin_view = current_view if current_view in admin_options else admin_options[0]
-            if st.session_state.get(admin_select_key) not in admin_options or current_view in admin_views:
-                st.session_state[admin_select_key] = default_admin_view
-            selected_admin_view = st.selectbox(
-                "Sous-menu",
-                options=admin_options,
-                format_func=lambda view_key: admin_labels[view_key],
-                key=admin_select_key,
-                label_visibility="collapsed",
-            )
-            if st.button("Ouvrir", use_container_width=True, key="open_selected_admin_view") or (
-                current_view in admin_views and selected_admin_view != current_view
-            ):
-                if selected_admin_view == "dataset_admin":
-                    open_dataset_admin_view()
-                else:
-                    open_agent_ia_view()
+        if st.button("Publier ces 3 fichiers", type="primary", key="publish_dataset"):
+            try:
+                publish_uploaded_dataset(
+                    {
+                        "base": upload_base,
+                        "indicators": upload_indicators,
+                        "history": upload_history,
+                    },
+                    user,
+                )
+                st.success("Le nouveau jeu de données est maintenant actif pour tous les utilisateurs.")
                 st.rerun()
+            except Exception as exc:
+                st.error(str(exc))
+
+        if manifest and st.button("Supprimer le jeu actif", type="secondary", key="clear_dataset"):
+            clear_published_dataset()
+            st.warning("Le jeu actif a été supprimé.")
+            st.rerun()
 
 
 def render_scope_selector(df: pd.DataFrame, user: dict):
@@ -4355,7 +3901,7 @@ def render_scope_selector(df: pd.DataFrame, user: dict):
         st.stop()
 
     with st.sidebar:
-        st.markdown("<div class='cm-sidebar-section-caption'>Périmètre</div>", unsafe_allow_html=True)
+        st.markdown("### Périmètre")
         selection = st.multiselect(
             "Sociétés visibles",
             options=allowed,
@@ -4695,10 +4241,8 @@ def render_clickable_dataframe(
     height: int | None = None,
     hide_index: bool = True,
     key_prefix: str = "table",
-    key: str | None = None,
 ) -> None:
-    effective_key_prefix = str(key) if key is not None else key_prefix
-    render_clickable_streamlit_table(df, height=height, key_prefix=effective_key_prefix)
+    render_clickable_streamlit_table(df, height=height, key_prefix=key_prefix)
 
 
 def render_clickable_styled_dataframe(
@@ -4709,10 +4253,8 @@ def render_clickable_styled_dataframe(
     height: int | None = None,
     hide_index: bool = True,
     key_prefix: str = "table",
-    key: str | None = None,
 ) -> None:
-    effective_key_prefix = str(key) if key is not None else key_prefix
-    render_clickable_streamlit_table(source_df, height=height, key_prefix=effective_key_prefix)
+    render_clickable_streamlit_table(source_df, height=height, key_prefix=key_prefix)
 
 
 def client_label(row: pd.Series) -> str:
@@ -5161,20 +4703,6 @@ def open_review_simulations_view() -> None:
 def open_portfolio_view() -> None:
     clear_ephemeral_state_if_view_changes("portfolio")
     st.session_state["cm_view"] = "portfolio"
-    st.query_params.clear()
-
-
-
-def open_dataset_admin_view() -> None:
-    clear_ephemeral_state_if_view_changes("dataset_admin")
-    st.session_state["cm_view"] = "dataset_admin"
-    st.query_params.clear()
-
-
-
-def open_agent_ia_view() -> None:
-    clear_ephemeral_state_if_view_changes("agent_ia")
-    st.session_state["cm_view"] = "agent_ia"
     st.query_params.clear()
 
 
@@ -6300,6 +5828,16 @@ def render_analysis_review_dates_from_base(df: pd.DataFrame) -> None:
 
 def render_analysis_screen(portfolio: pd.DataFrame, indicators: pd.DataFrame) -> None:
     render_home_hero("Analyse")
+    nav = render_primary_navigation("analysis")
+    if nav == "portfolio":
+        open_portfolio_view()
+        st.rerun()
+    if nav == "review_dates":
+        open_review_dates_view()
+        st.rerun()
+    if nav == "review_simulations":
+        open_review_simulations_view()
+        st.rerun()
 
     top_left, top_right = st.columns([5.4, 1.2])
     with top_left:
@@ -6911,6 +6449,16 @@ def render_review_planning_content(
 
 def render_review_planning_screen(portfolio: pd.DataFrame, user: dict) -> None:
     render_home_hero("Planification des revues")
+    nav = render_primary_navigation("review_dates")
+    if nav == "portfolio":
+        open_portfolio_view()
+        st.rerun()
+    if nav == "analysis":
+        open_analysis_view()
+        st.rerun()
+    if nav == "review_simulations":
+        open_review_simulations_view()
+        st.rerun()
 
     top_left, top_right = st.columns([5.3, 1.2])
     with top_left:
@@ -6958,21 +6506,19 @@ def render_review_planning_screen(portfolio: pd.DataFrame, user: dict) -> None:
 
 
 
-def render_user_header(
-    user: dict,
-    selected_societies: list[str] | None = None,
-    total_societies: int | None = None,
-) -> None:
+def render_user_header(user: dict, selected_societies: list[str], total_societies: int) -> None:
     manifest = load_manifest()
-    selected_count = len(selected_societies or [])
     with st.sidebar:
-        st.markdown("<div class='cm-sidebar-section-caption'>Session</div>", unsafe_allow_html=True)
-        st.caption(f"Utilisateur · {user['display_name']}")
-        st.caption(f"Rôle · {user['role']}")
-        if total_societies is not None:
-            st.caption(f"Sociétés visibles · {selected_count} / {total_societies}")
-        if manifest and manifest.get("published_at_utc"):
-            st.caption(f"Jeu actif · {format_manifest_date(manifest.get('published_at_utc'))}")
+        st.markdown("### Session")
+        st.write("**Utilisateur :** {}".format(user["display_name"]))
+        st.write("**Rôle :** {}".format(user["role"]))
+        st.write("**Sociétés sélectionnées :** {} / {}".format(len(selected_societies), total_societies))
+        if manifest:
+            st.write(
+                "**Jeu actif :** {}".format(
+                    format_manifest_date(manifest.get("published_at_utc"))
+                )
+            )
         logout_button()
 
 
@@ -6986,23 +6532,8 @@ def main() -> None:
         login_form()
         return
 
+    render_admin_data_manager(user)
     sync_view_state_from_query_params()
-    render_sidebar_navigation(user)
-
-    current_view = str(st.session_state.get("cm_view", "portfolio") or "portfolio")
-    if user.get("role") != "admin" and current_view == "dataset_admin":
-        current_view = "agent_ia"
-        st.session_state["cm_view"] = current_view
-
-    if current_view == "agent_ia":
-        render_user_header(user)
-        render_agent_ia_screen(user)
-        return
-
-    if current_view == "dataset_admin":
-        render_user_header(user)
-        render_dataset_admin_screen(user)
-        return
 
     try:
         base, indicators, history, portfolio = load_app_datasets()
@@ -7040,6 +6571,16 @@ def main() -> None:
         return
 
     render_home_hero("Portefeuille 360°")
+    nav = render_primary_navigation("portfolio")
+    if nav == "analysis":
+        open_analysis_view()
+        st.rerun()
+    if nav == "review_dates":
+        open_review_dates_view()
+        st.rerun()
+    if nav == "review_simulations":
+        open_review_simulations_view()
+        st.rerun()
 
     render_client_launcher(scoped, key_prefix="header")
 
