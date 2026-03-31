@@ -3303,28 +3303,36 @@ def render_review_simulations_screen(portfolio: pd.DataFrame, user: dict) -> Non
             <style>
             div[data-testid="stVerticalBlock"]:has(.review-toolbar-inline-scope) {{
                 gap: 0.02rem;
-                margin-top: -0.05rem;
+                margin-top: -0.02rem;
             }}
             div[data-testid="stVerticalBlock"]:has(.review-toolbar-inline-scope) > div[data-testid="stHorizontalBlock"] {{
                 align-items: center;
-                gap: 0.8rem;
+                gap: 1rem;
                 flex-wrap: nowrap;
             }}
             .review-toolbar-inline-link {{
                 display: inline-flex;
                 align-items: center;
                 justify-content: flex-start;
-                width: 100%;
+                width: auto;
                 padding: 0;
                 color: {PRIMARY_COLOR} !important;
                 text-decoration: none !important;
-                background: transparent;
-                border: none;
-                font-family: 'Sora', sans-serif;
-                font-size: 0.92rem;
-                font-weight: 500;
-                line-height: 1.15;
+                background: transparent !important;
+                border: none !important;
+                font-family: "Source Sans Pro", sans-serif !important;
+                font-size: 1rem !important;
+                font-weight: 400 !important;
+                line-height: 1.2 !important;
                 white-space: nowrap;
+            }}
+            .review-toolbar-inline-link::before {{
+                content: "○";
+                display: inline-block;
+                margin-right: 0.42rem;
+                font-size: 1.04rem;
+                line-height: 1;
+                color: currentColor;
             }}
             .review-toolbar-inline-link:hover {{
                 color: #245782 !important;
@@ -3333,26 +3341,44 @@ def render_review_simulations_screen(portfolio: pd.DataFrame, user: dict) -> Non
             div[data-testid="stVerticalBlock"]:has(.review-toolbar-inline-scope) .stButton,
             div[data-testid="stVerticalBlock"]:has(.review-toolbar-inline-scope) .stDownloadButton,
             div[data-testid="stVerticalBlock"]:has(.review-toolbar-inline-scope) .stSelectbox {{
-                width: 100%;
-                min-width: 0;
+                width: auto !important;
+                min-width: 0 !important;
             }}
             div[data-testid="stVerticalBlock"]:has(.review-toolbar-inline-scope) .stButton > button,
             div[data-testid="stVerticalBlock"]:has(.review-toolbar-inline-scope) .stDownloadButton > button {{
                 min-height: auto !important;
                 height: auto !important;
+                width: auto !important;
                 padding: 0 !important;
                 background: transparent !important;
                 border: none !important;
                 border-radius: 0 !important;
                 color: {PRIMARY_COLOR} !important;
-                font-family: 'Sora', sans-serif !important;
-                font-size: 0.92rem !important;
-                font-weight: 500 !important;
+                font-family: "Source Sans Pro", sans-serif !important;
+                font-size: 1rem !important;
+                font-weight: 400 !important;
+                line-height: 1.2 !important;
                 letter-spacing: 0 !important;
                 box-shadow: none !important;
                 white-space: nowrap !important;
                 justify-content: flex-start !important;
                 text-decoration: none !important;
+            }}
+            div[data-testid="stVerticalBlock"]:has(.review-toolbar-inline-scope) .stButton > button::before,
+            div[data-testid="stVerticalBlock"]:has(.review-toolbar-inline-scope) .stDownloadButton > button::before {{
+                content: "○";
+                display: inline-block;
+                margin-right: 0.42rem;
+                font-size: 1.04rem;
+                line-height: 1;
+                color: currentColor;
+            }}
+            div[data-testid="stVerticalBlock"]:has(.review-toolbar-inline-scope) .stButton > button p,
+            div[data-testid="stVerticalBlock"]:has(.review-toolbar-inline-scope) .stDownloadButton > button p {{
+                font-family: "Source Sans Pro", sans-serif !important;
+                font-size: 1rem !important;
+                font-weight: 400 !important;
+                line-height: 1.2 !important;
             }}
             div[data-testid="stVerticalBlock"]:has(.review-toolbar-inline-scope) .stButton > button:hover,
             div[data-testid="stVerticalBlock"]:has(.review-toolbar-inline-scope) .stDownloadButton > button:hover {{
@@ -3390,23 +3416,24 @@ def render_review_simulations_screen(portfolio: pd.DataFrame, user: dict) -> Non
                 border: none !important;
                 box-shadow: none !important;
                 background: transparent !important;
-                padding: 0 0 0 8.2rem !important;
+                padding: 0 0 0 7.2rem !important;
                 gap: 0 !important;
             }}
             div[data-testid="stVerticalBlock"]:has(.review-toolbar-inline-scope) div[data-baseweb="select"] > div::before {{
-                content: "○ Statut estimé";
+                content: "Statut estimé";
                 position: absolute;
                 left: 0.02rem;
                 top: 50%;
                 transform: translateY(-50%);
                 color: {PRIMARY_COLOR};
-                font-family: 'Sora', sans-serif;
-                font-size: 0.92rem;
-                font-weight: 500;
+                font-family: "Source Sans Pro", sans-serif !important;
+                font-size: 1rem !important;
+                font-weight: 400 !important;
                 pointer-events: none;
                 white-space: nowrap;
             }}
-            div[data-testid="stVerticalBlock"]:has(.review-toolbar-inline-scope) div[data-baseweb="select"] > div:hover {{
+            div[data-testid="stVerticalBlock"]:has(.review-toolbar-inline-scope) div[data-baseweb="select"] > div:hover,
+            div[data-testid="stVerticalBlock"]:has(.review-toolbar-inline-scope) div[data-baseweb="select"] > div:focus-within {{
                 border: none !important;
                 box-shadow: none !important;
                 background: transparent !important;
@@ -3415,9 +3442,10 @@ def render_review_simulations_screen(portfolio: pd.DataFrame, user: dict) -> Non
             div[data-testid="stVerticalBlock"]:has(.review-toolbar-inline-scope) div[data-baseweb="select"] svg,
             div[data-testid="stVerticalBlock"]:has(.review-toolbar-inline-scope) div[data-baseweb="select"] input {{
                 color: {PRIMARY_COLOR} !important;
-                font-family: 'Sora', sans-serif !important;
-                font-size: 0.92rem !important;
-                font-weight: 500 !important;
+                font-family: "Source Sans Pro", sans-serif !important;
+                font-size: 1rem !important;
+                font-weight: 400 !important;
+                line-height: 1.2 !important;
             }}
             .review-toolbar-minor-note {{
                 margin-top: 0.02rem;
@@ -3431,19 +3459,19 @@ def render_review_simulations_screen(portfolio: pd.DataFrame, user: dict) -> Non
         )
 
         st.markdown("<div class='review-toolbar-inline-scope'></div>", unsafe_allow_html=True)
-        toolbar_cols = st.columns([1.04, 0.84, 2.06, 0.86, 0.90, 0.46, 0.66, 0.38], gap="small")
+        toolbar_cols = st.columns([1.18, 0.88, 1.78, 0.92, 0.92, 0.46, 0.72, 0.38], gap="small")
 
         with toolbar_cols[0]:
             st.markdown(
-                "<a class='review-toolbar-inline-link' href='#clients-sous-jacents' title='Afficher les clients sous-jacents liés à la sélection courante'>○ Sous-jacents</a>",
+                "<a class='review-toolbar-inline-link' href='#clients-sous-jacents' title='Afficher les clients sous-jacents liés à la sélection courante'>Sous-jacents</a>",
                 unsafe_allow_html=True,
             )
         with toolbar_cols[1]:
             if st.button(
-                "○ Effacer",
+                "Effacer",
                 key="review_sim_clear_selection",
                 type="secondary",
-                use_container_width=True,
+                use_container_width=False,
                 disabled=(not has_saved_selection),
                 help="Vide la sélection mémorisée du tableau des sociétés.",
             ):
@@ -3463,20 +3491,20 @@ def render_review_simulations_screen(portfolio: pd.DataFrame, user: dict) -> Non
             )
         with toolbar_cols[3]:
             apply_clicked = st.button(
-                "○ Appliquer",
+                "Appliquer",
                 type="secondary",
                 key="review_sim_apply_manual_status",
-                use_container_width=True,
+                use_container_width=False,
                 disabled=(selected_count == 0),
                 help="Met à jour le statut estimé des sociétés sélectionnées.",
             )
         gemini_button_disabled = (selected_count == 0) or (not gemini_api_key)
         with toolbar_cols[4]:
             gemini_clicked = st.button(
-                "○ Agent IA",
+                "Agent IA",
                 type="secondary",
                 key="review_sim_generate_batch",
-                use_container_width=True,
+                use_container_width=False,
                 disabled=gemini_button_disabled,
                 help=f"Analyse la sélection courante avec Gemini (maximum {GEMINI_MAX_BATCH_SIZE} SIREN envoyés).",
             )
@@ -3486,41 +3514,41 @@ def render_review_simulations_screen(portfolio: pd.DataFrame, user: dict) -> Non
                 pdf_path = pdf_item.get("path")
                 if isinstance(pdf_path, Path) and pdf_path.exists():
                     st.download_button(
-                        label="○ PDF",
+                        label="PDF",
                         data=pdf_path.read_bytes(),
                         file_name=str(pdf_item.get("download_name", "revue_simulation.pdf")),
                         mime="application/pdf",
                         type="secondary",
-                        use_container_width=True,
+                        use_container_width=False,
                         key="review_sim_single_pdf",
                         help="Télécharge le PDF du SIREN sélectionné lorsque la sélection contient une seule société.",
                     )
                 else:
-                    st.button("○ PDF", disabled=True, type="secondary", use_container_width=True, key="review_sim_single_pdf_disabled")
+                    st.button("PDF", disabled=True, type="secondary", use_container_width=False, key="review_sim_single_pdf_disabled")
             else:
-                st.button("○ PDF", disabled=True, type="secondary", use_container_width=True, key="review_sim_single_pdf_placeholder")
+                st.button("PDF", disabled=True, type="secondary", use_container_width=False, key="review_sim_single_pdf_placeholder")
         with toolbar_cols[6]:
             if REPORTLAB_AVAILABLE and pdf_items:
                 st.download_button(
-                    label="○ ZIP PDF",
+                    label="ZIP PDF",
                     data=review_simulation_pdfs_zip_bytes(pdf_items),
                     file_name="revues_simulations_selection.zip",
                     mime="application/zip",
                     type="secondary",
-                    use_container_width=True,
+                    use_container_width=False,
                     key="review_sim_pdf_zip",
                     help="Télécharge tous les PDF disponibles sur la sélection courante dans un fichier ZIP.",
                 )
             else:
-                st.button("○ ZIP PDF", disabled=True, type="secondary", use_container_width=True, key="review_sim_pdf_zip_placeholder")
+                st.button("ZIP PDF", disabled=True, type="secondary", use_container_width=False, key="review_sim_pdf_zip_placeholder")
         with toolbar_cols[7]:
             st.download_button(
-                label="○ CSV",
+                label="CSV",
                 data=dataframe_to_csv_bytes(build_review_simulation_export_dataframe(working_df)),
                 file_name="revues_et_simulations.csv",
                 mime="text/csv",
                 type="secondary",
-                use_container_width=True,
+                use_container_width=False,
                 key="review_sim_export_csv",
                 help="Exporte le tableau Revues & Simulations visible, y compris la colonne « Explique moi ».",
             )
