@@ -3294,69 +3294,53 @@ def render_review_simulations_screen(portfolio: pd.DataFrame, user: dict) -> Non
         st.markdown(
             f"""
             <style>
-            .review-toolbar-meta {{
-                margin: 0.08rem 0 0.34rem 0;
-                color: #6A7E91;
-                font-size: 0.72rem;
-                line-height: 1.25;
+            .review-toolbar-header-row {{
+                margin: 0.04rem 0 0.18rem 0;
             }}
-            .review-toolbar-meta strong {{
+            .review-toolbar-section-title {{
+                font-family: 'Sora', sans-serif;
+                font-size: 0.66rem;
+                font-weight: 700;
+                letter-spacing: 0.08em;
+                text-transform: uppercase;
+                color: #72879A;
+                margin: 0;
+            }}
+            .review-toolbar-section-title strong {{
                 color: {PRIMARY_COLOR};
                 font-weight: 700;
             }}
             div[data-testid="stVerticalBlock"]:has(.review-toolbar-actions-scope) {{
-                gap: 0.34rem;
+                gap: 0.18rem;
             }}
             div[data-testid="stVerticalBlock"]:has(.review-toolbar-group-scope) {{
-                background: rgba(255, 255, 255, 0.82);
-                border: 1px solid rgba(22, 58, 89, 0.08);
-                border-radius: 11px;
-                padding: 0.42rem 0.52rem 0.5rem 0.52rem;
+                background: rgba(255, 255, 255, 0.90);
+                border: 1px solid rgba(22, 58, 89, 0.10);
+                border-radius: 10px;
+                padding: 0.28rem 0.34rem 0.32rem 0.34rem;
                 box-shadow: none;
                 height: 100%;
             }}
             div[data-testid="stVerticalBlock"]:has(.review-toolbar-group-scope) > div {{
-                gap: 0.34rem;
-            }}
-            .review-toolbar-group-title-row {{
-                display: flex;
-                align-items: center;
-                justify-content: space-between;
-                gap: 0.35rem;
-                margin-bottom: 0.02rem;
-            }}
-            .review-toolbar-group-title {{
-                font-family: 'Sora', sans-serif;
-                font-size: 0.70rem;
-                font-weight: 700;
-                letter-spacing: 0.06em;
-                text-transform: uppercase;
-                color: {PRIMARY_COLOR};
-                margin: 0;
-            }}
-            .review-toolbar-group-note {{
-                color: #8A9CAC;
-                font-size: 0.68rem;
-                line-height: 1.15;
-                margin: 0;
+                gap: 0.22rem;
             }}
             .review-toolbar-link {{
                 display: inline-flex;
                 align-items: center;
                 justify-content: center;
                 width: 100%;
-                min-height: 2.06rem;
-                padding: 0 0.48rem;
-                border-radius: 8px;
+                min-height: 1.92rem;
+                padding: 0 0.42rem;
+                border-radius: 9px;
                 background: #FFFFFF;
                 color: {PRIMARY_COLOR} !important;
                 text-decoration: none !important;
                 border: 1px solid rgba(22, 58, 89, 0.14);
                 font-family: 'Sora', sans-serif;
-                font-size: 0.75rem;
+                font-size: 0.74rem;
                 font-weight: 600;
                 text-align: center;
-                line-height: 1.08;
+                line-height: 1.02;
                 white-space: nowrap;
             }}
             .review-toolbar-link:hover {{
@@ -3366,16 +3350,16 @@ def render_review_simulations_screen(portfolio: pd.DataFrame, user: dict) -> Non
             }}
             div[data-testid="stVerticalBlock"]:has(.review-toolbar-group-scope) .stButton > button,
             div[data-testid="stVerticalBlock"]:has(.review-toolbar-group-scope) .stDownloadButton > button {{
-                min-height: 2.06rem !important;
-                height: 2.06rem !important;
-                border-radius: 8px !important;
+                min-height: 1.92rem !important;
+                height: 1.92rem !important;
+                border-radius: 9px !important;
                 font-family: 'Sora', sans-serif !important;
-                font-size: 0.75rem !important;
+                font-size: 0.74rem !important;
                 font-weight: 600 !important;
                 letter-spacing: 0 !important;
                 box-shadow: none !important;
                 white-space: nowrap !important;
-                padding: 0 0.48rem !important;
+                padding: 0 0.42rem !important;
                 justify-content: center !important;
             }}
             div[data-testid="stVerticalBlock"]:has(.review-toolbar-group-scope) .stButton > button[kind="secondary"],
@@ -3413,18 +3397,18 @@ def render_review_simulations_screen(portfolio: pd.DataFrame, user: dict) -> Non
                 filter: none !important;
                 transform: none !important;
             }}
-            div[data-testid="stVerticalBlock"]:has(.review-toolbar-group-scope) .stSelectbox label,
-            div[data-testid="stVerticalBlock"]:has(.review-toolbar-group-scope) .stDownloadButton label {{
+            div[data-testid="stVerticalBlock"]:has(.review-toolbar-group-scope) .stSelectbox label {{
                 font-family: 'Sora', sans-serif !important;
-                font-size: 0.68rem !important;
+                font-size: 0.60rem !important;
                 font-weight: 700 !important;
-                color: #6A7E91 !important;
-                letter-spacing: 0.02em !important;
-                margin-bottom: 0.08rem !important;
+                color: #7C90A3 !important;
+                letter-spacing: 0.04em !important;
+                text-transform: uppercase !important;
+                margin-bottom: 0.02rem !important;
             }}
             div[data-testid="stVerticalBlock"]:has(.review-toolbar-group-scope) div[data-baseweb="select"] > div {{
-                min-height: 2.06rem;
-                border-radius: 8px;
+                min-height: 1.92rem;
+                border-radius: 9px;
                 border: 1px solid rgba(22, 58, 89, 0.14);
                 box-shadow: none;
                 background: #FFFFFF;
@@ -3436,53 +3420,43 @@ def render_review_simulations_screen(portfolio: pd.DataFrame, user: dict) -> Non
             div[data-testid="stVerticalBlock"]:has(.review-toolbar-group-scope) div[data-baseweb="select"] svg {{
                 color: {PRIMARY_COLOR} !important;
                 font-family: 'Sora', sans-serif !important;
-                font-size: 0.76rem !important;
+                font-size: 0.74rem !important;
                 font-weight: 600 !important;
+            }}
+            .review-toolbar-minor-note {{
+                margin-top: 0.14rem;
+                color: #6A7E91;
+                font-size: 0.70rem;
+                line-height: 1.2;
             }}
             </style>
             """,
             unsafe_allow_html=True,
         )
 
-        if selected_count:
-            summary_note = "Actions disponibles pour la sélection courante."
-        elif has_saved_selection:
-            summary_note = "Sélection mémorisée hors vue avec les filtres actifs."
-        else:
-            summary_note = "Sélectionnez une ou plusieurs sociétés pour activer les actions."
-
-        gemini_status = "clé saisie" if gemini_api_key else "clé requise"
-        meta_parts = [
-            f"<strong>{selected_count}</strong> sélectionnée(s)",
-            f"<strong>{len(pdf_items)}</strong> PDF",
-            f"<strong>{len(working_df)}</strong> visible(s)",
-            f"Gemini : <strong>{escape(gemini_status)}</strong>",
-        ]
-        if preview_text:
-            meta_parts.append(escape(preview_text))
-        else:
-            meta_parts.append(escape(summary_note))
-        st.markdown(f"<div class='review-toolbar-meta'>{' · '.join(meta_parts)}</div>", unsafe_allow_html=True)
+        title_selection_col, title_treatment_col, title_documents_col = st.columns([1.02, 1.18, 1.16], gap="small")
+        with title_selection_col:
+            st.markdown("<div class='review-toolbar-header-row'><div class='review-toolbar-section-title'>Sélection</div></div>", unsafe_allow_html=True)
+        with title_treatment_col:
+            st.markdown("<div class='review-toolbar-header-row'><div class='review-toolbar-section-title'>Traitement</div></div>", unsafe_allow_html=True)
+        with title_documents_col:
+            st.markdown("<div class='review-toolbar-header-row'><div class='review-toolbar-section-title'>Documents</div></div>", unsafe_allow_html=True)
 
         st.markdown("<div class='review-toolbar-actions-scope'></div>", unsafe_allow_html=True)
         group_selection_col, group_treatment_col, group_documents_col = st.columns([1.02, 1.18, 1.16], gap="small")
 
         with group_selection_col:
             with st.container():
-                st.markdown(
-                    "<div class='review-toolbar-group-scope'></div>"
-                    "<div class='review-toolbar-group-title-row'><div class='review-toolbar-group-title'>Sélection</div><div class='review-toolbar-group-note'>actions</div></div>",
-                    unsafe_allow_html=True,
-                )
+                st.markdown("<div class='review-toolbar-group-scope'></div>", unsafe_allow_html=True)
                 sel_link_col, sel_clear_col = st.columns(2, gap="small")
                 with sel_link_col:
                     st.markdown(
-                        "<a class='review-toolbar-link' href='#clients-sous-jacents' title='Afficher les clients sous-jacents liés à la sélection courante'>Sous-jacents</a>",
+                        "<a class='review-toolbar-link' href='#clients-sous-jacents' title='Afficher les clients sous-jacents liés à la sélection courante'>🏢 Sous-jacents</a>",
                         unsafe_allow_html=True,
                     )
                 with sel_clear_col:
                     if st.button(
-                        "Effacer",
+                        "⌫ Effacer",
                         key="review_sim_clear_selection",
                         type="secondary",
                         use_container_width=True,
@@ -3495,23 +3469,20 @@ def render_review_simulations_screen(portfolio: pd.DataFrame, user: dict) -> Non
 
         with group_treatment_col:
             with st.container():
-                st.markdown(
-                    "<div class='review-toolbar-group-scope'></div>"
-                    "<div class='review-toolbar-group-title-row'><div class='review-toolbar-group-title'>Traitement</div><div class='review-toolbar-group-note'>statut & IA</div></div>",
-                    unsafe_allow_html=True,
-                )
-                manual_status = st.selectbox(
-                    "Statut estimé",
-                    options=status_options,
-                    index=status_options.index(default_value),
-                    key="review_sim_manual_status",
-                    disabled=(selected_count == 0),
-                    help="Choisissez le statut estimé à appliquer à toutes les lignes sélectionnées.",
-                )
-                apply_col, gemini_col = st.columns(2, gap="small")
+                st.markdown("<div class='review-toolbar-group-scope'></div>", unsafe_allow_html=True)
+                treat_status_col, apply_col, gemini_col = st.columns([1.34, 0.86, 0.98], gap="small")
+                with treat_status_col:
+                    manual_status = st.selectbox(
+                        "Statut estimé",
+                        options=status_options,
+                        index=status_options.index(default_value),
+                        key="review_sim_manual_status",
+                        disabled=(selected_count == 0),
+                        help="Choisissez le statut estimé à appliquer à toutes les lignes sélectionnées.",
+                    )
                 with apply_col:
                     apply_clicked = st.button(
-                        "Appliquer",
+                        "✋ Appliquer",
                         type="secondary",
                         key="review_sim_apply_manual_status",
                         use_container_width=True,
@@ -3521,7 +3492,7 @@ def render_review_simulations_screen(portfolio: pd.DataFrame, user: dict) -> Non
                 gemini_button_disabled = (selected_count == 0) or (not gemini_api_key)
                 with gemini_col:
                     gemini_clicked = st.button(
-                        "Gemini",
+                        "🤖 Agent IA",
                         type="primary",
                         key="review_sim_generate_batch",
                         use_container_width=True,
@@ -3579,11 +3550,7 @@ def render_review_simulations_screen(portfolio: pd.DataFrame, user: dict) -> Non
 
         with group_documents_col:
             with st.container():
-                st.markdown(
-                    "<div class='review-toolbar-group-scope'></div>"
-                    "<div class='review-toolbar-group-title-row'><div class='review-toolbar-group-title'>Documents</div><div class='review-toolbar-group-note'>export</div></div>",
-                    unsafe_allow_html=True,
-                )
+                st.markdown("<div class='review-toolbar-group-scope'></div>", unsafe_allow_html=True)
                 doc_pdf_col, doc_zip_col, doc_csv_col = st.columns(3, gap="small")
                 with doc_pdf_col:
                     if REPORTLAB_AVAILABLE and len(pdf_items) == 1:
@@ -3591,7 +3558,7 @@ def render_review_simulations_screen(portfolio: pd.DataFrame, user: dict) -> Non
                         pdf_path = pdf_item.get("path")
                         if isinstance(pdf_path, Path) and pdf_path.exists():
                             st.download_button(
-                                label="PDF",
+                                label="📄 PDF",
                                 data=pdf_path.read_bytes(),
                                 file_name=str(pdf_item.get("download_name", "revue_simulation.pdf")),
                                 mime="application/pdf",
@@ -3601,13 +3568,13 @@ def render_review_simulations_screen(portfolio: pd.DataFrame, user: dict) -> Non
                                 help="Télécharge le PDF du SIREN sélectionné lorsque la sélection contient une seule société.",
                             )
                         else:
-                            st.button("PDF", disabled=True, type="secondary", use_container_width=True, key="review_sim_single_pdf_disabled")
+                            st.button("📄 PDF", disabled=True, type="secondary", use_container_width=True, key="review_sim_single_pdf_disabled")
                     else:
-                        st.button("PDF", disabled=True, type="secondary", use_container_width=True, key="review_sim_single_pdf_placeholder")
+                        st.button("📄 PDF", disabled=True, type="secondary", use_container_width=True, key="review_sim_single_pdf_placeholder")
                 with doc_zip_col:
                     if REPORTLAB_AVAILABLE and pdf_items:
                         st.download_button(
-                            label="ZIP PDF",
+                            label="🗜 ZIP PDF",
                             data=review_simulation_pdfs_zip_bytes(pdf_items),
                             file_name="revues_simulations_selection.zip",
                             mime="application/zip",
@@ -3617,10 +3584,10 @@ def render_review_simulations_screen(portfolio: pd.DataFrame, user: dict) -> Non
                             help="Télécharge tous les PDF disponibles sur la sélection courante dans un fichier ZIP.",
                         )
                     else:
-                        st.button("ZIP PDF", disabled=True, type="secondary", use_container_width=True, key="review_sim_pdf_zip_placeholder")
+                        st.button("🗜 ZIP PDF", disabled=True, type="secondary", use_container_width=True, key="review_sim_pdf_zip_placeholder")
                 with doc_csv_col:
                     st.download_button(
-                        label="CSV",
+                        label="🧾 CSV",
                         data=dataframe_to_csv_bytes(build_review_simulation_export_dataframe(working_df)),
                         file_name="revues_et_simulations.csv",
                         mime="text/csv",
@@ -3630,8 +3597,10 @@ def render_review_simulations_screen(portfolio: pd.DataFrame, user: dict) -> Non
                         help="Exporte le tableau Revues & Simulations visible, y compris la colonne « Explique moi ».",
                     )
 
+        if has_saved_selection and not selected_count:
+            st.markdown("<div class='review-toolbar-minor-note'>Sélection mémorisée hors vue avec les filtres actifs.</div>", unsafe_allow_html=True)
         if not gemini_api_key:
-            st.caption("Saisissez la clé API Gemini pour activer Gemini.")
+            st.caption("Saisissez la clé API Gemini pour activer l’Agent IA.")
         elif REPORTLAB_AVAILABLE and selected_count == 1 and len(pdf_items) != 1:
             st.caption("Le PDF devient disponible après une simulation ayant renseigné « Explique moi » pour ce SIREN.")
     if not REPORTLAB_AVAILABLE:
