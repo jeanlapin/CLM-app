@@ -3428,41 +3428,6 @@ def render_review_simulations_screen(portfolio: pd.DataFrame, user: dict) -> Non
         if selected_count > 3:
             preview_text += f" • +{selected_count - 3} autre(s)"
 
-    pending_action_raw = st.query_params.get("review_sim_action", "")
-    if isinstance(pending_action_raw, list):
-        pending_action_raw = pending_action_raw[0] if pending_action_raw else ""
-    pending_action = str(pending_action_raw).strip().lower()
-
-    def _clear_review_action_query_param() -> None:
-        try:
-            del st.query_params["review_sim_action"]
-        except Exception:
-            pass
-
-    def _review_action_link(label: str, href: str | None, *, disabled: bool = False, title: str = "") -> str:
-        title_attr = f' title="{escape(title, quote=True)}"' if title else ""
-        if disabled or not href:
-            return f'<span class="review-toolbar-nav-disabled"{title_attr}>{escape(label)}</span>'
-        return f'<a class="review-toolbar-nav-item" href="{href}"{title_attr}>{escape(label)}</a>'
-
-    def _review_download_link(
-        label: str,
-        data_bytes: bytes | None,
-        mime: str,
-        file_name: str,
-        *,
-        disabled: bool = False,
-        title: str = "",
-    ) -> str:
-        if disabled or not data_bytes:
-            return _review_action_link(label, None, disabled=True, title=title)
-        payload = base64.b64encode(data_bytes).decode("ascii")
-        title_attr = f' title="{escape(title, quote=True)}"' if title else ""
-        return (
-            f'<a class="review-toolbar-nav-item" download="{escape(file_name, quote=True)}" '
-            f'href="data:{mime};base64,{payload}"{title_attr}>{escape(label)}</a>'
-        )
-
     with action_menu_placeholder.container():
         status_display_map = {
             "Vigilance Critique": "Critique",
@@ -3499,18 +3464,40 @@ def render_review_simulations_screen(portfolio: pd.DataFrame, user: dict) -> Non
                 margin: 0 !important;
             }}
             .review-toolbar-nav-item,
-            .review-toolbar-nav-disabled {{
-                display: inline-flex;
-                align-items: center;
-                color: {PRIMARY_COLOR};
+            .review-toolbar-nav-disabled,
+            div[data-testid="stVerticalBlock"]:has(.review-toolbar-nav-scope) .stButton button,
+            div[data-testid="stVerticalBlock"]:has(.review-toolbar-nav-scope) .stDownloadButton button {{
+                display: inline-flex !important;
+                align-items: center !important;
+                justify-content: flex-start !important;
+                color: {PRIMARY_COLOR} !important;
                 text-decoration: none !important;
                 background: transparent !important;
                 border: none !important;
+                box-shadow: none !important;
                 font-family: "Source Sans Pro", sans-serif !important;
                 font-size: 1rem !important;
                 font-weight: 400 !important;
                 line-height: 1.25 !important;
-                white-space: nowrap;
+                white-space: nowrap !important;
+                padding: 0 !important;
+                min-height: 0 !important;
+                height: auto !important;
+                width: auto !important;
+            }}
+            div[data-testid="stVerticalBlock"]:has(.review-toolbar-nav-scope) .stButton,
+            div[data-testid="stVerticalBlock"]:has(.review-toolbar-nav-scope) .stDownloadButton {{
+                display: inline-flex !important;
+                width: auto !important;
+            }}
+            div[data-testid="stVerticalBlock"]:has(.review-toolbar-nav-scope) .stButton button p,
+            div[data-testid="stVerticalBlock"]:has(.review-toolbar-nav-scope) .stDownloadButton button p {{
+                font-family: "Source Sans Pro", sans-serif !important;
+                font-size: 1rem !important;
+                font-weight: 400 !important;
+                line-height: 1.25 !important;
+                color: inherit !important;
+                margin: 0 !important;
             }}
             .review-toolbar-status-label {{
                 display: inline-flex;
@@ -3526,7 +3513,9 @@ def render_review_simulations_screen(portfolio: pd.DataFrame, user: dict) -> Non
                 white-space: nowrap;
             }}
             .review-toolbar-nav-item::before,
-            .review-toolbar-nav-disabled::before {{
+            .review-toolbar-nav-disabled::before,
+            div[data-testid="stVerticalBlock"]:has(.review-toolbar-nav-scope) .stButton button::before,
+            div[data-testid="stVerticalBlock"]:has(.review-toolbar-nav-scope) .stDownloadButton button::before {{
                 content: "○";
                 display: inline-block;
                 margin-right: 0.40rem;
@@ -3534,14 +3523,23 @@ def render_review_simulations_screen(portfolio: pd.DataFrame, user: dict) -> Non
                 line-height: 1;
                 color: currentColor;
             }}
-            .review-toolbar-nav-item:hover {{
+            .review-toolbar-nav-item:hover,
+            div[data-testid="stVerticalBlock"]:has(.review-toolbar-nav-scope) .stButton button:hover,
+            div[data-testid="stVerticalBlock"]:has(.review-toolbar-nav-scope) .stDownloadButton button:hover {{
                 color: #245782 !important;
                 text-decoration: none !important;
+                background: transparent !important;
+                border: none !important;
             }}
-            .review-toolbar-nav-disabled {{
+            .review-toolbar-nav-disabled,
+            div[data-testid="stVerticalBlock"]:has(.review-toolbar-nav-scope) .stButton button:disabled,
+            div[data-testid="stVerticalBlock"]:has(.review-toolbar-nav-scope) .stDownloadButton button:disabled {{
                 color: #A2B3C3 !important;
-                cursor: default;
-                pointer-events: none;
+                cursor: default !important;
+                pointer-events: none !important;
+                background: transparent !important;
+                border: none !important;
+                opacity: 1 !important;
             }}
             div[data-testid="stVerticalBlock"]:has(.review-toolbar-nav-scope) .stSelectbox {{
                 width: 100% !important;
@@ -3614,15 +3612,18 @@ def render_review_simulations_screen(portfolio: pd.DataFrame, user: dict) -> Non
         st.markdown("<div class='review-toolbar-nav-scope'></div>", unsafe_allow_html=True)
         toolbar_cols = st.columns([0.90, 1.00, 1.72, 0.96, 0.92, 0.78, 0.98, 0.56], gap="small")
 
+        clear_clicked = False
+        apply_clicked = False
+        gemini_clicked = False
+
         with toolbar_cols[0]:
-            st.markdown(
-                _review_action_link(
-                    "Effacer",
-                    "?review_sim_action=clear",
-                    disabled=(not has_saved_selection),
-                    title="Vide la sélection mémorisée du tableau des sociétés.",
-                ),
-                unsafe_allow_html=True,
+            clear_clicked = st.button(
+                "Effacer",
+                key="review_toolbar_clear",
+                type="secondary",
+                disabled=(not has_saved_selection),
+                use_container_width=False,
+                help="Vide la sélection mémorisée du tableau des sociétés.",
             )
         with toolbar_cols[1]:
             st.markdown("<span class='review-toolbar-status-label'>Statut estimé</span>", unsafe_allow_html=True)
@@ -3638,72 +3639,62 @@ def render_review_simulations_screen(portfolio: pd.DataFrame, user: dict) -> Non
                 help="Choisissez le statut estimé à appliquer à toutes les lignes sélectionnées.",
             )
         with toolbar_cols[3]:
-            st.markdown(
-                _review_action_link(
-                    "Appliquer",
-                    "?review_sim_action=apply",
-                    disabled=(selected_count == 0),
-                    title="Met à jour le statut estimé des sociétés sélectionnées.",
-                ),
-                unsafe_allow_html=True,
+            apply_clicked = st.button(
+                "Appliquer",
+                key="review_toolbar_apply",
+                type="secondary",
+                disabled=(selected_count == 0),
+                use_container_width=False,
+                help="Met à jour le statut estimé des sociétés sélectionnées.",
             )
         with toolbar_cols[4]:
-            st.markdown(
-                _review_action_link(
-                    "Agent IA",
-                    "?review_sim_action=gemini",
-                    disabled=gemini_button_disabled,
-                    title=f"Analyse la sélection courante avec Gemini (maximum {GEMINI_MAX_BATCH_SIZE} SIREN envoyés).",
-                ),
-                unsafe_allow_html=True,
+            gemini_clicked = st.button(
+                "Agent IA",
+                key="review_toolbar_gemini",
+                type="secondary",
+                disabled=gemini_button_disabled,
+                use_container_width=False,
+                help=f"Analyse la sélection courante avec Gemini (maximum {GEMINI_MAX_BATCH_SIZE} SIREN envoyés).",
             )
         with toolbar_cols[5]:
-            st.markdown(
-                _review_download_link(
-                    "PDF",
-                    single_pdf_bytes,
-                    "application/pdf",
-                    single_pdf_name,
-                    disabled=(single_pdf_bytes is None),
-                    title="Télécharge le PDF du SIREN sélectionné lorsque la sélection contient une seule société.",
-                ),
-                unsafe_allow_html=True,
+            st.download_button(
+                "PDF",
+                data=(single_pdf_bytes or b""),
+                file_name=single_pdf_name,
+                mime="application/pdf",
+                key="review_toolbar_pdf",
+                disabled=(single_pdf_bytes is None),
+                use_container_width=False,
+                help="Télécharge le PDF du SIREN sélectionné lorsque la sélection contient une seule société.",
             )
         with toolbar_cols[6]:
-            st.markdown(
-                _review_download_link(
-                    "ZIP PDF",
-                    zip_pdf_bytes,
-                    "application/zip",
-                    "revues_simulations_selection.zip",
-                    disabled=(zip_pdf_bytes is None),
-                    title="Télécharge tous les PDF disponibles sur la sélection courante dans un fichier ZIP.",
-                ),
-                unsafe_allow_html=True,
+            st.download_button(
+                "ZIP PDF",
+                data=(zip_pdf_bytes or b""),
+                file_name="revues_simulations_selection.zip",
+                mime="application/zip",
+                key="review_toolbar_zip_pdf",
+                disabled=(zip_pdf_bytes is None),
+                use_container_width=False,
+                help="Télécharge tous les PDF disponibles sur la sélection courante dans un fichier ZIP.",
             )
         with toolbar_cols[7]:
-            st.markdown(
-                _review_download_link(
-                    "CSV",
-                    csv_export_bytes,
-                    "text/csv;charset=utf-8",
-                    "revues_et_simulations.csv",
-                    title="Exporte le tableau Revues & Simulations visible, y compris la colonne « Explique moi ».",
-                ),
-                unsafe_allow_html=True,
+            st.download_button(
+                "CSV",
+                data=csv_export_bytes,
+                file_name="revues_et_simulations.csv",
+                mime="text/csv;charset=utf-8",
+                key="review_toolbar_csv",
+                use_container_width=False,
+                help="Exporte le tableau Revues & Simulations visible, y compris la colonne « Explique moi ».",
             )
 
-        if pending_action and pending_action not in {"clear", "apply", "gemini"}:
-            _clear_review_action_query_param()
-            st.rerun()
-
-        if pending_action == "clear":
+        if clear_clicked:
             st.session_state["review_sim_selected_keys"] = []
             st.session_state["review_sim_table_version"] = int(st.session_state.get("review_sim_table_version", 0)) + 1
-            _clear_review_action_query_param()
             st.rerun()
 
-        if pending_action == "apply":
+        if apply_clicked:
             updated_df, updated_count = apply_manual_estimated_status(working_df, selected_rows, manual_status)
             pdf_count, pdf_errors = persist_review_simulation_subset(updated_df, selected_rows)
             notice = f"{updated_count} SIREN mis à jour avec le statut estimé « {manual_status} »."
@@ -3712,10 +3703,9 @@ def render_review_simulations_screen(portfolio: pd.DataFrame, user: dict) -> Non
             st.session_state["review_sim_notice"] = notice
             if pdf_errors:
                 st.session_state["review_sim_warning"] = " | ".join(pdf_errors[:3])
-            _clear_review_action_query_param()
             st.rerun()
 
-        if pending_action == "gemini":
+        if gemini_clicked:
             base_source_df, indicators_source_df, _ = load_source_data()
             source_df = build_review_simulation_source_dataset(portfolio, base_source_df, indicators_source_df)
             with st.spinner("Analyse Gemini en cours sur les lignes sélectionnées…"):
@@ -3750,8 +3740,8 @@ def render_review_simulations_screen(portfolio: pd.DataFrame, user: dict) -> Non
                     if len(combined_errors) > 3:
                         preview_errors += f" | +{len(combined_errors) - 3} autre(s) erreur(s)"
                     st.session_state["review_sim_warning"] = preview_errors
-            _clear_review_action_query_param()
             st.rerun()
+
 
     if not REPORTLAB_AVAILABLE:
         st.info(PDF_DEPENDENCY_ERROR_MESSAGE)
