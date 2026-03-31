@@ -3452,7 +3452,7 @@ def render_review_simulations_screen(portfolio: pd.DataFrame, user: dict) -> Non
         )
 
         st.markdown("<div class='review-toolbar-nav-scope'></div>", unsafe_allow_html=True)
-        toolbar_cols = st.columns([0.90, 1.00, 1.72, 0.96, 0.72, 0.98, 0.56], gap="small")
+        toolbar_cols = st.columns([0.90, 1.00, 1.72, 0.96, 0.92, 0.78, 0.98, 0.56], gap="small")
 
         with toolbar_cols[0]:
             st.markdown(
