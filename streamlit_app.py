@@ -117,6 +117,14 @@ GEMINI_MODEL_DEFAULT = "gemini-2.5-flash"
 GEMINI_MAX_BATCH_SIZE = 10
 GEMINI_API_TIMEOUT_SECONDS = 60
 REVIEW_SIM_GEMINI_KEY_STATE = "review_sim_gemini_api_key"
+AGENT_IA_PROMPT_STATE = "agent_ia_review_edd_prompt"
+AGENT_IA_ADMIN_SUBMENU_STATE = "admin_data_submenu"
+DEFAULT_REVIEW_EDD_PROMPT = (
+    "Tu es un analyste conformité. Pour chaque SIREN sélectionné, prépare les consignes de revue en analysant l’ensemble des données "
+    "de base source, l’ensemble des indicateurs source, ainsi que le contexte de simulation (statut de vigilance réel, alertes calculées, "
+    "risque, statut EDD et dates de revue). La réponse doit contenir : diagnostic, actions prioritaires, justificatifs à demander, "
+    "points de contrôle, et statut de vigilance estimé après remédiation."
+)
 REVIEW_SIM_PDF_DIR = "review_simulation_pdfs"
 REVIEW_SIM_PDF_FONT_REGULAR = "CMDejaVuSans"
 REVIEW_SIM_PDF_FONT_BOLD = "CMDejaVuSans-Bold"
@@ -1438,10 +1446,10 @@ def render_home_showcase(user: dict | None = None) -> None:
         else:
             scope_value = str(len(user["societes_autorisees"]))
             scope_text = "Votre périmètre est limité aux sociétés autorisées sur votre compte."
-        published_value = format_manifest_date(manifest.get("published_at_utc")) if manifest else "En attente"
+        published_value = format_manifest_date(manifest.get("published_at_utc")) if (manifest and manifest.get("published_at_utc")) else "En attente"
         published_text = (
             "Jeu actif publié par {}.".format(manifest.get("published_by_name") or manifest.get("published_by") or "inconnu")
-            if manifest else
+            if (manifest and manifest.get("published_at_utc")) else
             "Aucun jeu de données n’a encore été publié."
         )
         cards = [
@@ -1459,7 +1467,7 @@ def render_home_showcase(user: dict | None = None) -> None:
                 "text": published_text,
                 "foot": (
                     "Sociétés : {}".format(manifest.get("societes_count", 0))
-                    if manifest else "Publication requise"
+                    if (manifest and manifest.get("published_at_utc")) else "Publication requise"
                 ),
             },
             {
@@ -1680,6 +1688,9 @@ def login_form() -> None:
 
 def logout_button() -> None:
     if st.button("Se déconnecter"):
+        st.session_state.pop(REVIEW_SIM_GEMINI_KEY_STATE, None)
+        st.session_state.pop(AGENT_IA_PROMPT_STATE, None)
+        st.session_state.pop(AGENT_IA_ADMIN_SUBMENU_STATE, None)
         st.session_state.pop("authenticated_user", None)
         st.rerun()
 
@@ -1806,10 +1817,38 @@ def persist_review_planning_settings(freq_map: dict[str, int], cap_map: dict[str
     save_manifest(manifest)
 
 
+def load_agent_ia_settings() -> dict[str, object]:
+    manifest = load_manifest() or {}
+    saved = manifest.get("agent_ia_settings") or {}
+    prompt = str(saved.get("review_edd_prompt") or "").strip() or DEFAULT_REVIEW_EDD_PROMPT
+    return {
+        "review_edd_prompt": prompt,
+        "saved_at_utc": saved.get("saved_at_utc"),
+        "saved_by": saved.get("saved_by"),
+        "saved_by_name": saved.get("saved_by_name"),
+    }
+
+
+def persist_agent_ia_settings(review_edd_prompt: str, user: dict | None = None) -> None:
+    prompt = str(review_edd_prompt or "").strip() or DEFAULT_REVIEW_EDD_PROMPT
+    manifest = load_manifest() or {}
+    manifest["agent_ia_settings"] = {
+        "review_edd_prompt": prompt,
+        "saved_at_utc": datetime.now(timezone.utc).isoformat(),
+        "saved_by": (user or {}).get("username"),
+        "saved_by_name": (user or {}).get("display_name"),
+    }
+    save_manifest(manifest)
+
+
 
 
 def clear_review_simulation_ephemeral_state() -> None:
-    st.session_state.pop(REVIEW_SIM_GEMINI_KEY_STATE, None)
+    # La clé API Gemini est désormais saisie dans le menu latéral "Agent IA"
+    # et reste disponible pendant toute la session courante. Elle n'est jamais
+    # persistée et disparaît naturellement à la fermeture de l'application ou
+    # lors d'une déconnexion explicite.
+    return
 
 
 def clear_ephemeral_state_if_view_changes(next_view: str) -> None:
@@ -3143,12 +3182,9 @@ def render_review_simulations_screen(portfolio: pd.DataFrame, user: dict) -> Non
 
     objective_1 = "Préparer les consignes de revue adaptées au niveau de vigilance, aux alertes actives et au statut EDD."
     objective_2 = "Conserver pour chaque SIREN une synthèse exploitable, une tendance, un statut estimé après remédiation et un PDF structuré."
-    prompt_value = (
-        "Tu es un analyste conformité. Pour chaque SIREN sélectionné, prépare les consignes de revue en analysant l’ensemble des données "
-        "de base source, l’ensemble des indicateurs source, ainsi que le contexte de simulation (statut de vigilance réel, alertes calculées, "
-        "risque, statut EDD et dates de revue). La réponse doit contenir : diagnostic, actions prioritaires, justificatifs à demander, "
-        "points de contrôle, et statut de vigilance estimé après remédiation."
-    )
+    agent_ia_settings = load_agent_ia_settings()
+    prompt_value = str(agent_ia_settings.get("review_edd_prompt") or "").strip() or DEFAULT_REVIEW_EDD_PROMPT
+    gemini_api_key = str(st.session_state.get(REVIEW_SIM_GEMINI_KEY_STATE, "") or "").strip()
 
     top_left, top_right = st.columns([2.25, 3.75])
     with top_left:
@@ -3163,20 +3199,13 @@ def render_review_simulations_screen(portfolio: pd.DataFrame, user: dict) -> Non
     with top_right:
         st.markdown('<h3 class="cm-section-title">Revues &amp; Simulations</h3>', unsafe_allow_html=True)
         st.caption("Écran dédié à la préparation des consignes de revue. Sélectionnez jusqu’à 10 SIREN, lancez Gemini sur la sélection et exportez le résultat enrichi.")
-        gemini_api_key = st.text_input(
-            "Clé API Gemini",
-            type="password",
-            key=REVIEW_SIM_GEMINI_KEY_STATE,
-            placeholder="AIza...",
-            help="Clé éphémère : elle n’est pas sauvegardée et est effacée lorsque vous changez d’écran ou fermez l’application.",
-        ).strip()
-        st.caption(f"Modèle utilisé : {GEMINI_MODEL_DEFAULT}. La clé n’est conservée qu’en mémoire de session.")
-        base_prompt = st.text_area(
-            "Prompt Gemini prêt à l’emploi",
-            value=prompt_value,
-            height=190,
-            key="review_sim_prompt_preview",
-        )
+        st.caption(f"Modèle utilisé : {GEMINI_MODEL_DEFAULT}. Paramètres IA : barre de gauche > Administration des données > Agent IA.")
+        if gemini_api_key:
+            st.success("Clé API Gemini chargée pour la session en cours.")
+        else:
+            st.info("Saisissez la clé API dans la barre de gauche > Administration des données > Agent IA pour activer Gemini.")
+        st.caption("Le prompt utilisé est le prompt central « Revue EDD » configuré dans le menu Agent IA.")
+        base_prompt = prompt_value
 
     search_term = st.text_input(
         "Rechercher un SIREN ou une dénomination",
@@ -3644,7 +3673,7 @@ def render_review_simulations_screen(portfolio: pd.DataFrame, user: dict) -> Non
                 )
 
         if not gemini_api_key:
-            st.caption("Saisissez la clé API Gemini en haut de l’écran pour activer l’analyse automatique.")
+            st.caption("Saisissez la clé API Gemini dans la barre de gauche > Administration des données > Agent IA pour activer l’analyse automatique.")
         elif REPORTLAB_AVAILABLE and selected_count == 1 and len(pdf_items) != 1:
             st.caption("Le PDF devient téléchargeable après une simulation ayant renseigné « Explique moi » pour ce SIREN.")
     if not REPORTLAB_AVAILABLE:
@@ -4076,66 +4105,138 @@ def style_dataframe(df: pd.DataFrame) -> pd.io.formats.style.Styler:
     return styler
 
 
-def render_admin_data_manager(user: dict) -> None:
-    if user["role"] != "admin":
-        return
-
-    manifest = load_manifest()
-    with st.sidebar.expander("Administration des données", expanded=False):
-        if manifest:
-            st.success(
-                "Jeu actif : publié le {} par {}.".format(
-                    format_manifest_date(manifest.get("published_at_utc")),
-                    manifest.get("published_by_name") or manifest.get("published_by") or "inconnu",
-                )
+def render_dataset_admin_submenu(manifest: dict | None, user: dict) -> None:
+    if manifest and manifest.get("published_at_utc"):
+        st.success(
+            "Jeu actif : publié le {} par {}.".format(
+                format_manifest_date(manifest.get("published_at_utc")),
+                manifest.get("published_by_name") or manifest.get("published_by") or "inconnu",
             )
-            st.caption(
-                "Sociétés : {} | Lignes 01/02/03 : {}/{}/{}".format(
-                    manifest.get("societes_count", 0),
-                    manifest.get("row_counts", {}).get("base", 0),
-                    manifest.get("row_counts", {}).get("indicators", 0),
-                    manifest.get("row_counts", {}).get("history", 0),
-                )
+        )
+        st.caption(
+            "Sociétés : {} | Lignes 01/02/03 : {}/{}/{}".format(
+                manifest.get("societes_count", 0),
+                manifest.get("row_counts", {}).get("base", 0),
+                manifest.get("row_counts", {}).get("indicators", 0),
+                manifest.get("row_counts", {}).get("history", 0),
             )
-        else:
-            st.warning("Aucun jeu de données publié pour le moment.")
-
-        st.markdown("**Publier un nouveau jeu de données**")
-        upload_base = st.file_uploader(
-            "01_Donnees_base_source.csv",
-            type=["csv"],
-            key="admin_upload_base",
         )
-        upload_indicators = st.file_uploader(
-            "02_Indicateurs_source.csv",
-            type=["csv"],
-            key="admin_upload_indicators",
-        )
-        upload_history = st.file_uploader(
-            "03_Indicateurs_historique.csv",
-            type=["csv"],
-            key="admin_upload_history",
-        )
+    else:
+        st.warning("Aucun jeu de données publié pour le moment.")
 
-        if st.button("Publier ces 3 fichiers", type="primary", key="publish_dataset"):
-            try:
-                publish_uploaded_dataset(
-                    {
-                        "base": upload_base,
-                        "indicators": upload_indicators,
-                        "history": upload_history,
-                    },
-                    user,
-                )
-                st.success("Le nouveau jeu de données est maintenant actif pour tous les utilisateurs.")
-                st.rerun()
-            except Exception as exc:
-                st.error(str(exc))
+    st.markdown("**Publier un nouveau jeu de données**")
+    upload_base = st.file_uploader(
+        "01_Donnees_base_source.csv",
+        type=["csv"],
+        key="admin_upload_base",
+    )
+    upload_indicators = st.file_uploader(
+        "02_Indicateurs_source.csv",
+        type=["csv"],
+        key="admin_upload_indicators",
+    )
+    upload_history = st.file_uploader(
+        "03_Indicateurs_historique.csv",
+        type=["csv"],
+        key="admin_upload_history",
+    )
 
-        if manifest and st.button("Supprimer le jeu actif", type="secondary", key="clear_dataset"):
-            clear_published_dataset()
-            st.warning("Le jeu actif a été supprimé.")
+    if st.button("Publier ces 3 fichiers", type="primary", key="publish_dataset"):
+        try:
+            publish_uploaded_dataset(
+                {
+                    "base": upload_base,
+                    "indicators": upload_indicators,
+                    "history": upload_history,
+                },
+                user,
+            )
+            st.success("Le nouveau jeu de données est maintenant actif pour tous les utilisateurs.")
             st.rerun()
+        except Exception as exc:
+            st.error(str(exc))
+
+    if manifest and manifest.get("published_at_utc") and st.button("Supprimer le jeu actif", type="secondary", key="clear_dataset"):
+        clear_published_dataset()
+        st.warning("Le jeu actif a été supprimé.")
+        st.rerun()
+
+
+def render_agent_ia_admin_submenu(user: dict, manifest: dict | None = None) -> None:
+    settings = (manifest or load_manifest() or {}).get("agent_ia_settings") or {}
+    saved_prompt = str(settings.get("review_edd_prompt") or "").strip() or DEFAULT_REVIEW_EDD_PROMPT
+    if AGENT_IA_PROMPT_STATE not in st.session_state:
+        st.session_state[AGENT_IA_PROMPT_STATE] = saved_prompt
+
+    st.markdown("**Agent IA**")
+    st.text_input(
+        "Clé API Gemini",
+        type="password",
+        key=REVIEW_SIM_GEMINI_KEY_STATE,
+        placeholder="AIza...",
+        help="Clé éphémère : elle n’est jamais sauvegardée et disparaît lorsque vous fermez l’application ou vous déconnectez.",
+    )
+    st.caption(f"Modèle utilisé : {GEMINI_MODEL_DEFAULT}. La clé reste uniquement en mémoire pendant la session courante.")
+
+    if user.get("role") == "admin":
+        with st.form("agent_ia_prompt_form", clear_on_submit=False):
+            st.text_area(
+                "Prompt Revue EDD",
+                key=AGENT_IA_PROMPT_STATE,
+                height=220,
+                help="Prompt central utilisé par l’écran Revues & Simulations pour construire la consigne envoyée à Gemini.",
+            )
+            save_col, reset_col = st.columns(2)
+            with save_col:
+                save_prompt = st.form_submit_button("Enregistrer le prompt", type="primary", use_container_width=True)
+            with reset_col:
+                reset_prompt = st.form_submit_button("Réinitialiser le prompt", use_container_width=True)
+
+        if reset_prompt:
+            st.session_state[AGENT_IA_PROMPT_STATE] = DEFAULT_REVIEW_EDD_PROMPT
+            persist_agent_ia_settings(DEFAULT_REVIEW_EDD_PROMPT, user=user)
+            st.success("Le prompt Revue EDD a été réinitialisé puis enregistré.")
+        elif save_prompt:
+            prompt_to_save = str(st.session_state.get(AGENT_IA_PROMPT_STATE, "") or "").strip() or DEFAULT_REVIEW_EDD_PROMPT
+            st.session_state[AGENT_IA_PROMPT_STATE] = prompt_to_save
+            persist_agent_ia_settings(prompt_to_save, user=user)
+            st.success("Le prompt Revue EDD a été enregistré.")
+
+        saved_meta = load_agent_ia_settings()
+        saved_at = format_manifest_date(saved_meta.get("saved_at_utc")) if saved_meta.get("saved_at_utc") else None
+        saved_by = saved_meta.get("saved_by_name") or saved_meta.get("saved_by") or "inconnu"
+        if saved_at:
+            st.caption(f"Dernier enregistrement : {saved_at} par {saved_by}.")
+    else:
+        st.text_area(
+            "Prompt Revue EDD",
+            value=saved_prompt,
+            height=220,
+            disabled=True,
+        )
+        st.caption("Le prompt Revue EDD est piloté par un administrateur et utilisé tel quel dans Revues & Simulations.")
+
+
+def render_admin_data_manager(user: dict) -> None:
+    manifest = load_manifest()
+    submenu_options = ["Agent IA"]
+    if user.get("role") == "admin":
+        submenu_options = ["Jeu de données", "Agent IA"]
+    current_submenu = st.session_state.get(AGENT_IA_ADMIN_SUBMENU_STATE)
+    if current_submenu not in submenu_options:
+        st.session_state[AGENT_IA_ADMIN_SUBMENU_STATE] = submenu_options[0]
+
+    with st.sidebar.expander("Administration des données", expanded=False):
+        submenu = st.radio(
+            "Sous-menu Administration des données",
+            options=submenu_options,
+            label_visibility="collapsed",
+            key=AGENT_IA_ADMIN_SUBMENU_STATE,
+        )
+        if submenu == "Jeu de données":
+            render_dataset_admin_submenu(manifest, user)
+        else:
+            render_agent_ia_admin_submenu(user, manifest)
 
 
 def render_scope_selector(df: pd.DataFrame, user: dict):
@@ -6766,7 +6867,7 @@ def render_user_header(user: dict, selected_societies: list[str], total_societie
         st.write("**Utilisateur :** {}".format(user["display_name"]))
         st.write("**Rôle :** {}".format(user["role"]))
         st.write("**Sociétés sélectionnées :** {} / {}".format(len(selected_societies), total_societies))
-        if manifest:
+        if manifest and manifest.get("published_at_utc"):
             st.write(
                 "**Jeu actif :** {}".format(
                     format_manifest_date(manifest.get("published_at_utc"))
