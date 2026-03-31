@@ -3298,188 +3298,182 @@ def render_review_simulations_screen(portfolio: pd.DataFrame, user: dict) -> Non
             f"""
             <style>
             .review-toolbar-shell {{
-                margin: 0.2rem 0 0.8rem 0;
-                padding: 1rem 1.08rem 0.92rem 1.08rem;
-                border-radius: 20px;
-                border: 1px solid rgba(22, 58, 89, 0.12);
-                background: linear-gradient(180deg, rgba(255,255,255,0.98), rgba(243,247,252,0.96));
-                box-shadow: 0 10px 24px rgba(22, 58, 89, 0.06);
-            }}
-            .review-toolbar-kicker {{
-                font-family: 'Sora', sans-serif;
-                font-size: 0.74rem;
-                font-weight: 800;
-                letter-spacing: 0.08em;
-                text-transform: uppercase;
-                color: {PRIMARY_COLOR};
-                margin-bottom: 0.18rem;
-            }}
-            .review-toolbar-title {{
-                font-family: 'Montserrat', sans-serif;
-                font-size: 1.02rem;
-                font-weight: 800;
-                color: {PRIMARY_COLOR};
-                margin-bottom: 0.2rem;
-            }}
-            .review-toolbar-note {{
-                color: #5B7084;
-                font-size: 0.84rem;
-                line-height: 1.45;
-                margin-bottom: 0.65rem;
+                margin: 0.16rem 0 0.55rem 0;
+                padding: 0.72rem 0.86rem 0.68rem 0.86rem;
+                border-radius: 14px;
+                border: 1px solid rgba(22, 58, 89, 0.08);
+                background: rgba(255,255,255,0.9);
+                box-shadow: none;
             }}
             .review-toolbar-band {{
                 display: flex;
                 flex-wrap: wrap;
-                gap: 0.5rem;
-                margin-bottom: 0.45rem;
+                align-items: center;
+                gap: 0.38rem;
+                margin-bottom: 0;
+            }}
+            .review-toolbar-caption {{
+                color: {PRIMARY_COLOR};
+                font-family: 'Sora', sans-serif;
+                font-size: 0.78rem;
+                font-weight: 700;
+                margin-right: 0.18rem;
             }}
             .review-toolbar-chip {{
                 display: inline-flex;
                 align-items: center;
-                gap: 0.42rem;
-                padding: 0.34rem 0.72rem;
+                gap: 0.32rem;
+                padding: 0.24rem 0.58rem;
                 border-radius: 999px;
-                background: rgba(22, 58, 89, 0.07);
+                background: rgba(22, 58, 89, 0.04);
                 color: {PRIMARY_COLOR};
-                font-size: 0.8rem;
-                font-weight: 700;
-                border: 1px solid rgba(22, 58, 89, 0.08);
+                font-size: 0.74rem;
+                font-weight: 600;
+                border: 1px solid rgba(22, 58, 89, 0.07);
             }}
             .review-toolbar-chip strong {{
-                font-weight: 800;
+                font-weight: 700;
             }}
             .review-toolbar-preview {{
-                color: #40607B;
-                font-size: 0.82rem;
-                line-height: 1.42;
-                margin-top: 0.05rem;
+                color: #5B7084;
+                font-size: 0.76rem;
+                line-height: 1.35;
+                margin-top: 0.36rem;
+            }}
+            div[data-testid="stVerticalBlock"]:has(.review-toolbar-actions-scope) {{
+                gap: 0.55rem;
+            }}
+            div[data-testid="stVerticalBlock"]:has(.review-toolbar-group-scope) {{
+                background: rgba(255, 255, 255, 0.72);
+                border: 1px solid rgba(22, 58, 89, 0.08);
+                border-radius: 14px;
+                padding: 0.72rem 0.78rem 0.78rem 0.78rem;
+                box-shadow: none;
+                height: 100%;
+            }}
+            div[data-testid="stVerticalBlock"]:has(.review-toolbar-group-scope) > div {{
+                gap: 0.48rem;
+            }}
+            .review-toolbar-group-title-row {{
+                display: flex;
+                align-items: baseline;
+                justify-content: space-between;
+                gap: 0.5rem;
+                margin-bottom: 0.02rem;
             }}
             .review-toolbar-group-title {{
                 font-family: 'Sora', sans-serif;
-                font-size: 0.79rem;
-                font-weight: 800;
-                letter-spacing: 0.05em;
+                font-size: 0.76rem;
+                font-weight: 700;
+                letter-spacing: 0.04em;
                 text-transform: uppercase;
                 color: {PRIMARY_COLOR};
-                margin: 0 0 0.18rem 0;
+                margin: 0;
             }}
             .review-toolbar-group-note {{
-                color: #5B7084;
-                font-size: 0.78rem;
-                line-height: 1.42;
-                margin-bottom: 0.2rem;
-                min-height: 2.2rem;
+                color: #74879A;
+                font-size: 0.73rem;
+                line-height: 1.25;
+                margin: 0 0 0.06rem 0;
             }}
             .review-toolbar-link {{
                 display: inline-flex;
                 align-items: center;
                 justify-content: center;
                 width: 100%;
-                min-height: 2.9rem;
-                padding: 0 0.95rem;
-                border-radius: 14px;
+                min-height: 2.5rem;
+                padding: 0 0.82rem;
+                border-radius: 10px;
                 background: #FFFFFF;
                 color: {PRIMARY_COLOR} !important;
                 text-decoration: none !important;
-                border: 1.5px solid rgba(22, 58, 89, 0.18);
+                border: 1px solid rgba(22, 58, 89, 0.14);
                 font-family: 'Sora', sans-serif;
-                font-size: 0.82rem;
-                font-weight: 700;
+                font-size: 0.79rem;
+                font-weight: 600;
                 text-align: center;
                 line-height: 1.15;
                 box-shadow: none;
-                transition: background 0.18s ease, border-color 0.18s ease, transform 0.18s ease;
+                transition: background 0.15s ease, border-color 0.15s ease;
             }}
             .review-toolbar-link:hover {{
-                background: #F4F8FC;
-                border-color: rgba(22, 58, 89, 0.28);
+                background: rgba(22, 58, 89, 0.03);
+                border-color: rgba(22, 58, 89, 0.22);
                 color: {PRIMARY_COLOR} !important;
-                transform: translateY(-1px);
-            }}
-            div[data-testid="stVerticalBlock"]:has(.review-toolbar-actions-scope) {{
-                gap: 0.8rem;
-            }}
-            div[data-testid="stVerticalBlock"]:has(.review-toolbar-group-scope) {{
-                background: rgba(255, 255, 255, 0.98);
-                border: 1px solid rgba(22, 58, 89, 0.12);
-                border-radius: 18px;
-                padding: 0.92rem 0.92rem 1rem 0.92rem;
-                box-shadow: 0 8px 18px rgba(22, 58, 89, 0.05);
-                height: 100%;
-            }}
-            div[data-testid="stVerticalBlock"]:has(.review-toolbar-group-scope) > div {{
-                gap: 0.62rem;
             }}
             div[data-testid="stVerticalBlock"]:has(.review-toolbar-group-scope) .stButton > button,
             div[data-testid="stVerticalBlock"]:has(.review-toolbar-group-scope) .stDownloadButton > button {{
-                min-height: 2.9rem !important;
-                height: 2.9rem !important;
-                border-radius: 14px !important;
+                min-height: 2.5rem !important;
+                height: 2.5rem !important;
+                border-radius: 10px !important;
                 font-family: 'Sora', sans-serif !important;
-                font-size: 0.82rem !important;
-                font-weight: 700 !important;
+                font-size: 0.79rem !important;
+                font-weight: 600 !important;
                 letter-spacing: 0.01em !important;
                 box-shadow: none !important;
                 white-space: nowrap !important;
-                padding: 0 0.95rem !important;
+                padding: 0 0.82rem !important;
                 justify-content: center !important;
             }}
             div[data-testid="stVerticalBlock"]:has(.review-toolbar-group-scope) .stButton > button[kind="secondary"],
             div[data-testid="stVerticalBlock"]:has(.review-toolbar-group-scope) .stDownloadButton > button[kind="secondary"] {{
                 background: #FFFFFF !important;
                 color: {PRIMARY_COLOR} !important;
-                border: 1.5px solid rgba(22, 58, 89, 0.18) !important;
+                border: 1px solid rgba(22, 58, 89, 0.14) !important;
             }}
             div[data-testid="stVerticalBlock"]:has(.review-toolbar-group-scope) .stButton > button[kind="secondary"]:hover,
             div[data-testid="stVerticalBlock"]:has(.review-toolbar-group-scope) .stDownloadButton > button[kind="secondary"]:hover {{
-                background: #F4F8FC !important;
+                background: rgba(22, 58, 89, 0.03) !important;
                 color: {PRIMARY_COLOR} !important;
-                border-color: rgba(22, 58, 89, 0.28) !important;
+                border-color: rgba(22, 58, 89, 0.22) !important;
                 filter: none !important;
             }}
             div[data-testid="stVerticalBlock"]:has(.review-toolbar-group-scope) .stButton > button[kind="primary"],
             div[data-testid="stVerticalBlock"]:has(.review-toolbar-group-scope) .stDownloadButton > button[kind="primary"] {{
-                background: linear-gradient(135deg, {PRIMARY_COLOR}, #245782) !important;
+                background: {PRIMARY_COLOR} !important;
                 color: #FFFFFF !important;
                 border: 1px solid {PRIMARY_COLOR} !important;
             }}
+            div[data-testid="stVerticalBlock"]:has(.review-toolbar-group-scope) .stButton > button[kind="primary"]:hover,
+            div[data-testid="stVerticalBlock"]:has(.review-toolbar-group-scope) .stDownloadButton > button[kind="primary"]:hover {{
+                background: #245782 !important;
+                border-color: #245782 !important;
+                color: #FFFFFF !important;
+                filter: none !important;
+            }}
             div[data-testid="stVerticalBlock"]:has(.review-toolbar-group-scope) .stButton > button:disabled,
             div[data-testid="stVerticalBlock"]:has(.review-toolbar-group-scope) .stDownloadButton > button:disabled {{
-                background: #F5F8FB !important;
-                color: #8CA1B4 !important;
-                border: 1px solid #D8E3EE !important;
+                background: #F7FAFC !important;
+                color: #9AAEBF !important;
+                border: 1px solid #DFE7EF !important;
                 box-shadow: none !important;
                 filter: none !important;
                 transform: none !important;
             }}
-            div[data-testid="stVerticalBlock"]:has(.review-toolbar-group-scope) .stButton > button:hover,
-            div[data-testid="stVerticalBlock"]:has(.review-toolbar-group-scope) .stDownloadButton > button:hover {{
-                transform: translateY(-1px);
-            }}
             div[data-testid="stVerticalBlock"]:has(.review-toolbar-group-scope) .stSelectbox label,
             div[data-testid="stVerticalBlock"]:has(.review-toolbar-group-scope) .stDownloadButton label {{
                 font-family: 'Sora', sans-serif !important;
-                font-size: 0.76rem !important;
+                font-size: 0.72rem !important;
                 font-weight: 700 !important;
-                color: {PRIMARY_COLOR} !important;
+                color: #5B7084 !important;
                 letter-spacing: 0.02em !important;
             }}
             div[data-testid="stVerticalBlock"]:has(.review-toolbar-group-scope) div[data-baseweb="select"] > div {{
-                min-height: 2.9rem;
-                border-radius: 14px;
-                border: 1.5px solid rgba(22, 58, 89, 0.18);
+                min-height: 2.5rem;
+                border-radius: 10px;
+                border: 1px solid rgba(22, 58, 89, 0.14);
                 box-shadow: none;
                 background: #FFFFFF;
             }}
             div[data-testid="stVerticalBlock"]:has(.review-toolbar-group-scope) div[data-baseweb="select"] > div:hover {{
-                border-color: rgba(22, 58, 89, 0.28);
+                border-color: rgba(22, 58, 89, 0.22);
             }}
             div[data-testid="stVerticalBlock"]:has(.review-toolbar-group-scope) div[data-baseweb="select"] span,
             div[data-testid="stVerticalBlock"]:has(.review-toolbar-group-scope) div[data-baseweb="select"] svg {{
                 color: {PRIMARY_COLOR} !important;
                 font-family: 'Sora', sans-serif !important;
-                font-size: 0.84rem !important;
-                font-weight: 700 !important;
+                font-size: 0.8rem !important;
+                font-weight: 600 !important;
             }}
             </style>
             """,
@@ -3487,11 +3481,11 @@ def render_review_simulations_screen(portfolio: pd.DataFrame, user: dict) -> Non
         )
 
         if selected_count:
-            summary_note = "Les actions ci-dessous s'appliquent directement à la sélection courante du tableau."
+            summary_note = "Actions disponibles pour la sélection courante."
         elif has_saved_selection:
-            summary_note = "La sélection mémorisée n'est plus visible avec les filtres actifs. Ajustez les filtres ou effacez la sélection."
+            summary_note = "Sélection mémorisée hors vue avec les filtres actifs."
         else:
-            summary_note = "Sélectionnez une ou plusieurs sociétés dans le tableau pour activer le traitement, le PDF et les exports."
+            summary_note = "Sélectionnez une ou plusieurs sociétés pour activer les actions."
 
         gemini_status = "Clé saisie" if gemini_api_key else "Clé requise"
         summary_badges = [
@@ -3503,24 +3497,20 @@ def render_review_simulations_screen(portfolio: pd.DataFrame, user: dict) -> Non
 
         st.markdown(
             "<div class='review-toolbar-shell'>"
-            "<div class='review-toolbar-kicker'>Barre d’actions</div>"
-            "<div class='review-toolbar-title'>Pilotage des sociétés sélectionnées</div>"
-            f"<div class='review-toolbar-note'>{escape(summary_note)}</div>"
-            f"<div class='review-toolbar-band'>{''.join(summary_badges)}</div>"
-            + (f"<div class='review-toolbar-preview'><strong>Sélection courante :</strong> {escape(preview_text)}</div>" if preview_text else "")
+            f"<div class='review-toolbar-band'><span class='review-toolbar-caption'>Actions</span>{''.join(summary_badges)}</div>"
+            + (f"<div class='review-toolbar-preview'>{escape(summary_note)}{(' — ' + escape(preview_text)) if preview_text else ''}</div>" if (summary_note or preview_text) else "")
             + "</div>",
             unsafe_allow_html=True,
         )
 
         st.markdown("<div class='review-toolbar-actions-scope'></div>", unsafe_allow_html=True)
-        group_selection_col, group_treatment_col, group_documents_col = st.columns([1, 1.08, 1.08], gap="medium")
+        group_selection_col, group_treatment_col, group_documents_col = st.columns([1, 1, 1], gap="small")
 
         with group_selection_col:
             with st.container():
                 st.markdown(
                     "<div class='review-toolbar-group-scope'></div>"
-                    "<div class='review-toolbar-group-title'>Sélection</div>"
-                    "<div class='review-toolbar-group-note'>Navigation vers les clients sous-jacents et remise à zéro de la sélection courante.</div>",
+                    "<div class='review-toolbar-group-title-row'><div class='review-toolbar-group-title'>Sélection</div><div class='review-toolbar-group-note'>navigation</div></div>",
                     unsafe_allow_html=True,
                 )
                 st.markdown(
@@ -3543,8 +3533,7 @@ def render_review_simulations_screen(portfolio: pd.DataFrame, user: dict) -> Non
             with st.container():
                 st.markdown(
                     "<div class='review-toolbar-group-scope'></div>"
-                    "<div class='review-toolbar-group-title'>Traitement</div>"
-                    "<div class='review-toolbar-group-note'>Mise à jour du statut estimé ou lancement de Gemini sur la sélection courante.</div>",
+                    "<div class='review-toolbar-group-title-row'><div class='review-toolbar-group-title'>Traitement</div><div class='review-toolbar-group-note'>mise à jour</div></div>",
                     unsafe_allow_html=True,
                 )
                 manual_status = st.selectbox(
@@ -3622,8 +3611,7 @@ def render_review_simulations_screen(portfolio: pd.DataFrame, user: dict) -> Non
             with st.container():
                 st.markdown(
                     "<div class='review-toolbar-group-scope'></div>"
-                    "<div class='review-toolbar-group-title'>Documents</div>"
-                    "<div class='review-toolbar-group-note'>Téléchargement du PDF, export groupé des PDF et export du tableau visible.</div>",
+                    "<div class='review-toolbar-group-title-row'><div class='review-toolbar-group-title'>Documents</div><div class='review-toolbar-group-note'>exports</div></div>",
                     unsafe_allow_html=True,
                 )
                 if REPORTLAB_AVAILABLE and len(pdf_items) == 1:
