@@ -3163,9 +3163,11 @@ def render_review_simulations_screen(portfolio: pd.DataFrame, user: dict) -> Non
         base_prompt = st.text_area(
             "Prompt Gemini prêt à l’emploi",
             value=default_prompt,
-            height=105,
+            height=125,
             key="review_sim_prompt_preview",
         ).strip() or default_prompt
+
+    st.markdown("<div style='height: 0.6rem;'></div>", unsafe_allow_html=True)
 
     search_catalog = (
         base_df[["SIREN", "Dénomination"]]
