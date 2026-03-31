@@ -3193,16 +3193,6 @@ def render_review_simulation_table(df: pd.DataFrame, key: str) -> list[int]:
 
 def render_review_simulations_screen(portfolio: pd.DataFrame, user: dict) -> None:
     render_home_hero("Revues & Simulations")
-    nav = render_primary_navigation("review_simulations")
-    if nav == "portfolio":
-        open_portfolio_view()
-        st.rerun()
-    if nav == "analysis":
-        open_analysis_view()
-        st.rerun()
-    if nav == "review_dates":
-        open_review_dates_view()
-        st.rerun()
 
     st.markdown(
         """
@@ -4290,27 +4280,9 @@ def render_agent_ia_content(user: dict, manifest: dict | None = None) -> None:
 
 
 
-
-def render_navigation_back_to_operational_screens(widget_key: str = "cm_admin_nav") -> None:
-    st.markdown("<div class='cm-premium-card'><strong>Accès aux écrans métier</strong></div>", unsafe_allow_html=True)
-    cols = st.columns(4)
-    actions = [
-        ("Portefeuille", open_portfolio_view),
-        ("Analyse", open_analysis_view),
-        ("Planification des revues", open_review_dates_view),
-        ("Revues & Simulations", open_review_simulations_view),
-    ]
-    for idx, (label, handler) in enumerate(actions):
-        with cols[idx]:
-            if st.button(label, use_container_width=True, key=f"{widget_key}_{idx}"):
-                handler()
-                st.rerun()
-
-
 def render_agent_ia_screen(user: dict) -> None:
     render_home_hero("Agent IA")
     st.caption("Administration des données")
-    render_navigation_back_to_operational_screens("cm_agent_ia_back_to_screens")
     st.markdown(
         "<div class='cm-premium-card'><strong>Configuration centralisée de l’agent.</strong> La clé API reste éphémère et le prompt <em>Revue EDD</em> est utilisé par l’écran Revues &amp; Simulations.</div>",
         unsafe_allow_html=True,
@@ -4322,31 +4294,58 @@ def render_agent_ia_screen(user: dict) -> None:
 def render_dataset_admin_screen(user: dict) -> None:
     render_home_hero("Jeu de données")
     st.caption("Administration des données")
-    render_navigation_back_to_operational_screens("cm_dataset_admin_back_to_screens")
     render_dataset_admin_submenu(load_manifest(), user)
 
 
 
-def render_admin_data_manager(user: dict) -> None:
+def render_sidebar_navigation(user: dict) -> None:
     current_view = str(st.session_state.get("cm_view", "portfolio") or "portfolio")
-    with st.sidebar.expander("Administration des données", expanded=current_view in {"dataset_admin", "agent_ia"}):
-        if user.get("role") == "admin":
+    main_views = {
+        "portfolio": ("Portefeuille", open_portfolio_view),
+        "analysis": ("Analyse", open_analysis_view),
+        "review_dates": ("Planification des revues", open_review_dates_view),
+        "review_simulations": ("Revues & Simulations", open_review_simulations_view),
+    }
+    admin_views = {"dataset_admin", "agent_ia"}
+
+    if current_view in main_views:
+        st.session_state["cm_last_main_view"] = current_view
+    active_main_view = str(st.session_state.get("cm_last_main_view", "portfolio") or "portfolio")
+    if active_main_view not in main_views:
+        active_main_view = "portfolio"
+        st.session_state["cm_last_main_view"] = active_main_view
+
+    with st.sidebar:
+        st.markdown("### Navigation")
+        for view_key, (label, callback) in main_views.items():
             if st.button(
-                "Jeu de données",
+                label,
+                key=f"sidebar_nav_{view_key}",
                 use_container_width=True,
-                type="primary" if current_view == "dataset_admin" else "secondary",
-                key="open_dataset_admin_sidebar",
+                type="primary" if current_view == view_key else "secondary",
             ):
-                open_dataset_admin_view()
+                callback()
                 st.rerun()
-        if st.button(
-            "Agent IA",
-            use_container_width=True,
-            type="primary" if current_view == "agent_ia" else "secondary",
-            key="open_agent_ia_sidebar",
-        ):
-            open_agent_ia_view()
-            st.rerun()
+
+        st.markdown("<div style='height:0.25rem'></div>", unsafe_allow_html=True)
+        with st.expander("Administration des données", expanded=current_view in admin_views):
+            if user.get("role") == "admin":
+                if st.button(
+                    "Jeu de données",
+                    use_container_width=True,
+                    type="primary" if current_view == "dataset_admin" else "secondary",
+                    key="open_dataset_admin_sidebar",
+                ):
+                    open_dataset_admin_view()
+                    st.rerun()
+            if st.button(
+                "Agent IA",
+                use_container_width=True,
+                type="primary" if current_view == "agent_ia" else "secondary",
+                key="open_agent_ia_sidebar",
+            ):
+                open_agent_ia_view()
+                st.rerun()
 
 
 def render_scope_selector(df: pd.DataFrame, user: dict):
@@ -6306,16 +6305,6 @@ def render_analysis_review_dates_from_base(df: pd.DataFrame) -> None:
 
 def render_analysis_screen(portfolio: pd.DataFrame, indicators: pd.DataFrame) -> None:
     render_home_hero("Analyse")
-    nav = render_primary_navigation("analysis")
-    if nav == "portfolio":
-        open_portfolio_view()
-        st.rerun()
-    if nav == "review_dates":
-        open_review_dates_view()
-        st.rerun()
-    if nav == "review_simulations":
-        open_review_simulations_view()
-        st.rerun()
 
     top_left, top_right = st.columns([5.4, 1.2])
     with top_left:
@@ -6927,16 +6916,6 @@ def render_review_planning_content(
 
 def render_review_planning_screen(portfolio: pd.DataFrame, user: dict) -> None:
     render_home_hero("Planification des revues")
-    nav = render_primary_navigation("review_dates")
-    if nav == "portfolio":
-        open_portfolio_view()
-        st.rerun()
-    if nav == "analysis":
-        open_analysis_view()
-        st.rerun()
-    if nav == "review_simulations":
-        open_review_simulations_view()
-        st.rerun()
 
     top_left, top_right = st.columns([5.3, 1.2])
     with top_left:
@@ -7017,7 +6996,7 @@ def main() -> None:
         return
 
     sync_view_state_from_query_params()
-    render_admin_data_manager(user)
+    render_sidebar_navigation(user)
 
     current_view = str(st.session_state.get("cm_view", "portfolio") or "portfolio")
     if user.get("role") != "admin" and current_view == "dataset_admin":
@@ -7070,16 +7049,6 @@ def main() -> None:
         return
 
     render_home_hero("Portefeuille 360°")
-    nav = render_primary_navigation("portfolio")
-    if nav == "analysis":
-        open_analysis_view()
-        st.rerun()
-    if nav == "review_dates":
-        open_review_dates_view()
-        st.rerun()
-    if nav == "review_simulations":
-        open_review_simulations_view()
-        st.rerun()
 
     render_client_launcher(scoped, key_prefix="header")
 
