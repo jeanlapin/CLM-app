@@ -1387,7 +1387,7 @@ def render_sidebar_brand(user: dict | None = None) -> None:
             <div class="cm-sidebar-brand">
                 <img src="{LOGO_DATA_URI}" alt="Logo Classification Management" />
                 <div>
-                    <div class="cm-sidebar-brand-title">CLASSIFICATION<br/>MANAGEMENT</div>
+                    <div class="cm-sidebar-brand-title">CLASSIFICATION MANAGEMENT</div>
                     <div class="cm-sidebar-brand-subtitle">Portefeuille & gouvernance des risques</div>
                 </div>
             </div>
@@ -1395,7 +1395,7 @@ def render_sidebar_brand(user: dict | None = None) -> None:
             unsafe_allow_html=True,
         )
         if user is not None:
-            st.caption(f"Connecté en tant que {user['display_name']}")
+            st.caption(f"{user['display_name']} · {user['role']}")
 
 
 
@@ -3194,26 +3194,6 @@ def render_review_simulation_table(df: pd.DataFrame, key: str) -> list[int]:
 def render_review_simulations_screen(portfolio: pd.DataFrame, user: dict) -> None:
     render_home_hero("Revues & Simulations")
 
-    st.markdown(
-        """
-        <style>
-        div[data-testid="stAppViewContainer"]:has(.review-screen-theme-scope),
-        div[data-testid="stAppViewContainer"]:has(.review-screen-theme-scope) [data-testid="stMain"],
-        div[data-testid="stAppViewContainer"]:has(.review-screen-theme-scope) section.main,
-        div[data-testid="stAppViewContainer"]:has(.review-screen-theme-scope) .main {
-            background: #F5F8FB;
-        }
-        div[data-testid="stAppViewContainer"]:has(.review-screen-theme-scope) [data-testid="stMainBlockContainer"] {
-            background: transparent;
-            padding-top: 0.35rem;
-            padding-bottom: 2rem;
-        }
-        </style>
-        <div class='review-screen-theme-scope'></div>
-        """,
-        unsafe_allow_html=True,
-    )
-
     base_df = build_review_simulation_working_table(portfolio)
     if base_df.empty:
         st.info("Aucun SIREN disponible pour préparer une revue sur le périmètre courant.")
@@ -3236,8 +3216,8 @@ def render_review_simulations_screen(portfolio: pd.DataFrame, user: dict) -> Non
             padding: 0.78rem 0.96rem;
             border-radius: 18px;
             border: 1px solid rgba(22, 58, 89, 0.12);
-            background: rgba(245, 248, 251, 0.94);
-            box-shadow: 0 8px 18px rgba(22, 58, 89, 0.04);
+            background: rgba(255, 255, 255, 0.78);
+            box-shadow: 0 10px 22px rgba(22, 58, 89, 0.06);
         }}
         .review-screen-compact-title {{
             font-family: 'Montserrat', sans-serif;
@@ -4316,35 +4296,50 @@ def render_sidebar_navigation(user: dict) -> None:
         st.session_state["cm_last_main_view"] = active_main_view
 
     with st.sidebar:
-        st.markdown("### Navigation")
-        for view_key, (label, callback) in main_views.items():
-            if st.button(
-                label,
-                key=f"sidebar_nav_{view_key}",
-                use_container_width=True,
-                type="primary" if current_view == view_key else "secondary",
-            ):
-                callback()
-                st.rerun()
+        st.markdown("<div class='cm-sidebar-section-caption'>Navigation</div>", unsafe_allow_html=True)
+        main_options = list(main_views.keys())
+        main_select_key = "cm_sidebar_main_select"
+        desired_main_view = current_view if current_view in main_views else active_main_view
+        if st.session_state.get(main_select_key) not in main_options or current_view in main_views:
+            st.session_state[main_select_key] = desired_main_view
+        selected_main_view = st.selectbox(
+            "Navigation principale",
+            options=main_options,
+            format_func=lambda view_key: main_views[view_key][0],
+            key=main_select_key,
+            label_visibility="collapsed",
+        )
+        if selected_main_view != current_view and (current_view in main_views or selected_main_view != active_main_view):
+            main_views[selected_main_view][1]()
+            st.rerun()
 
-        st.markdown("<div style='height:0.25rem'></div>", unsafe_allow_html=True)
         with st.expander("Administration des données", expanded=current_view in admin_views):
+            admin_options = []
             if user.get("role") == "admin":
-                if st.button(
-                    "Jeu de données",
-                    use_container_width=True,
-                    type="primary" if current_view == "dataset_admin" else "secondary",
-                    key="open_dataset_admin_sidebar",
-                ):
-                    open_dataset_admin_view()
-                    st.rerun()
-            if st.button(
-                "Agent IA",
-                use_container_width=True,
-                type="primary" if current_view == "agent_ia" else "secondary",
-                key="open_agent_ia_sidebar",
+                admin_options.append("dataset_admin")
+            admin_options.append("agent_ia")
+            admin_labels = {
+                "dataset_admin": "Jeu de données",
+                "agent_ia": "Agent IA",
+            }
+            admin_select_key = "cm_sidebar_admin_select"
+            default_admin_view = current_view if current_view in admin_options else admin_options[0]
+            if st.session_state.get(admin_select_key) not in admin_options or current_view in admin_views:
+                st.session_state[admin_select_key] = default_admin_view
+            selected_admin_view = st.selectbox(
+                "Sous-menu",
+                options=admin_options,
+                format_func=lambda view_key: admin_labels[view_key],
+                key=admin_select_key,
+                label_visibility="collapsed",
+            )
+            if st.button("Ouvrir", use_container_width=True, key="open_selected_admin_view") or (
+                current_view in admin_views and selected_admin_view != current_view
             ):
-                open_agent_ia_view()
+                if selected_admin_view == "dataset_admin":
+                    open_dataset_admin_view()
+                else:
+                    open_agent_ia_view()
                 st.rerun()
 
 
@@ -4360,7 +4355,7 @@ def render_scope_selector(df: pd.DataFrame, user: dict):
         st.stop()
 
     with st.sidebar:
-        st.markdown("### Périmètre")
+        st.markdown("<div class='cm-sidebar-section-caption'>Périmètre</div>", unsafe_allow_html=True)
         selection = st.multiselect(
             "Sociétés visibles",
             options=allowed,
@@ -6971,17 +6966,13 @@ def render_user_header(
     manifest = load_manifest()
     selected_count = len(selected_societies or [])
     with st.sidebar:
-        st.markdown("### Session")
-        st.write("**Utilisateur :** {}".format(user["display_name"]))
-        st.write("**Rôle :** {}".format(user["role"]))
+        st.markdown("<div class='cm-sidebar-section-caption'>Session</div>", unsafe_allow_html=True)
+        st.caption(f"Utilisateur · {user['display_name']}")
+        st.caption(f"Rôle · {user['role']}")
         if total_societies is not None:
-            st.write("**Sociétés sélectionnées :** {} / {}".format(selected_count, total_societies))
+            st.caption(f"Sociétés visibles · {selected_count} / {total_societies}")
         if manifest and manifest.get("published_at_utc"):
-            st.write(
-                "**Jeu actif :** {}".format(
-                    format_manifest_date(manifest.get("published_at_utc"))
-                )
-            )
+            st.caption(f"Jeu actif · {format_manifest_date(manifest.get('published_at_utc'))}")
         logout_button()
 
 
