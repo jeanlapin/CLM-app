@@ -3248,15 +3248,11 @@ def render_review_simulations_screen(portfolio: pd.DataFrame, user: dict) -> Non
         st.info("Aucun SIREN ne correspond au filtre de statut de vigilance retenu.")
         return
 
-    st.caption("Sélectionnez une ou plusieurs lignes du tableau pour activer les actions. Tendance : 🔴 aggravation, 🟠 stabilité, 🟢 amélioration.")
-    st.markdown("<div style='height:0.35rem;'></div>", unsafe_allow_html=True)
-
     action_menu_placeholder = st.empty()
     table_placeholder = st.empty()
 
     table_version = int(st.session_state.get("review_sim_table_version", 0))
     with table_placeholder.container():
-        st.markdown('<h3 class="cm-section-title">Sociétés du lot à traiter</h3>', unsafe_allow_html=True)
         table_selected_rows = render_review_simulation_table(working_df, key=f"review_sim_table_{table_version}")
 
     if table_selected_rows:
@@ -3590,12 +3586,6 @@ def render_review_simulations_screen(portfolio: pd.DataFrame, user: dict) -> Non
             _clear_review_action_query_param()
             st.rerun()
 
-        if has_saved_selection and not selected_count:
-            st.markdown("<div class='review-toolbar-minor-note'>Sélection mémorisée hors vue avec les filtres actifs.</div>", unsafe_allow_html=True)
-        if not gemini_api_key:
-            st.caption("Saisissez la clé API Gemini pour activer l’Agent IA.")
-        elif REPORTLAB_AVAILABLE and selected_count == 1 and len(pdf_items) != 1:
-            st.caption("Le PDF devient disponible après une simulation ayant renseigné « Explique moi » pour ce SIREN.")
     if not REPORTLAB_AVAILABLE:
         st.info(PDF_DEPENDENCY_ERROR_MESSAGE)
 
