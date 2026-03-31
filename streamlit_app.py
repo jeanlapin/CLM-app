@@ -3452,18 +3452,9 @@ def render_review_simulations_screen(portfolio: pd.DataFrame, user: dict) -> Non
         )
 
         st.markdown("<div class='review-toolbar-nav-scope'></div>", unsafe_allow_html=True)
-        toolbar_cols = st.columns([1.18, 0.90, 1.00, 1.68, 0.96, 0.96, 0.72, 0.98, 0.56], gap="small")
+        toolbar_cols = st.columns([0.90, 1.00, 1.72, 0.96, 0.72, 0.98, 0.56], gap="small")
 
         with toolbar_cols[0]:
-            st.markdown(
-                _review_action_link(
-                    "Sous-jacents",
-                    "#clients-sous-jacents",
-                    title="Afficher les clients sous-jacents liés à la sélection courante.",
-                ),
-                unsafe_allow_html=True,
-            )
-        with toolbar_cols[1]:
             st.markdown(
                 _review_action_link(
                     "Effacer",
@@ -3473,9 +3464,9 @@ def render_review_simulations_screen(portfolio: pd.DataFrame, user: dict) -> Non
                 ),
                 unsafe_allow_html=True,
             )
-        with toolbar_cols[2]:
+        with toolbar_cols[1]:
             st.markdown("<span class='review-toolbar-status-label'>Statut estimé</span>", unsafe_allow_html=True)
-        with toolbar_cols[3]:
+        with toolbar_cols[2]:
             manual_status = st.selectbox(
                 "Statut estimé",
                 options=status_options,
@@ -3486,7 +3477,7 @@ def render_review_simulations_screen(portfolio: pd.DataFrame, user: dict) -> Non
                 format_func=lambda value: status_display_map.get(value, str(value).replace("Vigilance ", "")),
                 help="Choisissez le statut estimé à appliquer à toutes les lignes sélectionnées.",
             )
-        with toolbar_cols[4]:
+        with toolbar_cols[3]:
             st.markdown(
                 _review_action_link(
                     "Appliquer",
@@ -3496,7 +3487,7 @@ def render_review_simulations_screen(portfolio: pd.DataFrame, user: dict) -> Non
                 ),
                 unsafe_allow_html=True,
             )
-        with toolbar_cols[5]:
+        with toolbar_cols[4]:
             st.markdown(
                 _review_action_link(
                     "Agent IA",
@@ -3506,7 +3497,7 @@ def render_review_simulations_screen(portfolio: pd.DataFrame, user: dict) -> Non
                 ),
                 unsafe_allow_html=True,
             )
-        with toolbar_cols[6]:
+        with toolbar_cols[5]:
             st.markdown(
                 _review_download_link(
                     "PDF",
@@ -3518,7 +3509,7 @@ def render_review_simulations_screen(portfolio: pd.DataFrame, user: dict) -> Non
                 ),
                 unsafe_allow_html=True,
             )
-        with toolbar_cols[7]:
+        with toolbar_cols[6]:
             st.markdown(
                 _review_download_link(
                     "ZIP PDF",
@@ -3530,7 +3521,7 @@ def render_review_simulations_screen(portfolio: pd.DataFrame, user: dict) -> Non
                 ),
                 unsafe_allow_html=True,
             )
-        with toolbar_cols[8]:
+        with toolbar_cols[7]:
             st.markdown(
                 _review_download_link(
                     "CSV",
@@ -3610,24 +3601,6 @@ def render_review_simulations_screen(portfolio: pd.DataFrame, user: dict) -> Non
     if st.session_state.get("review_sim_warning"):
         st.warning(str(st.session_state.pop("review_sim_warning")))
 
-    st.divider()
-    st.markdown("<div id='clients-sous-jacents'></div>", unsafe_allow_html=True)
-    st.markdown('<h3 class="cm-section-title">Clients sous-jacents</h3>', unsafe_allow_html=True)
-    detail_df = build_review_simulation_detail_df(portfolio, working_df, selected_keys)
-    if selected_count:
-        st.caption(f"Clients sous-jacents pilotés par les {selected_count} SIREN sélectionnés dans le tableau.")
-    else:
-        st.caption("Aucune ligne sélectionnée : les clients sous-jacents reprennent l’ensemble des SIREN actuellement visibles dans le tableau.")
-    if detail_df.empty:
-        st.info("Aucun client sous-jacent à afficher pour la sélection courante.")
-    else:
-        render_clickable_styled_dataframe(
-            style_dataframe(detail_df),
-            detail_df,
-            height=460,
-            hide_index=True,
-            key_prefix="review_sim_detail_clients",
-        )
 
 
 def build_dataset_cache_signature() -> str:
