@@ -3249,6 +3249,7 @@ def render_review_simulations_screen(portfolio: pd.DataFrame, user: dict) -> Non
         return
 
     st.caption("Sélectionnez une ou plusieurs lignes du tableau pour activer les actions. Tendance : 🔴 aggravation, 🟠 stabilité, 🟢 amélioration.")
+    st.markdown("<div style='height:0.35rem;'></div>", unsafe_allow_html=True)
 
     action_menu_placeholder = st.empty()
     table_placeholder = st.empty()
