@@ -2951,7 +2951,7 @@ def style_review_simulation_table(display_df: pd.DataFrame) -> pd.io.formats.sty
     def style_cell(column_name: str, value: object) -> str:
         base = "padding: 0.42rem 0.55rem; text-align: center; vertical-align: middle; border-bottom: 1px solid rgba(22,58,89,0.08);"
         if column_name == "SIREN":
-            return base + "color: #163A59; font-weight: 800;"
+            return base + "color: #163A59; font-weight: 800; text-decoration: underline;"
         if column_name == "Dénomination":
             return base + "font-weight: 700; color: #163A59; text-align:left;"
         if column_name in {REVIEW_SIM_REAL_LABEL, REVIEW_SIM_EST_LABEL}:
@@ -2964,8 +2964,11 @@ def style_review_simulation_table(display_df: pd.DataFrame) -> pd.io.formats.sty
             if text == "S’améliore":
                 return base + "background-color: rgba(18,183,106,0.10); color:#027A48; font-weight:700;"
             return base + "background-color: rgba(22,58,89,0.08); color:#163A59; font-weight:700;"
-        if column_name in {"Explique moi", "Alertes actives"}:
-            return base + "text-align:left; white-space:normal;"
+        if column_name == "Explique moi":
+            text = str(value)
+            if text.endswith("#●"):
+                return base + "color:#163A59; font-weight:800; font-size:1.04rem;"
+            return base + "color:#B7C4D1; font-weight:700; font-size:1.02rem;"
         return base
 
     zebra = pd.DataFrame("", index=display_df.index, columns=display_df.columns)
@@ -2979,7 +2982,6 @@ def style_review_simulation_table(display_df: pd.DataFrame) -> pd.io.formats.sty
     styled = styled.apply(lambda _: zebra, axis=None)
     styled = styled.apply(lambda s: [style_cell(s.name, v) for v in s], axis=0)
     return styled
-
 
 
 def render_review_status_gauges(df: pd.DataFrame) -> None:
@@ -3045,6 +3047,148 @@ def review_sim_rows_from_selection(df: pd.DataFrame, selected_keys: list[str]) -
     return [int(i) for i, key in enumerate(key_series.tolist()) if key in allowed]
 
 
+def build_review_sim_client_href(societe_id: object, siren: object) -> str:
+    societe_text = str(societe_id or "").strip()
+    siren_text = str(siren or "").strip()
+    if not societe_text or not siren_text:
+        return "?view=revues-simulations"
+    return f"?view=client&societe={quote_plus(societe_text)}&siren={quote_plus(siren_text)}"
+
+
+def build_review_sim_explain_href(societe_id: object, siren: object, has_content: bool) -> str:
+    if not has_content:
+        return "?view=revues-simulations#○"
+    societe_text = str(societe_id or "").strip()
+    siren_text = str(siren or "").strip()
+    if not societe_text or not siren_text:
+        return "?view=revues-simulations#○"
+    return f"?view=revues-simulations&explain_societe={quote_plus(societe_text)}&explain_siren={quote_plus(siren_text)}#●"
+
+
+def render_review_simulation_explain_overlay(df: pd.DataFrame) -> None:
+    explain_societe_raw = st.query_params.get("explain_societe", "")
+    explain_siren_raw = st.query_params.get("explain_siren", "")
+    if isinstance(explain_societe_raw, list):
+        explain_societe_raw = explain_societe_raw[0] if explain_societe_raw else ""
+    if isinstance(explain_siren_raw, list):
+        explain_siren_raw = explain_siren_raw[0] if explain_siren_raw else ""
+    explain_societe = str(explain_societe_raw).strip()
+    explain_siren = str(explain_siren_raw).strip()
+    if not explain_societe or not explain_siren or df is None or df.empty:
+        return
+
+    scope = df.copy()
+    if SOC_COL not in scope.columns or "SIREN" not in scope.columns or "Explique moi" not in scope.columns:
+        return
+
+    scope["__societe_norm"] = normalize_societe_id(scope[SOC_COL]).fillna("").astype(str)
+    scope["__siren_norm"] = normalize_siren(scope["SIREN"]).fillna("").astype(str)
+    target_societe = normalize_societe_id(pd.Series([explain_societe])).fillna("").astype(str).iloc[0]
+    target_siren = normalize_siren(pd.Series([explain_siren])).fillna("").astype(str).iloc[0]
+    match = scope.loc[(scope["__societe_norm"] == target_societe) & (scope["__siren_norm"] == target_siren)]
+    if match.empty:
+        return
+
+    row = match.iloc[0]
+    explain_text = str(row.get("Explique moi", "") or "").strip()
+    if not explain_text:
+        return
+
+    denomination = escape(str(row.get("Dénomination", "") or "").strip())
+    siren_label = escape(str(row.get("SIREN", "") or "").strip())
+    close_href = "?view=revues-simulations"
+    content_html = escape(explain_text).replace("\n", "<br>")
+
+    st.markdown(
+        f"""
+        <style>
+        .review-explain-overlay {{
+            position: fixed;
+            inset: 0;
+            z-index: 9999;
+            background: rgba(15, 23, 42, 0.46);
+            display: flex;
+            align-items: stretch;
+            justify-content: center;
+            padding: 2.2rem 2rem;
+        }}
+        .review-explain-overlay__panel {{
+            width: min(1180px, 100%);
+            height: calc(100vh - 4.4rem);
+            background: #FFFFFF;
+            border-radius: 20px;
+            box-shadow: 0 30px 70px rgba(15, 23, 42, 0.22);
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            border: 1px solid rgba(22,58,89,0.08);
+        }}
+        .review-explain-overlay__head {{
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 1rem;
+            padding: 1rem 1.2rem;
+            border-bottom: 1px solid rgba(22,58,89,0.08);
+            background: #F6FAFE;
+        }}
+        .review-explain-overlay__title {{
+            color: #163A59;
+            font-family: "Source Sans Pro", sans-serif;
+            font-size: 1.25rem;
+            font-weight: 700;
+            line-height: 1.2;
+        }}
+        .review-explain-overlay__subtitle {{
+            margin-top: 0.15rem;
+            color: #5B7084;
+            font-family: "Source Sans Pro", sans-serif;
+            font-size: 0.95rem;
+            font-weight: 400;
+        }}
+        .review-explain-overlay__close {{
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            min-width: 6.8rem;
+            padding: 0.52rem 0.9rem;
+            border-radius: 999px;
+            border: 1px solid rgba(22,58,89,0.12);
+            background: #FFFFFF;
+            color: #163A59 !important;
+            text-decoration: none !important;
+            font-family: "Source Sans Pro", sans-serif;
+            font-size: 0.96rem;
+            font-weight: 600;
+        }}
+        .review-explain-overlay__body {{
+            flex: 1 1 auto;
+            overflow: auto;
+            padding: 1.25rem 1.3rem 1.4rem 1.3rem;
+            color: #163A59;
+            font-family: "Source Sans Pro", sans-serif;
+            font-size: 1rem;
+            line-height: 1.6;
+            white-space: normal;
+        }}
+        </style>
+        <div class="review-explain-overlay">
+            <div class="review-explain-overlay__panel">
+                <div class="review-explain-overlay__head">
+                    <div>
+                        <div class="review-explain-overlay__title">Explique moi</div>
+                        <div class="review-explain-overlay__subtitle">{denomination} • {siren_label}</div>
+                    </div>
+                    <a class="review-explain-overlay__close" href="{close_href}">Fermer</a>
+                </div>
+                <div class="review-explain-overlay__body">{content_html}</div>
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
 def build_review_simulation_detail_df(portfolio: pd.DataFrame, review_df: pd.DataFrame, selected_keys: list[str]) -> pd.DataFrame:
     if portfolio is None or portfolio.empty or review_df is None or review_df.empty:
         return pd.DataFrame()
@@ -3070,8 +3214,18 @@ def render_review_simulation_table(df: pd.DataFrame, key: str) -> list[int]:
     raw_df = df.copy().reset_index(drop=True)
     display_df = raw_df.copy()
     display_df["Date prochaine revue"] = display_df["Date prochaine revue"].apply(format_short_date)
-    display_df["Explique moi"] = display_df["Explique moi"].fillna("")
-    display_df["Alertes actives"] = display_df["Alertes actives"].fillna("")
+    display_df["Explique moi"] = display_df.apply(
+        lambda row: build_review_sim_explain_href(
+            row.get(SOC_COL, ""),
+            row.get("SIREN", ""),
+            bool(str(row.get("Explique moi", "") or "").strip()),
+        ),
+        axis=1,
+    )
+    display_df["SIREN"] = display_df.apply(
+        lambda row: build_review_sim_client_href(row.get(SOC_COL, ""), row.get("SIREN", "")),
+        axis=1,
+    )
     display_df[REVIEW_SIM_TREND_LABEL] = display_df[REVIEW_SIM_TREND_LABEL].apply(review_trend_icon)
 
     column_order = [
@@ -3082,23 +3236,29 @@ def render_review_simulation_table(df: pd.DataFrame, key: str) -> list[int]:
         "Explique moi",
         REVIEW_SIM_TREND_LABEL,
         REVIEW_SIM_EST_LABEL,
-        "Type de revue",
         "Date prochaine revue",
-        "Alertes actives",
     ]
     display_df = display_df[[c for c in column_order if c in display_df.columns]].copy()
 
     column_config = {
         SOC_COL: st.column_config.TextColumn("Société", width="small"),
-        "SIREN": st.column_config.TextColumn("SIREN", width="small"),
+        "SIREN": st.column_config.LinkColumn(
+            "SIREN",
+            width="small",
+            display_text=r".*siren=([^&]+).*$",
+            help="Ouvre la fiche client pour le SIREN sélectionné.",
+        ),
         "Dénomination": st.column_config.TextColumn("Dénomination", width="medium"),
         REVIEW_SIM_REAL_LABEL: st.column_config.TextColumn(REVIEW_SIM_REAL_LABEL, width="medium"),
-        "Explique moi": st.column_config.TextColumn("Explique moi", width="large"),
+        "Explique moi": st.column_config.LinkColumn(
+            "Explique moi",
+            width="small",
+            display_text=r".*#(.*)$",
+            help="○ : champ vide • ● : contenu disponible en plein écran.",
+        ),
         REVIEW_SIM_TREND_LABEL: st.column_config.TextColumn(REVIEW_SIM_TREND_LABEL, width="small"),
         REVIEW_SIM_EST_LABEL: st.column_config.TextColumn(REVIEW_SIM_EST_LABEL, width="medium"),
-        "Type de revue": st.column_config.TextColumn("Type de revue", width="medium"),
         "Date prochaine revue": st.column_config.TextColumn("Date prochaine revue", width="small"),
-        "Alertes actives": st.column_config.TextColumn("Alertes actives", width="large"),
     }
 
     event = st.dataframe(
@@ -3120,7 +3280,6 @@ def render_review_simulation_table(df: pd.DataFrame, key: str) -> list[int]:
         except Exception:
             selected_rows = []
     return selected_rows
-
 
 
 def render_review_simulations_screen(portfolio: pd.DataFrame, user: dict) -> None:
@@ -3600,6 +3759,8 @@ def render_review_simulations_screen(portfolio: pd.DataFrame, user: dict) -> Non
         st.success(str(st.session_state.pop("review_sim_notice")))
     if st.session_state.get("review_sim_warning"):
         st.warning(str(st.session_state.pop("review_sim_warning")))
+
+    render_review_simulation_explain_overlay(working_df)
 
 
 
