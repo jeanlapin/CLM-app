@@ -2654,16 +2654,29 @@ def sync_review_simulation_pdfs(
     return generated, errors
 
 
-def review_simulation_available_pdfs(df: pd.DataFrame, selected_indices: list[int]) -> list[dict[str, object]]:
-    if df is None or df.empty or not selected_indices:
+def review_simulation_available_pdfs(
+    df: pd.DataFrame,
+    selected_indices: list[int] | None = None,
+) -> list[dict[str, object]]:
+    if df is None or df.empty:
         return []
-    valid_indices = [int(i) for i in selected_indices if 0 <= int(i) < len(df)]
+
+    if selected_indices:
+        row_indices = [int(i) for i in selected_indices if 0 <= int(i) < len(df)]
+    else:
+        row_indices = list(range(len(df)))
+
     items: list[dict[str, object]] = []
-    for idx in valid_indices:
+    seen_paths: set[str] = set()
+    for idx in row_indices:
         row = df.iloc[idx]
         pdf_path = review_simulation_pdf_path(row)
         if not pdf_path.exists():
             continue
+        resolved_path = str(pdf_path.resolve())
+        if resolved_path in seen_paths:
+            continue
+        seen_paths.add(resolved_path)
         items.append({
             "row": row,
             "path": pdf_path,
@@ -3469,7 +3482,8 @@ def render_review_simulations_screen(portfolio: pd.DataFrame, user: dict) -> Non
     selected_rows = review_sim_rows_from_selection(working_df, selected_keys)
     selected_count = len(selected_rows)
     selected_df = working_df.iloc[selected_rows].copy() if selected_rows else working_df.iloc[0:0].copy()
-    pdf_items = review_simulation_available_pdfs(working_df, selected_rows)
+    selected_pdf_items = review_simulation_available_pdfs(working_df, selected_rows)
+    zip_pdf_items = review_simulation_available_pdfs(base_df)
 
     status_options = list(VIGILANCE_ORDER)
     default_value = "Vigilance Modérée"
@@ -3492,13 +3506,13 @@ def render_review_simulations_screen(portfolio: pd.DataFrame, user: dict) -> Non
     csv_export_bytes = dataframe_to_csv_bytes(build_review_simulation_export_dataframe(working_df))
     single_pdf_bytes: bytes | None = None
     single_pdf_name = "revue_simulation.pdf"
-    if REPORTLAB_AVAILABLE and len(pdf_items) == 1:
-        pdf_item = pdf_items[0]
+    if REPORTLAB_AVAILABLE and len(selected_pdf_items) == 1:
+        pdf_item = selected_pdf_items[0]
         pdf_path = pdf_item.get("path")
         if isinstance(pdf_path, Path) and pdf_path.exists():
             single_pdf_bytes = pdf_path.read_bytes()
             single_pdf_name = str(pdf_item.get("download_name", single_pdf_name))
-    zip_pdf_bytes = review_simulation_pdfs_zip_bytes(pdf_items) if REPORTLAB_AVAILABLE and pdf_items else None
+    zip_pdf_bytes = review_simulation_pdfs_zip_bytes(zip_pdf_items) if REPORTLAB_AVAILABLE and zip_pdf_items else None
     gemini_button_disabled = (selected_count == 0) or (not gemini_api_key)
 
     st.markdown(
@@ -3718,12 +3732,12 @@ def render_review_simulations_screen(portfolio: pd.DataFrame, user: dict) -> Non
         review_simulation_download_button(
             "ZIP PDF",
             data=(zip_pdf_bytes or b""),
-            file_name="revues_simulations_selection.zip",
+            file_name="revues_simulations_tous_pdfs.zip",
             mime="application/zip",
             key="review_toolbar_zip_pdf",
             disabled=(zip_pdf_bytes is None),
             use_container_width=False,
-            help="Télécharge tous les PDF disponibles sur la sélection courante dans un fichier ZIP.",
+            help="Télécharge tous les PDF structurés déjà générés sur le périmètre courant dans un fichier ZIP.",
         )
     with toolbar_cols[7]:
         review_simulation_download_button(
