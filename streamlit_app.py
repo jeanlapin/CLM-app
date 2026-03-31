@@ -3413,14 +3413,17 @@ def render_review_simulations_screen(portfolio: pd.DataFrame, user: dict) -> Non
                 min-width: 0 !important;
             }}
             div[data-testid="stVerticalBlock"]:has(.review-toolbar-nav-scope) div[data-baseweb="select"] > div {{
-                min-height: 2.0rem !important;
-                height: 2.0rem !important;
+                min-height: 2.15rem !important;
+                height: 2.15rem !important;
                 padding-top: 0 !important;
                 padding-bottom: 0 !important;
                 border-radius: 999px !important;
                 border: 1px solid rgba(22, 58, 89, 0.16) !important;
                 background: #FFFFFF !important;
                 box-shadow: none !important;
+                display: flex !important;
+                align-items: center !important;
+                overflow: visible !important;
             }}
             div[data-testid="stVerticalBlock"]:has(.review-toolbar-nav-scope) div[data-baseweb="select"] > div:hover,
             div[data-testid="stVerticalBlock"]:has(.review-toolbar-nav-scope) div[data-baseweb="select"] > div:focus-within {{
@@ -3428,13 +3431,24 @@ def render_review_simulations_screen(portfolio: pd.DataFrame, user: dict) -> Non
                 box-shadow: none !important;
             }}
             div[data-testid="stVerticalBlock"]:has(.review-toolbar-nav-scope) div[data-baseweb="select"] span,
-            div[data-testid="stVerticalBlock"]:has(.review-toolbar-nav-scope) div[data-baseweb="select"] svg,
             div[data-testid="stVerticalBlock"]:has(.review-toolbar-nav-scope) div[data-baseweb="select"] input {{
                 color: #4E6276 !important;
                 font-family: "Source Sans Pro", sans-serif !important;
                 font-size: 0.88rem !important;
                 font-weight: 400 !important;
-                line-height: 1.15 !important;
+                line-height: normal !important;
+                overflow: visible !important;
+            }}
+            div[data-testid="stVerticalBlock"]:has(.review-toolbar-nav-scope) div[data-baseweb="select"] svg {{
+                color: #4E6276 !important;
+            }}
+            div[data-testid="stVerticalBlock"]:has(.review-toolbar-nav-scope) div[data-baseweb="select"] > div > div,
+            div[data-testid="stVerticalBlock"]:has(.review-toolbar-nav-scope) div[data-baseweb="select"] [data-testid="stSelectbox"] > div,
+            div[data-testid="stVerticalBlock"]:has(.review-toolbar-nav-scope) div[data-baseweb="select"] div[role="combobox"] {{
+                display: flex !important;
+                align-items: center !important;
+                min-height: 100% !important;
+                overflow: visible !important;
             }}
             div[role="listbox"] [role="option"],
             div[role="listbox"] [role="option"] span,
@@ -3443,7 +3457,7 @@ def render_review_simulations_screen(portfolio: pd.DataFrame, user: dict) -> Non
                 font-family: "Source Sans Pro", sans-serif !important;
                 font-size: 0.88rem !important;
                 font-weight: 400 !important;
-                line-height: 1.15 !important;
+                line-height: normal !important;
             }}
             .review-toolbar-minor-note {{
                 margin-top: 0.08rem;
