@@ -3346,8 +3346,8 @@ def render_review_simulations_screen(portfolio: pd.DataFrame, user: dict) -> Non
             f"""
             <style>
             div[data-testid="stVerticalBlock"]:has(.review-toolbar-nav-scope) {{
-                gap: 0.02rem;
-                margin-top: -0.02rem;
+                gap: 0.24rem;
+                margin-top: 0.18rem;
             }}
             div[data-testid="stVerticalBlock"]:has(.review-toolbar-nav-scope) > div[data-testid="stHorizontalBlock"] {{
                 align-items: center;
@@ -3358,8 +3358,7 @@ def render_review_simulations_screen(portfolio: pd.DataFrame, user: dict) -> Non
                 margin: 0 !important;
             }}
             .review-toolbar-nav-item,
-            .review-toolbar-nav-disabled,
-            .review-toolbar-status-label {{
+            .review-toolbar-nav-disabled {{
                 display: inline-flex;
                 align-items: center;
                 color: {PRIMARY_COLOR};
@@ -3370,6 +3369,19 @@ def render_review_simulations_screen(portfolio: pd.DataFrame, user: dict) -> Non
                 font-size: 1rem !important;
                 font-weight: 400 !important;
                 line-height: 1.25 !important;
+                white-space: nowrap;
+            }}
+            .review-toolbar-status-label {{
+                display: inline-flex;
+                align-items: center;
+                color: #4E6276;
+                text-decoration: none !important;
+                background: transparent !important;
+                border: none !important;
+                font-family: "Source Sans Pro", sans-serif !important;
+                font-size: 0.92rem !important;
+                font-weight: 400 !important;
+                line-height: 1.2 !important;
                 white-space: nowrap;
             }}
             .review-toolbar-nav-item::before,
@@ -3401,8 +3413,8 @@ def render_review_simulations_screen(portfolio: pd.DataFrame, user: dict) -> Non
                 min-width: 0 !important;
             }}
             div[data-testid="stVerticalBlock"]:has(.review-toolbar-nav-scope) div[data-baseweb="select"] > div {{
-                min-height: 2.1rem !important;
-                height: 2.1rem !important;
+                min-height: 2.0rem !important;
+                height: 2.0rem !important;
                 padding-top: 0 !important;
                 padding-bottom: 0 !important;
                 border-radius: 999px !important;
@@ -3418,11 +3430,11 @@ def render_review_simulations_screen(portfolio: pd.DataFrame, user: dict) -> Non
             div[data-testid="stVerticalBlock"]:has(.review-toolbar-nav-scope) div[data-baseweb="select"] span,
             div[data-testid="stVerticalBlock"]:has(.review-toolbar-nav-scope) div[data-baseweb="select"] svg,
             div[data-testid="stVerticalBlock"]:has(.review-toolbar-nav-scope) div[data-baseweb="select"] input {{
-                color: {PRIMARY_COLOR} !important;
+                color: #4E6276 !important;
                 font-family: "Source Sans Pro", sans-serif !important;
-                font-size: 1rem !important;
+                font-size: 0.92rem !important;
                 font-weight: 400 !important;
-                line-height: 1.25 !important;
+                line-height: 1.2 !important;
             }}
             .review-toolbar-minor-note {{
                 margin-top: 0.08rem;
