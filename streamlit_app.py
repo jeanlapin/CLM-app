@@ -1810,7 +1810,8 @@ def persist_review_planning_settings(freq_map: dict[str, int], cap_map: dict[str
 
 def clear_review_simulation_ephemeral_state() -> None:
     st.session_state.pop(REVIEW_SIM_GEMINI_KEY_STATE, None)
-
+    st.session_state.pop("review_sim_explain_target", None)
+    st.session_state.pop("review_sim_last_cell_action", None)
 
 def clear_ephemeral_state_if_view_changes(next_view: str) -> None:
     target_view = str(next_view or "").strip()
@@ -3066,14 +3067,12 @@ def build_review_sim_explain_href(societe_id: object, siren: object, has_content
 
 
 def render_review_simulation_explain_overlay(df: pd.DataFrame) -> None:
-    explain_societe_raw = st.query_params.get("explain_societe", "")
-    explain_siren_raw = st.query_params.get("explain_siren", "")
-    if isinstance(explain_societe_raw, list):
-        explain_societe_raw = explain_societe_raw[0] if explain_societe_raw else ""
-    if isinstance(explain_siren_raw, list):
-        explain_siren_raw = explain_siren_raw[0] if explain_siren_raw else ""
-    explain_societe = str(explain_societe_raw).strip()
-    explain_siren = str(explain_siren_raw).strip()
+    target = st.session_state.get("review_sim_explain_target")
+    if not isinstance(target, dict):
+        return
+
+    explain_societe = str(target.get("societe", "") or "").strip()
+    explain_siren = str(target.get("siren", "") or "").strip()
     if not explain_societe or not explain_siren or df is None or df.empty:
         return
 
@@ -3087,102 +3086,60 @@ def render_review_simulation_explain_overlay(df: pd.DataFrame) -> None:
     target_siren = normalize_siren(pd.Series([explain_siren])).fillna("").astype(str).iloc[0]
     match = scope.loc[(scope["__societe_norm"] == target_societe) & (scope["__siren_norm"] == target_siren)]
     if match.empty:
+        st.session_state.pop("review_sim_explain_target", None)
         return
 
     row = match.iloc[0]
     explain_text = str(row.get("Explique moi", "") or "").strip()
     if not explain_text:
+        st.session_state.pop("review_sim_explain_target", None)
         return
 
     denomination = escape(str(row.get("Dénomination", "") or "").strip())
     siren_label = escape(str(row.get("SIREN", "") or "").strip())
-    close_href = "?view=revues-simulations"
     content_html = escape(explain_text).replace("\n", "<br>")
+
+    head_cols = st.columns([7, 1], gap="small")
+    with head_cols[0]:
+        st.markdown(
+            f"""
+            <div style="margin:0.35rem 0 0.25rem 0;">
+                <div style="color:#163A59;font-family:'Source Sans Pro',sans-serif;font-size:1.18rem;font-weight:700;line-height:1.2;">Explique moi</div>
+                <div style="margin-top:0.12rem;color:#5B7084;font-family:'Source Sans Pro',sans-serif;font-size:0.92rem;line-height:1.35;">{denomination} • {siren_label}</div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+    with head_cols[1]:
+        st.markdown("<div style='height:0.25rem;'></div>", unsafe_allow_html=True)
+        if st.button("Fermer", key="review_explain_close_btn", type="secondary", use_container_width=True):
+            st.session_state.pop("review_sim_explain_target", None)
+            st.rerun()
 
     st.markdown(
         f"""
         <style>
-        .review-explain-overlay {{
-            position: fixed;
-            inset: 0;
-            z-index: 9999;
-            background: rgba(15, 23, 42, 0.46);
-            display: flex;
-            align-items: stretch;
-            justify-content: center;
-            padding: 2.2rem 2rem;
-        }}
-        .review-explain-overlay__panel {{
-            width: min(1180px, 100%);
-            height: calc(100vh - 4.4rem);
+        .review-explain-panel {{
+            border: 1px solid rgba(22,58,89,0.10);
+            border-radius: 18px;
             background: #FFFFFF;
-            border-radius: 20px;
-            box-shadow: 0 30px 70px rgba(15, 23, 42, 0.22);
-            display: flex;
-            flex-direction: column;
+            box-shadow: 0 18px 45px rgba(15, 23, 42, 0.10);
             overflow: hidden;
-            border: 1px solid rgba(22,58,89,0.08);
+            margin: 0.15rem 0 0.9rem 0;
         }}
-        .review-explain-overlay__head {{
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            gap: 1rem;
-            padding: 1rem 1.2rem;
-            border-bottom: 1px solid rgba(22,58,89,0.08);
-            background: #F6FAFE;
-        }}
-        .review-explain-overlay__title {{
-            color: #163A59;
-            font-family: "Source Sans Pro", sans-serif;
-            font-size: 1.25rem;
-            font-weight: 700;
-            line-height: 1.2;
-        }}
-        .review-explain-overlay__subtitle {{
-            margin-top: 0.15rem;
-            color: #5B7084;
-            font-family: "Source Sans Pro", sans-serif;
-            font-size: 0.95rem;
-            font-weight: 400;
-        }}
-        .review-explain-overlay__close {{
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
-            min-width: 6.8rem;
-            padding: 0.52rem 0.9rem;
-            border-radius: 999px;
-            border: 1px solid rgba(22,58,89,0.12);
-            background: #FFFFFF;
-            color: #163A59 !important;
-            text-decoration: none !important;
-            font-family: "Source Sans Pro", sans-serif;
-            font-size: 0.96rem;
-            font-weight: 600;
-        }}
-        .review-explain-overlay__body {{
-            flex: 1 1 auto;
-            overflow: auto;
-            padding: 1.25rem 1.3rem 1.4rem 1.3rem;
+        .review-explain-panel__body {{
+            max-height: 68vh;
+            overflow-y: auto;
+            padding: 1.1rem 1.2rem 1.2rem 1.2rem;
             color: #163A59;
             font-family: "Source Sans Pro", sans-serif;
             font-size: 1rem;
-            line-height: 1.6;
+            line-height: 1.62;
             white-space: normal;
         }}
         </style>
-        <div class="review-explain-overlay">
-            <div class="review-explain-overlay__panel">
-                <div class="review-explain-overlay__head">
-                    <div>
-                        <div class="review-explain-overlay__title">Explique moi</div>
-                        <div class="review-explain-overlay__subtitle">{denomination} • {siren_label}</div>
-                    </div>
-                    <a class="review-explain-overlay__close" href="{close_href}">Fermer</a>
-                </div>
-                <div class="review-explain-overlay__body">{content_html}</div>
-            </div>
+        <div class="review-explain-panel">
+            <div class="review-explain-panel__body">{content_html}</div>
         </div>
         """,
         unsafe_allow_html=True,
@@ -3211,20 +3168,31 @@ def build_review_simulation_detail_df(portfolio: pd.DataFrame, review_df: pd.Dat
     return detail_df.reset_index(drop=True)
 
 def render_review_simulation_table(df: pd.DataFrame, key: str) -> list[int]:
+    def _first_selected_cell(cells: object) -> tuple[int, str] | None:
+        if not cells:
+            return None
+        cell = list(cells)[0]
+        if isinstance(cell, dict):
+            row_idx = cell.get("row")
+            col_name = cell.get("column")
+        elif isinstance(cell, (list, tuple)) and len(cell) >= 2:
+            row_idx, col_name = cell[0], cell[1]
+        else:
+            return None
+        try:
+            row_idx_int = int(row_idx)
+        except Exception:
+            return None
+        col_name_text = str(col_name or "").strip()
+        if not col_name_text:
+            return None
+        return row_idx_int, col_name_text
+
     raw_df = df.copy().reset_index(drop=True)
     display_df = raw_df.copy()
     display_df["Date prochaine revue"] = display_df["Date prochaine revue"].apply(format_short_date)
-    display_df["Explique moi"] = display_df.apply(
-        lambda row: build_review_sim_explain_href(
-            row.get(SOC_COL, ""),
-            row.get("SIREN", ""),
-            bool(str(row.get("Explique moi", "") or "").strip()),
-        ),
-        axis=1,
-    )
-    display_df["SIREN"] = display_df.apply(
-        lambda row: build_review_sim_client_href(row.get(SOC_COL, ""), row.get("SIREN", "")),
-        axis=1,
+    display_df["Explique moi"] = display_df["Explique moi"].apply(
+        lambda value: "●" if str(value or "").strip() else "○"
     )
     display_df[REVIEW_SIM_TREND_LABEL] = display_df[REVIEW_SIM_TREND_LABEL].apply(review_trend_icon)
 
@@ -3242,19 +3210,17 @@ def render_review_simulation_table(df: pd.DataFrame, key: str) -> list[int]:
 
     column_config = {
         SOC_COL: st.column_config.TextColumn("Société", width="small"),
-        "SIREN": st.column_config.LinkColumn(
+        "SIREN": st.column_config.TextColumn(
             "SIREN",
             width="small",
-            display_text=r".*siren=([^&]+).*$",
-            help="Ouvre la fiche client pour le SIREN sélectionné.",
+            help="Cliquez sur une cellule SIREN pour ouvrir la fiche client dans l’application.",
         ),
         "Dénomination": st.column_config.TextColumn("Dénomination", width="medium"),
         REVIEW_SIM_REAL_LABEL: st.column_config.TextColumn(REVIEW_SIM_REAL_LABEL, width="medium"),
-        "Explique moi": st.column_config.LinkColumn(
+        "Explique moi": st.column_config.TextColumn(
             "Explique moi",
             width="small",
-            display_text=r".*#(.*)$",
-            help="○ : champ vide • ● : contenu disponible en plein écran.",
+            help="○ : champ vide • ● : contenu disponible en grand format dans l’écran.",
         ),
         REVIEW_SIM_TREND_LABEL: st.column_config.TextColumn(REVIEW_SIM_TREND_LABEL, width="small"),
         REVIEW_SIM_EST_LABEL: st.column_config.TextColumn(REVIEW_SIM_EST_LABEL, width="medium"),
@@ -3269,16 +3235,51 @@ def render_review_simulation_table(df: pd.DataFrame, key: str) -> list[int]:
         column_order=list(display_df.columns),
         column_config=column_config,
         on_select="rerun",
-        selection_mode="multi-row",
+        selection_mode=("multi-row", "single-cell"),
         row_height=42,
         key=key,
     )
     selected_rows: list[int] = []
+    selected_cells: list[object] = []
     if event is not None:
         try:
             selected_rows = [int(i) for i in event.selection.get("rows", [])]
         except Exception:
             selected_rows = []
+        try:
+            selected_cells = list(event.selection.get("cells", []))
+        except Exception:
+            selected_cells = []
+
+    selected_cell = _first_selected_cell(selected_cells)
+    if selected_cell is None:
+        st.session_state.pop("review_sim_last_cell_action", None)
+        return selected_rows
+
+    row_idx, col_name = selected_cell
+    if row_idx < 0 or row_idx >= len(raw_df):
+        return selected_rows
+
+    row = raw_df.iloc[row_idx]
+    societe_id = str(row.get(SOC_COL, "") or "").strip()
+    siren = str(row.get("SIREN", "") or "").strip()
+    action_token = f"{row_idx}:{col_name}:{societe_id}|{siren}"
+    last_action_token = str(st.session_state.get("review_sim_last_cell_action", "") or "").strip()
+    if action_token == last_action_token:
+        return selected_rows
+
+    if col_name == "SIREN" and societe_id and siren:
+        st.session_state["review_sim_last_cell_action"] = action_token
+        open_client_detail(societe_id, siren)
+        st.rerun()
+
+    if col_name == "Explique moi":
+        explain_text = str(row.get("Explique moi", "") or "").strip()
+        if explain_text and societe_id and siren:
+            st.session_state["review_sim_last_cell_action"] = action_token
+            st.session_state["review_sim_explain_target"] = {"societe": societe_id, "siren": siren}
+            st.rerun()
+
     return selected_rows
 
 
