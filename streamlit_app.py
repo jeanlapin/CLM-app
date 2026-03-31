@@ -4235,12 +4235,11 @@ def render_dataset_admin_submenu(manifest: dict | None, user: dict) -> None:
         st.rerun()
 
 
-def render_agent_ia_admin_submenu(user: dict, manifest: dict | None = None) -> None:
+def render_agent_ia_content(user: dict, manifest: dict | None = None) -> None:
     settings = (manifest or load_manifest() or {}).get("agent_ia_settings") or {}
     saved_prompt = str(settings.get("review_edd_prompt") or "").strip() or DEFAULT_REVIEW_EDD_PROMPT
-    sync_agent_ia_prompt_session(saved_prompt, force=True)
+    sync_agent_ia_prompt_session(saved_prompt)
 
-    st.markdown("**Agent IA**")
     st.text_input(
         "Clé API Gemini",
         type="password",
@@ -4254,7 +4253,7 @@ def render_agent_ia_admin_submenu(user: dict, manifest: dict | None = None) -> N
         st.text_area(
             "Prompt Revue EDD",
             key=AGENT_IA_PROMPT_WIDGET_STATE,
-            height=220,
+            height=260,
             help="Prompt central utilisé par l’écran Revues & Simulations pour construire la consigne envoyée à Gemini.",
             on_change=autosave_agent_ia_prompt,
             kwargs={"user": user},
@@ -4284,32 +4283,51 @@ def render_agent_ia_admin_submenu(user: dict, manifest: dict | None = None) -> N
         st.text_area(
             "Prompt Revue EDD",
             value=saved_prompt,
-            height=220,
+            height=260,
             disabled=True,
         )
         st.caption("Le prompt Revue EDD est piloté par un administrateur et utilisé tel quel dans Revues & Simulations.")
 
 
-def render_admin_data_manager(user: dict) -> None:
-    manifest = load_manifest()
-    submenu_options = ["Agent IA"]
-    if user.get("role") == "admin":
-        submenu_options = ["Jeu de données", "Agent IA"]
-    current_submenu = st.session_state.get(AGENT_IA_ADMIN_SUBMENU_STATE)
-    if current_submenu not in submenu_options:
-        st.session_state[AGENT_IA_ADMIN_SUBMENU_STATE] = submenu_options[0]
 
-    with st.sidebar.expander("Administration des données", expanded=False):
-        submenu = st.radio(
-            "Sous-menu Administration des données",
-            options=submenu_options,
-            label_visibility="collapsed",
-            key=AGENT_IA_ADMIN_SUBMENU_STATE,
-        )
-        if submenu == "Jeu de données":
-            render_dataset_admin_submenu(manifest, user)
-        else:
-            render_agent_ia_admin_submenu(user, manifest)
+def render_agent_ia_screen(user: dict) -> None:
+    render_home_hero("Agent IA")
+    st.caption("Administration des données")
+    st.markdown(
+        "<div class='cm-premium-card'><strong>Configuration centralisée de l’agent.</strong> La clé API reste éphémère et le prompt <em>Revue EDD</em> est utilisé par l’écran Revues &amp; Simulations.</div>",
+        unsafe_allow_html=True,
+    )
+    render_agent_ia_content(user, load_manifest())
+
+
+
+def render_dataset_admin_screen(user: dict) -> None:
+    render_home_hero("Jeu de données")
+    st.caption("Administration des données")
+    render_dataset_admin_submenu(load_manifest(), user)
+
+
+
+def render_admin_data_manager(user: dict) -> None:
+    current_view = str(st.session_state.get("cm_view", "portfolio") or "portfolio")
+    with st.sidebar.expander("Administration des données", expanded=current_view in {"dataset_admin", "agent_ia"}):
+        if user.get("role") == "admin":
+            if st.button(
+                "Jeu de données",
+                use_container_width=True,
+                type="primary" if current_view == "dataset_admin" else "secondary",
+                key="open_dataset_admin_sidebar",
+            ):
+                open_dataset_admin_view()
+                st.rerun()
+        if st.button(
+            "Agent IA",
+            use_container_width=True,
+            type="primary" if current_view == "agent_ia" else "secondary",
+            key="open_agent_ia_sidebar",
+        ):
+            open_agent_ia_view()
+            st.rerun()
 
 
 def render_scope_selector(df: pd.DataFrame, user: dict):
@@ -5130,6 +5148,20 @@ def open_review_simulations_view() -> None:
 def open_portfolio_view() -> None:
     clear_ephemeral_state_if_view_changes("portfolio")
     st.session_state["cm_view"] = "portfolio"
+    st.query_params.clear()
+
+
+
+def open_dataset_admin_view() -> None:
+    clear_ephemeral_state_if_view_changes("dataset_admin")
+    st.session_state["cm_view"] = "dataset_admin"
+    st.query_params.clear()
+
+
+
+def open_agent_ia_view() -> None:
+    clear_ephemeral_state_if_view_changes("agent_ia")
+    st.session_state["cm_view"] = "agent_ia"
     st.query_params.clear()
 
 
@@ -6933,13 +6965,19 @@ def render_review_planning_screen(portfolio: pd.DataFrame, user: dict) -> None:
 
 
 
-def render_user_header(user: dict, selected_societies: list[str], total_societies: int) -> None:
+def render_user_header(
+    user: dict,
+    selected_societies: list[str] | None = None,
+    total_societies: int | None = None,
+) -> None:
     manifest = load_manifest()
+    selected_count = len(selected_societies or [])
     with st.sidebar:
         st.markdown("### Session")
         st.write("**Utilisateur :** {}".format(user["display_name"]))
         st.write("**Rôle :** {}".format(user["role"]))
-        st.write("**Sociétés sélectionnées :** {} / {}".format(len(selected_societies), total_societies))
+        if total_societies is not None:
+            st.write("**Sociétés sélectionnées :** {} / {}".format(selected_count, total_societies))
         if manifest and manifest.get("published_at_utc"):
             st.write(
                 "**Jeu actif :** {}".format(
@@ -6959,8 +6997,23 @@ def main() -> None:
         login_form()
         return
 
-    render_admin_data_manager(user)
     sync_view_state_from_query_params()
+    render_admin_data_manager(user)
+
+    current_view = str(st.session_state.get("cm_view", "portfolio") or "portfolio")
+    if user.get("role") != "admin" and current_view == "dataset_admin":
+        current_view = "agent_ia"
+        st.session_state["cm_view"] = current_view
+
+    if current_view == "agent_ia":
+        render_user_header(user)
+        render_agent_ia_screen(user)
+        return
+
+    if current_view == "dataset_admin":
+        render_user_header(user)
+        render_dataset_admin_screen(user)
+        return
 
     try:
         base, indicators, history, portfolio = load_app_datasets()
