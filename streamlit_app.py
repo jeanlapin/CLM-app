@@ -1842,6 +1842,21 @@ def persist_agent_ia_settings(review_edd_prompt: str, user: dict | None = None) 
 
 
 
+def sync_agent_ia_prompt_session(saved_prompt: str | None = None) -> None:
+    normalized_prompt = str(saved_prompt or "").strip() or DEFAULT_REVIEW_EDD_PROMPT
+    current_prompt = str(st.session_state.get(AGENT_IA_PROMPT_STATE, "") or "")
+    if not current_prompt.strip():
+        st.session_state[AGENT_IA_PROMPT_STATE] = normalized_prompt
+
+
+
+def autosave_agent_ia_prompt(user: dict | None = None) -> None:
+    prompt = str(st.session_state.get(AGENT_IA_PROMPT_STATE, "") or "").strip() or DEFAULT_REVIEW_EDD_PROMPT
+    st.session_state[AGENT_IA_PROMPT_STATE] = prompt
+    persist_agent_ia_settings(prompt, user=user)
+    st.session_state["agent_ia_prompt_notice"] = "Le prompt Revue EDD a été enregistré."
+
+
 
 def clear_review_simulation_ephemeral_state() -> None:
     # La clé API Gemini est désormais saisie dans le menu latéral "Agent IA"
@@ -3180,32 +3195,56 @@ def render_review_simulations_screen(portfolio: pd.DataFrame, user: dict) -> Non
         st.info("Aucun SIREN disponible pour préparer une revue sur le périmètre courant.")
         return
 
-    objective_1 = "Préparer les consignes de revue adaptées au niveau de vigilance, aux alertes actives et au statut EDD."
-    objective_2 = "Conserver pour chaque SIREN une synthèse exploitable, une tendance, un statut estimé après remédiation et un PDF structuré."
     agent_ia_settings = load_agent_ia_settings()
     prompt_value = str(agent_ia_settings.get("review_edd_prompt") or "").strip() or DEFAULT_REVIEW_EDD_PROMPT
     gemini_api_key = str(st.session_state.get(REVIEW_SIM_GEMINI_KEY_STATE, "") or "").strip()
+    gemini_status_label = (
+        "chargée pour cette session"
+        if gemini_api_key else
+        "à saisir dans Administration des données > Agent IA"
+    )
 
-    top_left, top_right = st.columns([2.25, 3.75])
-    with top_left:
-        st.markdown(
-            "<div class='cm-analysis-mode-shell'>"
-            "<div class='cm-analysis-mode-kicker'>Préparation multi-dossiers</div>"
-            "<div class='cm-analysis-mode-title'>Objectifs de la revue</div>"
-            f"<div class='cm-analysis-mode-note'>1. {escape(objective_1)}<br>2. {escape(objective_2)}</div>"
-            "</div>",
-            unsafe_allow_html=True,
-        )
-    with top_right:
-        st.markdown('<h3 class="cm-section-title">Revues &amp; Simulations</h3>', unsafe_allow_html=True)
-        st.caption("Écran dédié à la préparation des consignes de revue. Sélectionnez jusqu’à 10 SIREN, lancez Gemini sur la sélection et exportez le résultat enrichi.")
-        st.caption(f"Modèle utilisé : {GEMINI_MODEL_DEFAULT}. Paramètres IA : barre de gauche > Administration des données > Agent IA.")
-        if gemini_api_key:
-            st.success("Clé API Gemini chargée pour la session en cours.")
-        else:
-            st.info("Saisissez la clé API dans la barre de gauche > Administration des données > Agent IA pour activer Gemini.")
-        st.caption("Le prompt utilisé est le prompt central « Revue EDD » configuré dans le menu Agent IA.")
-        base_prompt = prompt_value
+    st.markdown(
+        f"""
+        <style>
+        .review-screen-compact-shell {{
+            margin: 0.18rem 0 0.72rem 0;
+            padding: 0.78rem 0.96rem;
+            border-radius: 18px;
+            border: 1px solid rgba(22, 58, 89, 0.12);
+            background: rgba(255, 255, 255, 0.92);
+            box-shadow: 0 8px 18px rgba(22, 58, 89, 0.04);
+        }}
+        .review-screen-compact-title {{
+            font-family: 'Montserrat', sans-serif;
+            font-size: 1rem;
+            font-weight: 800;
+            color: {PRIMARY_COLOR};
+            margin-bottom: 0.14rem;
+        }}
+        .review-screen-compact-note {{
+            color: #4F647A;
+            font-size: 0.84rem;
+            line-height: 1.4;
+        }}
+        .review-screen-compact-note strong {{
+            color: {PRIMARY_COLOR};
+            font-weight: 800;
+        }}
+        </style>
+        <div class='review-screen-compact-shell'>
+            <div class='review-screen-compact-title'>Revues &amp; Simulations</div>
+            <div class='review-screen-compact-note'>
+                Sélectionnez un lot de SIREN, mettez à jour le statut estimé ou lancez Gemini.
+                <strong>Modèle :</strong> {escape(GEMINI_MODEL_DEFAULT)} ·
+                <strong>Prompt :</strong> Revue EDD central ·
+                <strong>Clé API :</strong> {escape(gemini_status_label)}
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+    base_prompt = prompt_value
 
     search_term = st.text_input(
         "Rechercher un SIREN ou une dénomination",
@@ -4165,8 +4204,7 @@ def render_dataset_admin_submenu(manifest: dict | None, user: dict) -> None:
 def render_agent_ia_admin_submenu(user: dict, manifest: dict | None = None) -> None:
     settings = (manifest or load_manifest() or {}).get("agent_ia_settings") or {}
     saved_prompt = str(settings.get("review_edd_prompt") or "").strip() or DEFAULT_REVIEW_EDD_PROMPT
-    if AGENT_IA_PROMPT_STATE not in st.session_state:
-        st.session_state[AGENT_IA_PROMPT_STATE] = saved_prompt
+    sync_agent_ia_prompt_session(saved_prompt)
 
     st.markdown("**Agent IA**")
     st.text_input(
@@ -4179,28 +4217,27 @@ def render_agent_ia_admin_submenu(user: dict, manifest: dict | None = None) -> N
     st.caption(f"Modèle utilisé : {GEMINI_MODEL_DEFAULT}. La clé reste uniquement en mémoire pendant la session courante.")
 
     if user.get("role") == "admin":
-        with st.form("agent_ia_prompt_form", clear_on_submit=False):
-            st.text_area(
-                "Prompt Revue EDD",
-                key=AGENT_IA_PROMPT_STATE,
-                height=220,
-                help="Prompt central utilisé par l’écran Revues & Simulations pour construire la consigne envoyée à Gemini.",
-            )
-            save_col, reset_col = st.columns(2)
-            with save_col:
-                save_prompt = st.form_submit_button("Enregistrer le prompt", type="primary", use_container_width=True)
-            with reset_col:
-                reset_prompt = st.form_submit_button("Réinitialiser le prompt", use_container_width=True)
+        st.text_area(
+            "Prompt Revue EDD",
+            key=AGENT_IA_PROMPT_STATE,
+            height=220,
+            help="Prompt central utilisé par l’écran Revues & Simulations pour construire la consigne envoyée à Gemini.",
+            on_change=autosave_agent_ia_prompt,
+            kwargs={"user": user},
+        )
+        action_col, note_col = st.columns([1.1, 1.9])
+        with action_col:
+            if st.button("Réinitialiser le prompt", use_container_width=True, key="agent_ia_reset_prompt"):
+                st.session_state[AGENT_IA_PROMPT_STATE] = DEFAULT_REVIEW_EDD_PROMPT
+                persist_agent_ia_settings(DEFAULT_REVIEW_EDD_PROMPT, user=user)
+                st.session_state["agent_ia_prompt_notice"] = "Le prompt Revue EDD a été réinitialisé puis enregistré."
+                st.rerun()
+        with note_col:
+            st.caption("Le prompt est enregistré automatiquement dès qu’il est modifié.")
 
-        if reset_prompt:
-            st.session_state[AGENT_IA_PROMPT_STATE] = DEFAULT_REVIEW_EDD_PROMPT
-            persist_agent_ia_settings(DEFAULT_REVIEW_EDD_PROMPT, user=user)
-            st.success("Le prompt Revue EDD a été réinitialisé puis enregistré.")
-        elif save_prompt:
-            prompt_to_save = str(st.session_state.get(AGENT_IA_PROMPT_STATE, "") or "").strip() or DEFAULT_REVIEW_EDD_PROMPT
-            st.session_state[AGENT_IA_PROMPT_STATE] = prompt_to_save
-            persist_agent_ia_settings(prompt_to_save, user=user)
-            st.success("Le prompt Revue EDD a été enregistré.")
+        prompt_notice = st.session_state.pop("agent_ia_prompt_notice", "")
+        if prompt_notice:
+            st.success(str(prompt_notice))
 
         saved_meta = load_agent_ia_settings()
         saved_at = format_manifest_date(saved_meta.get("saved_at_utc")) if saved_meta.get("saved_at_utc") else None
