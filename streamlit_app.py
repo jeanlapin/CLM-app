@@ -3165,7 +3165,6 @@ def render_review_simulations_screen(portfolio: pd.DataFrame, user: dict) -> Non
             height=105,
             key="review_sim_prompt_preview",
         ).strip() or default_prompt
-        st.caption(f"Modèle utilisé : {GEMINI_MODEL_DEFAULT}")
 
     search_catalog = (
         base_df[["SIREN", "Dénomination"]]
