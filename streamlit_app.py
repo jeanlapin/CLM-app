@@ -3499,6 +3499,37 @@ def render_review_simulations_screen(portfolio: pd.DataFrame, user: dict) -> Non
     default_real_filter = st.session_state.get("review_sim_real_filter")
     if not isinstance(default_real_filter, list) or not default_real_filter:
         default_real_filter = list(status_filter_options)
+
+    st.markdown(
+        """
+        <style>
+        div[data-testid="stVerticalBlock"]:has(.review-real-filter-scope) div[data-baseweb="tag"] {
+            background: #F5F7FA !important;
+            border: 1px solid rgba(22, 58, 89, 0.16) !important;
+            border-radius: 999px !important;
+            box-shadow: none !important;
+        }
+        div[data-testid="stVerticalBlock"]:has(.review-real-filter-scope) div[data-baseweb="tag"] *,
+        div[data-testid="stVerticalBlock"]:has(.review-real-filter-scope) div[data-baseweb="tag"] span,
+        div[data-testid="stVerticalBlock"]:has(.review-real-filter-scope) div[data-baseweb="tag"] div {
+            color: #163A59 !important;
+            fill: #163A59 !important;
+            font-family: "Source Sans Pro", sans-serif !important;
+        }
+        div[data-testid="stVerticalBlock"]:has(.review-real-filter-scope) div[data-baseweb="tag"] svg {
+            color: #5B7084 !important;
+            fill: #5B7084 !important;
+        }
+        div[data-testid="stVerticalBlock"]:has(.review-real-filter-scope) div[data-baseweb="tag"]:hover {
+            background: #EEF2F6 !important;
+            border-color: rgba(22, 58, 89, 0.20) !important;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+    st.markdown("<div class='review-real-filter-scope'></div>", unsafe_allow_html=True)
+
     current_filter = st.multiselect(
         "Filtrer sur le statut de vigilance réel",
         options=status_filter_options,
