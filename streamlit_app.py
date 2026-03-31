@@ -3124,6 +3124,7 @@ def render_review_simulation_table(df: pd.DataFrame, key: str) -> list[int]:
 
 
 def render_review_simulations_screen(portfolio: pd.DataFrame, user: dict) -> None:
+    render_home_hero("Revues & Simulations")
     nav = render_primary_navigation("review_simulations")
     if nav == "portfolio":
         open_portfolio_view()
@@ -3139,8 +3140,6 @@ def render_review_simulations_screen(portfolio: pd.DataFrame, user: dict) -> Non
     if base_df.empty:
         st.info("Aucun SIREN disponible pour préparer une revue sur le périmètre courant.")
         return
-
-    render_home_hero("Revues & Simulations")
 
     default_prompt = (
         "Tu es un analyste conformité. Pour chaque SIREN sélectionné, prépare les consignes de revue en analysant l’ensemble des données "
