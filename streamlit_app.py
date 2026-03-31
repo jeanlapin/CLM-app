@@ -3140,6 +3140,8 @@ def render_review_simulations_screen(portfolio: pd.DataFrame, user: dict) -> Non
         st.info("Aucun SIREN disponible pour préparer une revue sur le périmètre courant.")
         return
 
+    render_home_hero("Revues & Simulations")
+
     default_prompt = (
         "Tu es un analyste conformité. Pour chaque SIREN sélectionné, prépare les consignes de revue en analysant l’ensemble des données "
         "de base source, l’ensemble des indicateurs source, ainsi que le contexte de simulation (statut de vigilance réel, alertes calculées, "
