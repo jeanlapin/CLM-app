@@ -2993,9 +2993,9 @@ def style_review_simulation_table(display_df: pd.DataFrame) -> pd.io.formats.sty
             return base + "background-color: rgba(249,115,22,0.10); color:#B54708; font-weight:700;"
         if column_name == "Explique moi":
             text = str(value).strip()
-            if text == "Pleine":
-                return base + "background-color: rgba(22,58,89,0.08); color:#163A59; font-weight:700; letter-spacing:0.01em;"
-            return base + "background-color: rgba(148,163,184,0.12); color:#66788A; font-weight:600;"
+            if text:
+                return base + "background-color: rgba(22,58,89,0.06); color:#163A59; font-weight:700; letter-spacing:0.01em; text-decoration: underline; text-underline-offset: 0.12rem;"
+            return base + "background-color: transparent; color: transparent;"
         return base
 
     zebra = pd.DataFrame("", index=display_df.index, columns=display_df.columns)
@@ -3046,6 +3046,14 @@ def render_review_status_gauges(df: pd.DataFrame) -> None:
     grid_style = "display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:0.85rem;"
     st.markdown(f"<div style='{grid_style} margin:0.2rem 0 0.55rem 0;'>" + "".join(real_cards) + "</div>", unsafe_allow_html=True)
     st.markdown(f"<div style='{grid_style} margin:0.0rem 0 0.95rem 0;'>" + "".join(est_cards) + "</div>", unsafe_allow_html=True)
+
+
+def format_review_simulation_vigilance_filter_option(label: str) -> str:
+    label_text = str(label or "").strip()
+    if not label_text:
+        return ""
+    short_label = label_text.replace("Vigilance ", "").strip()
+    return f"{status_emoji(label_text, 'vigilance')} {short_label}"
 
 
 def render_review_simulation_vigilance_legend(status_labels: list[str]) -> None:
@@ -3304,7 +3312,7 @@ def render_review_simulation_table(df: pd.DataFrame, key: str) -> list[int]:
     display_df = raw_df.copy()
     display_df["Date prochaine revue"] = display_df["Date prochaine revue"].apply(format_short_date)
     display_df["Explique moi"] = display_df["Explique moi"].apply(
-        lambda value: "Pleine" if str(value or "").strip() else "Vide"
+        lambda value: "a lire" if str(value or "").strip() else ""
     )
     display_df[REVIEW_SIM_TREND_LABEL] = display_df[REVIEW_SIM_TREND_LABEL].apply(review_trend_icon)
 
@@ -3340,7 +3348,7 @@ def render_review_simulation_table(df: pd.DataFrame, key: str) -> list[int]:
         "Explique moi": st.column_config.TextColumn(
             "Explique moi",
             width="small",
-            help="Vide : aucun contenu • Pleine : cliquez pour ouvrir le contenu en grand format.",
+            help="Colonne vide : aucun contenu • a lire : cliquez pour ouvrir le contenu en grand format.",
         ),
         REVIEW_SIM_TREND_DISPLAY_LABEL: st.column_config.TextColumn(REVIEW_SIM_TREND_DISPLAY_LABEL, width="small"),
         REVIEW_SIM_EST_DISPLAY_LABEL: st.column_config.TextColumn(REVIEW_SIM_EST_DISPLAY_LABEL, width="small"),
@@ -3495,10 +3503,10 @@ def render_review_simulations_screen(portfolio: pd.DataFrame, user: dict) -> Non
         "Filtrer sur le statut de vigilance réel",
         options=status_filter_options,
         default=[v for v in default_real_filter if v in status_filter_options] or list(status_filter_options),
+        format_func=format_review_simulation_vigilance_filter_option,
         key="review_sim_real_filter",
         help="Ce filtre agit sur le tableau Revues & Simulations.",
     )
-    render_review_simulation_vigilance_legend(status_filter_options)
     if current_filter:
         working_df = working_df[working_df[REVIEW_SIM_REAL_LABEL].astype(str).isin(current_filter)].copy()
     else:
