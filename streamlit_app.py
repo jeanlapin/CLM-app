@@ -4086,18 +4086,32 @@ Tu dois répondre exclusivement en JSON valide, sans texte avant ni après, avec
         }
         div[data-testid="stVerticalBlock"]:has(#agent-ia-config-anchor) div[data-testid="stTextArea"] {
             width: 100% !important;
+            margin: 0 !important;
+        }
+        div[data-testid="stVerticalBlock"]:has(#agent-ia-config-anchor) div[data-testid="stTextArea"] label {
+            margin: 0 !important;
+            min-height: 0 !important;
+        }
+        div[data-testid="stVerticalBlock"]:has(#agent-ia-config-anchor) div[data-testid="stTextArea"] div[data-baseweb="base-input"] {
+            min-height: 2.85rem !important;
+            height: 2.85rem !important;
+            align-items: stretch !important;
+            background: #FFFFFF !important;
         }
         div[data-testid="stVerticalBlock"]:has(#agent-ia-config-anchor) div[data-testid="stTextArea"] div[data-baseweb="textarea"] {
             min-height: 2.85rem !important;
+            height: 2.85rem !important;
             background: #FFFFFF !important;
+            box-sizing: border-box !important;
         }
-        div[data-testid="stVerticalBlock"]:has(#agent-ia-config-anchor) textarea {
+        div[data-testid="stVerticalBlock"]:has(#agent-ia-config-anchor) textarea[aria-label="Prompt Agent IA"] {
             font-size: 0.96rem !important;
             line-height: 1.35 !important;
             color: var(--cm-primary) !important;
             background: #FFFFFF !important;
-            min-height: 2.85rem !important;
-            height: 2.85rem !important;
+            min-height: calc(2.85rem - 2px) !important;
+            height: calc(2.85rem - 2px) !important;
+            box-sizing: border-box !important;
             resize: vertical !important;
             overflow: auto !important;
             padding: 0.62rem 0.95rem !important;
@@ -4133,7 +4147,7 @@ Tu dois répondre exclusivement en JSON valide, sans texte avant ni après, avec
             base_prompt = st.text_area(
                 "Prompt Agent IA",
                 value=default_prompt,
-                height=46,
+                height=44,
                 key="review_sim_prompt_preview",
                 help="Prompt standard modifiable pour l’analyse IA.",
                 label_visibility="collapsed",
