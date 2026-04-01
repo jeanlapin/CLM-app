@@ -4799,10 +4799,24 @@ CONCENTRATION_RISK_PERCENT_COLUMNS = [
     ("Aucun risque détecté", "% Risq. aucun"),
 ]
 
+CONCENTRATION_STATUS_STYLE = {
+    "% Vig. crit.": {"tone": "negative", "base": "#D92D20", "text": "#7A271A"},
+    "% Vig. élev.": {"tone": "negative", "base": "#F79009", "text": "#8A4B00"},
+    "% Vig. mod.": {"tone": "neutral", "base": "#FACC15", "text": "#713F12"},
+    "% Vig. all.": {"tone": "positive", "base": "#16A34A", "text": "#14532D"},
+    "% Vig. auc.": {"tone": "positive", "base": "#16A34A", "text": "#14532D"},
+    "% Risq. av.": {"tone": "negative", "base": "#D92D20", "text": "#7A271A"},
+    "% Risq. pot.": {"tone": "negative", "base": "#F79009", "text": "#8A4B00"},
+    "% Risq. mit.": {"tone": "positive", "base": "#22C55E", "text": "#166534"},
+    "% Risq. lev.": {"tone": "positive", "base": "#16A34A", "text": "#14532D"},
+    "% Risq. NC": {"tone": "neutral", "base": "#94A3B8", "text": "#475569"},
+    "% Risq. aucun": {"tone": "positive", "base": "#16A34A", "text": "#14532D"},
+}
+
 
 def build_concentration_top_table(df: pd.DataFrame, group_col: str, group_label: str, top_n: int = 5) -> pd.DataFrame:
     percent_columns = CONCENTRATION_VIGILANCE_PERCENT_COLUMNS + CONCENTRATION_RISK_PERCENT_COLUMNS
-    output_columns = [group_label, "Nb clients"] + [column_name for _, column_name in percent_columns]
+    output_columns = [group_label, "Nb clients", "% clients"] + [column_name for _, column_name in percent_columns]
 
     if group_col not in df.columns:
         return pd.DataFrame(columns=output_columns)
@@ -4828,6 +4842,22 @@ def build_concentration_top_table(df: pd.DataFrame, group_col: str, group_label:
     else:
         work["cm_client_key"] = pd.Series(range(len(work)), index=work.index).astype(str)
 
+    client_level = (
+        work[["cm_client_key", group_col, "Vigilance", "Risque"]]
+        .drop_duplicates(subset=["cm_client_key"], keep="first")
+        .reset_index(drop=True)
+    )
+
+    total_clients = int(client_level["cm_client_key"].nunique())
+    total_vigilance = {
+        status_label: int(client_level["Vigilance"].astype("string").eq(status_label).sum())
+        for status_label, _ in CONCENTRATION_VIGILANCE_PERCENT_COLUMNS
+    }
+    total_risk = {
+        status_label: int(client_level["Risque"].astype("string").eq(status_label).sum())
+        for status_label, _ in CONCENTRATION_RISK_PERCENT_COLUMNS
+    }
+
     agg_spec: dict[str, tuple[str, object]] = {"Nb clients": ("cm_client_key", "nunique")}
     for status_label, column_name in CONCENTRATION_VIGILANCE_PERCENT_COLUMNS:
         agg_spec[column_name] = (
@@ -4841,15 +4871,21 @@ def build_concentration_top_table(df: pd.DataFrame, group_col: str, group_label:
         )
 
     grouped = (
-        work.groupby(group_col, dropna=False)
+        client_level.groupby(group_col, dropna=False)
         .agg(**agg_spec)
         .reset_index()
         .rename(columns={group_col: group_label})
     )
 
-    denominator = grouped["Nb clients"].replace(0, np.nan)
-    for _, column_name in percent_columns:
-        grouped[column_name] = grouped[column_name].div(denominator).fillna(0.0)
+    grouped["% clients"] = grouped["Nb clients"].div(total_clients if total_clients else np.nan).fillna(0.0)
+
+    for status_label, column_name in CONCENTRATION_VIGILANCE_PERCENT_COLUMNS:
+        denominator = total_vigilance.get(status_label, 0)
+        grouped[column_name] = grouped[column_name].div(denominator if denominator else np.nan).fillna(0.0)
+
+    for status_label, column_name in CONCENTRATION_RISK_PERCENT_COLUMNS:
+        denominator = total_risk.get(status_label, 0)
+        grouped[column_name] = grouped[column_name].div(denominator if denominator else np.nan).fillna(0.0)
 
     grouped = grouped.sort_values(["Nb clients", group_label], ascending=[False, True], kind="stable")
     return grouped[output_columns].head(top_n).reset_index(drop=True)
@@ -5182,9 +5218,76 @@ def format_small_table_percent_columns(df: pd.DataFrame) -> pd.DataFrame:
     return output
 
 
+def _hex_to_rgb(hex_color: str) -> tuple[int, int, int]:
+    color = str(hex_color or "").strip().lstrip("#")
+    if len(color) != 6:
+        return (22, 58, 89)
+    return tuple(int(color[i:i + 2], 16) for i in (0, 2, 4))
+
+
+def _format_concentration_cell(value: object, column_name: str) -> str:
+    if value is None or (isinstance(value, float) and np.isnan(value)) or pd.isna(value):
+        return ""
+    if isinstance(value, (int, float, np.number)) and str(column_name).startswith("%"):
+        return f"{float(value):.1%}".replace(".", ",")
+    return escape(str(value))
+
+
+def concentration_cell_style(column_name: str, value: object, client_share: float) -> str:
+    if column_name == "% clients":
+        return "background:#EAF2FB; color:#163A59; font-weight:700;"
+    if column_name not in CONCENTRATION_STATUS_STYLE:
+        return ""
+    try:
+        status_share = float(value)
+    except Exception:
+        return ""
+    if not np.isfinite(status_share):
+        return ""
+    delta = status_share - float(client_share or 0.0)
+    if delta <= 0:
+        return ""
+
+    style_meta = CONCENTRATION_STATUS_STYLE[column_name]
+    red, green, blue = _hex_to_rgb(style_meta["base"])
+    intensity = min(delta / 0.20, 1.0)
+    start_alpha = 0.08 + 0.14 * intensity
+    end_alpha = 0.18 + 0.36 * intensity
+    border_alpha = 0.14 + 0.30 * intensity
+    return (
+        f"background: linear-gradient(90deg, rgba({red}, {green}, {blue}, {start_alpha:.3f}), rgba({red}, {green}, {blue}, {end_alpha:.3f}));"
+        f" color:{style_meta['text']}; font-weight:700;"
+        f" box-shadow: inset 0 0 0 1px rgba({red}, {green}, {blue}, {border_alpha:.3f});"
+    )
+
+
 def render_top_block(title: str, df: pd.DataFrame) -> None:
     st.markdown(f'<h3 class="cm-section-title">{escape(title)}</h3>', unsafe_allow_html=True)
-    render_small_table(format_small_table_percent_columns(df), scroll_x=True)
+    if df is None or df.empty:
+        st.info("Aucune donnée à afficher.")
+        return
+
+    html = ["<div class='cm-mini-table-wrap' style='overflow-x: auto; overflow-y: hidden;'><table class='cm-mini-table'><thead><tr>"]
+    for col in df.columns:
+        html.append(f"<th>{escape(str(col))}</th>")
+    html.append("</tr></thead><tbody>")
+
+    for _, row in df.iterrows():
+        client_share = float(row.get("% clients", 0.0) or 0.0)
+        html.append("<tr>")
+        for col in df.columns:
+            value = row[col]
+            classes = []
+            if pd.api.types.is_number(value) and not isinstance(value, bool):
+                classes.append("cm-number")
+            class_attr = f" class='{' '.join(classes)}'" if classes else ""
+            style = concentration_cell_style(str(col), value, client_share)
+            style_attr = f" style='{style}'" if style else ""
+            rendered = _format_concentration_cell(value, str(col))
+            html.append(f"<td{class_attr}{style_attr}>{rendered}</td>")
+        html.append("</tr>")
+    html.append("</tbody></table></div>")
+    st.markdown("".join(html), unsafe_allow_html=True)
 
 
 def render_alert_block(title: str, df: pd.DataFrame) -> None:
@@ -7830,6 +7933,8 @@ def main() -> None:
         render_top_block("Top produits", build_concentration_top_table(filtered, "Produit(service) principal", "Produit"))
     with t4:
         render_top_block("Top canaux", build_concentration_top_table(filtered, "Canal d’opérations principal 12 mois", "Canal"))
+
+    st.caption("Lecture des concentrations : % clients = poids du groupe dans le portefeuille filtré. Chaque % de statut mesure le poids du groupe dans le total de ce statut ; la cellule se colore uniquement quand ce poids dépasse le % clients. Rouge / orange = statuts sensibles surreprésentés, vert = statuts favorables surreprésentés, ambre / gris = statuts intermédiaires ou non calculables.")
 
     st.divider()
     st.markdown('<h3 class="cm-section-title">Dossiers prioritaires</h3>', unsafe_allow_html=True)
