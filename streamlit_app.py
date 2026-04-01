@@ -3768,31 +3768,17 @@ def inject_review_simulation_toolbar_theme() -> None:
         f"""
         <style>
         .st-key-review_toolbar_clear button,
+        .st-key-review_toolbar_apply button,
         .st-key-review_toolbar_gemini button,
         .st-key-review_toolbar_pdf button,
         .st-key-review_toolbar_zip_pdf button,
-        .st-key-review_toolbar_csv button {{
-            background: linear-gradient(180deg, rgba(255, 255, 255, 0.99) 0%, #F2F7FD 100%) !important;
-            color: {PRIMARY_COLOR} !important;
-            border: 1px solid rgba(22, 58, 89, 0.18) !important;
-            border-radius: 14px !important;
-            box-shadow: 0 8px 18px rgba(22, 58, 89, 0.08) !important;
-            font-weight: 700 !important;
-            min-height: 2.75rem !important;
-            transition: all 0.18s ease !important;
-        }}
-
-        .st-key-review_toolbar_clear button:hover,
-        .st-key-review_toolbar_gemini button:hover,
-        .st-key-review_toolbar_pdf button:hover,
-        .st-key-review_toolbar_zip_pdf button:hover,
-        .st-key-review_toolbar_csv button:hover {{
-            border-color: rgba(94, 143, 199, 0.42) !important;
-            box-shadow: 0 10px 22px rgba(22, 58, 89, 0.12) !important;
-            transform: translateY(-1px);
-        }}
-
-        .st-key-review_toolbar_apply button {{
+        .st-key-review_toolbar_csv button,
+        .st-key-review_toolbar_clear .stButton > button,
+        .st-key-review_toolbar_apply .stButton > button,
+        .st-key-review_toolbar_gemini .stButton > button,
+        .st-key-review_toolbar_pdf .stDownloadButton > button,
+        .st-key-review_toolbar_zip_pdf .stDownloadButton > button,
+        .st-key-review_toolbar_csv .stDownloadButton > button {{
             background: linear-gradient(135deg, {PRIMARY_COLOR} 0%, #245782 100%) !important;
             color: #FFFFFF !important;
             border: 1px solid rgba(22, 58, 89, 0.18) !important;
@@ -3803,8 +3789,22 @@ def inject_review_simulation_toolbar_theme() -> None:
             transition: all 0.18s ease !important;
         }}
 
-        .st-key-review_toolbar_apply button:hover {{
+        .st-key-review_toolbar_clear button:hover,
+        .st-key-review_toolbar_apply button:hover,
+        .st-key-review_toolbar_gemini button:hover,
+        .st-key-review_toolbar_pdf button:hover,
+        .st-key-review_toolbar_zip_pdf button:hover,
+        .st-key-review_toolbar_csv button:hover,
+        .st-key-review_toolbar_clear .stButton > button:hover,
+        .st-key-review_toolbar_apply .stButton > button:hover,
+        .st-key-review_toolbar_gemini .stButton > button:hover,
+        .st-key-review_toolbar_pdf .stDownloadButton > button:hover,
+        .st-key-review_toolbar_zip_pdf .stDownloadButton > button:hover,
+        .st-key-review_toolbar_csv .stDownloadButton > button:hover {{
+            color: #FFFFFF !important;
+            border-color: rgba(94, 143, 199, 0.42) !important;
             box-shadow: 0 14px 28px rgba(22, 58, 89, 0.24) !important;
+            filter: brightness(1.03);
             transform: translateY(-1px);
         }}
 
@@ -3813,11 +3813,18 @@ def inject_review_simulation_toolbar_theme() -> None:
         .st-key-review_toolbar_gemini button:disabled,
         .st-key-review_toolbar_pdf button:disabled,
         .st-key-review_toolbar_zip_pdf button:disabled,
-        .st-key-review_toolbar_csv button:disabled {{
+        .st-key-review_toolbar_csv button:disabled,
+        .st-key-review_toolbar_clear .stButton > button:disabled,
+        .st-key-review_toolbar_apply .stButton > button:disabled,
+        .st-key-review_toolbar_gemini .stButton > button:disabled,
+        .st-key-review_toolbar_pdf .stDownloadButton > button:disabled,
+        .st-key-review_toolbar_zip_pdf .stDownloadButton > button:disabled,
+        .st-key-review_toolbar_csv .stDownloadButton > button:disabled {{
             background: #EAF2FB !important;
             color: #7C90A5 !important;
             border: 1px solid rgba(22, 58, 89, 0.10) !important;
             box-shadow: none !important;
+            filter: none !important;
             transform: none !important;
             opacity: 1 !important;
         }}
