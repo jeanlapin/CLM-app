@@ -2562,6 +2562,97 @@ def review_simulation_pdf_explanation_table(text: object, styles: dict[str, Para
     return table
 
 
+def review_simulation_pdf_explain_sections(text: object) -> dict[str, str]:
+    rendered = str(text or "").replace("\r\n", "\n").replace("\r", "\n").strip()
+    if not rendered:
+        return {"1": "", "2": "", "3": ""}
+
+    matches = list(re.finditer(r"(?i)\bPARTIE\s*([123])\b", rendered))
+    if not matches:
+        return {"1": rendered, "2": "", "3": ""}
+
+    sections = {"1": "", "2": "", "3": ""}
+    for idx, match in enumerate(matches):
+        part_no = str(match.group(1))
+        start_idx = match.start()
+        end_idx = matches[idx + 1].start() if idx + 1 < len(matches) else len(rendered)
+        chunk = rendered[start_idx:end_idx].strip()
+        if chunk:
+            sections[part_no] = chunk
+    return sections
+
+
+def review_simulation_pdf_summary_explanation_text(text: object) -> str:
+    sections = review_simulation_pdf_explain_sections(text)
+    kept_parts = [sections.get("1", "").strip(), sections.get("3", "").strip()]
+    kept_parts = [part for part in kept_parts if part]
+    if kept_parts:
+        return "\n\n".join(kept_parts)
+    return str(text or "").strip() or "Non renseigné"
+
+
+def review_simulation_pdf_strip_indicator_heading(chunk: str, indicator_name: str) -> str:
+    rendered = str(chunk or "").strip()
+    if not rendered:
+        return ""
+    escaped_name = re.escape(str(indicator_name or "").strip())
+    if not escaped_name:
+        return rendered
+    pattern = re.compile(
+        rf"^\s*(?:[-•]\s*|\d+[\.\)]\s*)?(?:indicateur\s*[:\-–—]\s*)?{escaped_name}\s*(?:[:\-–—]\s*)?",
+        re.IGNORECASE,
+    )
+    cleaned = pattern.sub("", rendered, count=1).strip()
+    return cleaned or rendered
+
+
+def review_simulation_pdf_indicator_analysis_map(text: object, indicator_names: list[str]) -> dict[str, str]:
+    sections = review_simulation_pdf_explain_sections(text)
+    detail_text = sections.get("2", "").strip() or str(text or "").strip()
+    indicator_names = [str(name or "").strip() for name in indicator_names if str(name or "").strip()]
+    if not detail_text or not indicator_names:
+        return {name: "" for name in indicator_names}
+
+    analysis_map: dict[str, str] = {name: "" for name in indicator_names}
+    heading_matches: list[tuple[int, str]] = []
+    for name in indicator_names:
+        escaped_name = re.escape(name)
+        heading_pattern = re.compile(
+            rf"(?im)(?:^|\n)\s*(?:[-•]\s*|\d+[\.\)]\s*)?(?:indicateur\s*[:\-–—]\s*)?{escaped_name}(?=\s*(?:[:\-–—]|\n|$))"
+        )
+        match = heading_pattern.search(detail_text)
+        if match:
+            heading_matches.append((match.start(), name))
+
+    seen_names: set[str] = set()
+    ordered_matches: list[tuple[int, str]] = []
+    for start_idx, name in sorted(heading_matches, key=lambda item: (item[0], -len(item[1]))):
+        if name in seen_names:
+            continue
+        seen_names.add(name)
+        ordered_matches.append((start_idx, name))
+
+    if ordered_matches:
+        for idx, (start_idx, name) in enumerate(ordered_matches):
+            end_idx = ordered_matches[idx + 1][0] if idx + 1 < len(ordered_matches) else len(detail_text)
+            chunk = detail_text[start_idx:end_idx].strip()
+            analysis_map[name] = review_simulation_pdf_strip_indicator_heading(chunk, name)
+
+    if any(value.strip() for value in analysis_map.values()):
+        return analysis_map
+
+    raw_blocks = [block.strip() for block in re.split(r"\n\s*\n", detail_text) if block.strip()]
+    if not raw_blocks:
+        raw_blocks = [detail_text]
+    for block in raw_blocks:
+        matched_names = [name for name in indicator_names if re.search(re.escape(name), block, flags=re.IGNORECASE)]
+        if len(matched_names) == 1:
+            name = matched_names[0]
+            cleaned = review_simulation_pdf_strip_indicator_heading(block, name)
+            analysis_map[name] = f"{analysis_map[name]}\n\n{cleaned}".strip() if analysis_map[name].strip() else cleaned
+    return analysis_map
+
+
 def review_simulation_pdf_field_label(field_name: object) -> str:
     label = str(field_name or "").strip()
     return {
@@ -2598,6 +2689,58 @@ def review_simulation_pdf_table(data: dict[str, object], styles: dict[str, Parag
     return table
 
 
+def review_simulation_pdf_indicator_table(
+    data: dict[str, object],
+    indicator_analysis_map: dict[str, str],
+    styles: dict[str, ParagraphStyle],
+    col_widths: list[float] | None = None,
+) -> Table:
+    col_widths = col_widths or [58 * mm, 116 * mm]
+    rows: list[list[Paragraph]] = [
+        [
+            review_simulation_pdf_paragraph("Champ", styles["table_header"]),
+            review_simulation_pdf_paragraph("Valeur", styles["table_header"]),
+        ]
+    ]
+    analysis_row_indices: list[int] = []
+
+    for field_name, raw_value in data.items():
+        rows.append([
+            review_simulation_pdf_paragraph(review_simulation_pdf_field_label(field_name), styles["field_name"]),
+            review_simulation_pdf_paragraph(review_simulation_pdf_value(field_name, raw_value), styles["field_value"]),
+        ])
+
+        analysis_text = str(indicator_analysis_map.get(str(field_name), "") or "").strip()
+        analysis_chunks = review_simulation_pdf_text_chunks(analysis_text, max_chars=520) if analysis_text else ["Aucune analyse IA spécifique restituée pour cet indicateur."]
+        for idx, chunk in enumerate(analysis_chunks):
+            rows.append([
+                review_simulation_pdf_paragraph("Analyse IA" if idx == 0 else "Analyse IA (suite)", styles["field_name"]),
+                review_simulation_pdf_paragraph(chunk, styles["field_value"]),
+            ])
+            analysis_row_indices.append(len(rows) - 1)
+
+    table = Table(rows, colWidths=col_widths, repeatRows=1, hAlign="LEFT")
+    style_commands = [
+        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor(PRIMARY_COLOR)),
+        ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+        ("BACKGROUND", (0, 1), (-1, -1), colors.white),
+        ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#F7FAFE")]),
+        ("GRID", (0, 0), (-1, -1), 0.35, colors.HexColor("#D6E1EE")),
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ("LEFTPADDING", (0, 0), (-1, -1), 7),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 7),
+        ("TOPPADDING", (0, 0), (-1, -1), 6),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
+    ]
+    for row_idx in analysis_row_indices:
+        style_commands.extend([
+            ("BACKGROUND", (0, row_idx), (-1, row_idx), colors.HexColor("#F3F8FE")),
+            ("TEXTCOLOR", (0, row_idx), (0, row_idx), colors.HexColor(PRIMARY_COLOR)),
+        ])
+    table.setStyle(TableStyle(style_commands))
+    return table
+
+
 def review_simulation_summary_payload(row: pd.Series) -> dict[str, object]:
     return {
         "Société": row.get(SOC_COL, ""),
@@ -2628,6 +2771,8 @@ def build_review_simulation_pdf_story(
     indicators_payload = payload.get("indicateurs_source") if isinstance(payload.get("indicateurs_source"), dict) else {}
     generated_text = pd.Timestamp(generated_at_utc).strftime("%d/%m/%Y %H:%M UTC")
     explain_text = str(row.get("Explique moi", "") or "").strip()
+    explain_summary_text = review_simulation_pdf_summary_explanation_text(explain_text or "")
+    indicator_analysis_map = review_simulation_pdf_indicator_analysis_map(explain_text or "", list(indicators_payload.keys()))
     prompt_text = format_review_prompt_template(prompt_template, source_row)
 
     story: list[object] = [
@@ -2645,7 +2790,7 @@ def build_review_simulation_pdf_story(
         review_simulation_pdf_paragraph("Explication / consignes", styles["section"]),
     ]
 
-    explanation_box = review_simulation_pdf_explanation_table(explain_text or "Non renseigné", styles)
+    explanation_box = review_simulation_pdf_explanation_table(explain_summary_text or "Non renseigné", styles)
     story.extend([
         explanation_box,
         Spacer(1, 5 * mm),
@@ -2656,7 +2801,7 @@ def build_review_simulation_pdf_story(
         review_simulation_pdf_table(base_payload or {"Données de base source": "Aucune donnée disponible"}, styles),
         Spacer(1, 5 * mm),
         review_simulation_pdf_paragraph("Indicateurs source", styles["section"]),
-        review_simulation_pdf_table(indicators_payload or {"Indicateurs source": "Aucune donnée disponible"}, styles),
+        review_simulation_pdf_indicator_table(indicators_payload or {"Indicateurs source": "Aucune donnée disponible"}, indicator_analysis_map, styles),
     ])
 
     if prompt_text:
