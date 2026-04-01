@@ -4382,30 +4382,14 @@ Tu dois répondre exclusivement en JSON valide, sans texte avant ni après, avec
             line-height: 1;
             color: currentColor;
         }}
-        div[data-testid="stVerticalBlock"]:has(.review-toolbar-clear-scope) .stButton button::before,
-        div[data-testid="stVerticalBlock"]:has(.review-toolbar-apply-scope) .stButton button::before {{
+        div[data-testid="stVerticalBlock"]:has(.review-toolbar-nav-scope) .stButton:first-of-type button::before {{
             content: none !important;
             margin-right: 0 !important;
         }}
-        div[data-testid="stVerticalBlock"]:has(.review-toolbar-clear-scope) .stButton button,
-        div[data-testid="stVerticalBlock"]:has(.review-toolbar-clear-scope) .stButton button p {{
+        div[data-testid="stVerticalBlock"]:has(.review-toolbar-nav-scope) .stButton:first-of-type button,
+        div[data-testid="stVerticalBlock"]:has(.review-toolbar-nav-scope) .stButton:first-of-type button p {{
             font-size: 1.08rem !important;
             line-height: 1 !important;
-            color: #E67E22 !important;
-        }}
-        div[data-testid="stVerticalBlock"]:has(.review-toolbar-clear-scope) .stButton button:hover,
-        div[data-testid="stVerticalBlock"]:has(.review-toolbar-clear-scope) .stButton button:hover p {{
-            color: #C96A10 !important;
-        }}
-        div[data-testid="stVerticalBlock"]:has(.review-toolbar-apply-scope) .stButton button,
-        div[data-testid="stVerticalBlock"]:has(.review-toolbar-apply-scope) .stButton button p {{
-            font-size: 1.08rem !important;
-            line-height: 1 !important;
-            color: #2E9E4D !important;
-        }}
-        div[data-testid="stVerticalBlock"]:has(.review-toolbar-apply-scope) .stButton button:hover,
-        div[data-testid="stVerticalBlock"]:has(.review-toolbar-apply-scope) .stButton button:hover p {{
-            color: #247B3B !important;
         }}
         .review-toolbar-nav-item:hover,
         div[data-testid="stVerticalBlock"]:has(.review-toolbar-nav-scope) .stButton button:hover,
@@ -4495,7 +4479,6 @@ Tu dois répondre exclusivement en JSON valide, sans texte avant ni après, avec
     gemini_clicked = False
 
     with toolbar_cols[0]:
-        st.markdown("<div class='review-toolbar-clear-scope'></div>", unsafe_allow_html=True)
         clear_clicked = st.button(
             "⌫",
             key="review_toolbar_clear",
@@ -4518,9 +4501,8 @@ Tu dois répondre exclusivement en JSON valide, sans texte avant ni après, avec
             help="Choisissez le statut estimé à appliquer à toutes les lignes sélectionnées.",
         )
     with toolbar_cols[3]:
-        st.markdown("<div class='review-toolbar-apply-scope'></div>", unsafe_allow_html=True)
         apply_clicked = st.button(
-            "✔",
+            "Appliquer",
             key="review_toolbar_apply",
             type="secondary",
             disabled=(selected_count == 0),
