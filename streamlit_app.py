@@ -4059,6 +4059,26 @@ Tu dois répondre exclusivement en JSON valide, sans texte avant ni après, avec
             color: var(--cm-muted);
             margin-bottom: 0.55rem;
         }
+        div[data-testid="stVerticalBlock"]:has(#agent-ia-config-anchor) div[data-testid="stTextInputRootElement"] > div,
+        div[data-testid="stVerticalBlock"]:has(#agent-ia-config-anchor) div[data-baseweb="base-input"] > div,
+        div[data-testid="stVerticalBlock"]:has(#agent-ia-config-anchor) div[data-baseweb="textarea"] {
+            border-radius: 14px !important;
+            border: 1px solid rgba(47, 107, 158, 0.22) !important;
+            background: rgba(255, 255, 255, 0.96) !important;
+            box-shadow: inset 0 1px 0 rgba(255,255,255,0.88), 0 1px 3px rgba(22,58,89,0.04) !important;
+        }
+        div[data-testid="stVerticalBlock"]:has(#agent-ia-config-anchor) div[data-testid="stTextInputRootElement"] input,
+        div[data-testid="stVerticalBlock"]:has(#agent-ia-config-anchor) textarea {
+            font-size: 0.96rem !important;
+            line-height: 1.45 !important;
+            color: var(--cm-primary) !important;
+        }
+        div[data-testid="stVerticalBlock"]:has(#agent-ia-config-anchor) textarea {
+            min-height: 148px !important;
+            resize: vertical !important;
+            overflow: auto !important;
+            padding: 0.8rem 0.95rem 1rem 0.95rem !important;
+        }
         </style>
         """,
         unsafe_allow_html=True,
@@ -4088,7 +4108,7 @@ Tu dois répondre exclusivement en JSON valide, sans texte avant ni après, avec
             base_prompt = st.text_area(
                 "Prompt Agent IA prêt à l’emploi",
                 value=default_prompt,
-                height=125,
+                height=148,
                 key="review_sim_prompt_preview",
             ).strip() or default_prompt
 
