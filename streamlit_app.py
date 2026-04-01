@@ -4073,11 +4073,19 @@ Tu dois répondre exclusivement en JSON valide, sans texte avant ni après, avec
             line-height: 1.45 !important;
             color: var(--cm-primary) !important;
         }
+        div[data-testid="stVerticalBlock"]:has(#agent-ia-config-anchor) div[data-testid="stTextArea"] {
+            width: 100% !important;
+        }
+        div[data-testid="stVerticalBlock"]:has(#agent-ia-config-anchor) div[data-testid="stTextArea"] div[data-baseweb="textarea"] {
+            min-height: 3.45rem !important;
+            height: 3.45rem !important;
+        }
         div[data-testid="stVerticalBlock"]:has(#agent-ia-config-anchor) textarea {
-            min-height: 148px !important;
-            resize: vertical !important;
+            min-height: 3.45rem !important;
+            height: 3.45rem !important;
+            resize: both !important;
             overflow: auto !important;
-            padding: 0.8rem 0.95rem 1rem 0.95rem !important;
+            padding: 0.7rem 0.95rem !important;
         }
         </style>
         """,
@@ -4094,8 +4102,8 @@ Tu dois répondre exclusivement en JSON valide, sans texte avant ni après, avec
             """,
             unsafe_allow_html=True,
         )
-        top_left, top_right = st.columns([1.2, 3.8], gap="small")
-        with top_left:
+        fields_col, _fields_spacer = st.columns([1.2, 3.8], gap="small")
+        with fields_col:
             gemini_api_key = st.text_input(
                 "Clé Agent IA",
                 type="password",
@@ -4104,11 +4112,10 @@ Tu dois répondre exclusivement en JSON valide, sans texte avant ni après, avec
                 help="Clé éphémère : elle n’est pas sauvegardée et est effacée lorsque vous changez d’écran ou fermez l’application.",
             ).strip()
             st.caption("Clé temporaire, non sauvegardée.")
-        with top_right:
             base_prompt = st.text_area(
                 "Prompt Agent IA prêt à l’emploi",
                 value=default_prompt,
-                height=148,
+                height=56,
                 key="review_sim_prompt_preview",
             ).strip() or default_prompt
 
