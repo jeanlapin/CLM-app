@@ -2743,7 +2743,28 @@ def review_simulation_pdf_explain_sections(text: object) -> dict[str, str]:
     return sections
 
 
-def review_simulation_pdf_summary_explanation_text(text: object) -> str:
+def review_simulation_pdf_summary_explanation_text(
+    text: object,
+    structured_payload: dict[str, object] | None = None,
+) -> str:
+    structured_payload = structured_payload or {}
+    explication_generale = str(structured_payload.get("explication_generale", "") or "").strip()
+    conclusion_generale = str(structured_payload.get("conclusion_generale", "") or "").strip()
+    statut_estime = str(structured_payload.get("statut_estime", "") or "").strip()
+
+    structured_parts: list[str] = []
+    if explication_generale:
+        structured_parts.append("PARTIE 1 — Analyse globale du risque\n" + explication_generale)
+    conclusion_lines: list[str] = []
+    if conclusion_generale:
+        conclusion_lines.append(conclusion_generale)
+    if statut_estime:
+        conclusion_lines.append(f"Statut estimé proposé : {statut_estime}")
+    if conclusion_lines:
+        structured_parts.append("PARTIE 3 — Conclusion et statut de vigilance estimé\n" + "\n".join(conclusion_lines))
+    if structured_parts:
+        return "\n\n".join(structured_parts)
+
     sections = review_simulation_pdf_explain_sections(text)
     kept_parts = [sections.get("1", "").strip(), sections.get("3", "").strip()]
     kept_parts = [part for part in kept_parts if part]
