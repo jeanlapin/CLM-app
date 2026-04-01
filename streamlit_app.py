@@ -4400,38 +4400,49 @@ Tu dois répondre exclusivement en JSON valide, sans texte avant ni après, avec
             border: none !important;
             opacity: 1 !important;
         }}
-        div[data-testid="stVerticalBlock"]:has(.review-toolbar-nav-scope) > div[data-testid="stHorizontalBlock"] > div:nth-child(1) .stButton button,
-        div[data-testid="stVerticalBlock"]:has(.review-toolbar-nav-scope) > div[data-testid="stHorizontalBlock"] > div:nth-child(1) .stButton button:hover {{
+        .review-toolbar-clear-marker,
+        .review-toolbar-apply-marker {{
+            display: block;
+            width: 0 !important;
+            height: 0 !important;
+            margin: 0 !important;
+            padding: 0 !important;
+            overflow: hidden !important;
+            opacity: 0 !important;
+            pointer-events: none !important;
+        }}
+        div[data-testid="stVerticalBlock"]:has(.review-toolbar-nav-scope) > div[data-testid="stHorizontalBlock"] > div:has(.review-toolbar-clear-marker) .stButton button,
+        div[data-testid="stVerticalBlock"]:has(.review-toolbar-nav-scope) > div[data-testid="stHorizontalBlock"] > div:has(.review-toolbar-clear-marker) .stButton button:hover {{
             color: #D97706 !important;
         }}
-        div[data-testid="stVerticalBlock"]:has(.review-toolbar-nav-scope) > div[data-testid="stHorizontalBlock"] > div:nth-child(1) .stButton button::before {{
+        div[data-testid="stVerticalBlock"]:has(.review-toolbar-nav-scope) > div[data-testid="stHorizontalBlock"] > div:has(.review-toolbar-clear-marker) .stButton button::before {{
             content: none !important;
             display: none !important;
         }}
-        div[data-testid="stVerticalBlock"]:has(.review-toolbar-nav-scope) > div[data-testid="stHorizontalBlock"] > div:nth-child(1) .stButton button p {{
+        div[data-testid="stVerticalBlock"]:has(.review-toolbar-nav-scope) > div[data-testid="stHorizontalBlock"] > div:has(.review-toolbar-clear-marker) .stButton button p {{
             color: #D97706 !important;
             font-size: 1.08rem !important;
             font-weight: 600 !important;
         }}
-        div[data-testid="stVerticalBlock"]:has(.review-toolbar-nav-scope) > div[data-testid="stHorizontalBlock"] > div:nth-child(1) .stButton button:disabled,
-        div[data-testid="stVerticalBlock"]:has(.review-toolbar-nav-scope) > div[data-testid="stHorizontalBlock"] > div:nth-child(1) .stButton button:disabled p {{
+        div[data-testid="stVerticalBlock"]:has(.review-toolbar-nav-scope) > div[data-testid="stHorizontalBlock"] > div:has(.review-toolbar-clear-marker) .stButton button:disabled,
+        div[data-testid="stVerticalBlock"]:has(.review-toolbar-nav-scope) > div[data-testid="stHorizontalBlock"] > div:has(.review-toolbar-clear-marker) .stButton button:disabled p {{
             color: #F2B36A !important;
         }}
-        div[data-testid="stVerticalBlock"]:has(.review-toolbar-nav-scope) > div[data-testid="stHorizontalBlock"] > div:nth-child(4) .stButton button,
-        div[data-testid="stVerticalBlock"]:has(.review-toolbar-nav-scope) > div[data-testid="stHorizontalBlock"] > div:nth-child(4) .stButton button:hover {{
+        div[data-testid="stVerticalBlock"]:has(.review-toolbar-nav-scope) > div[data-testid="stHorizontalBlock"] > div:has(.review-toolbar-apply-marker) .stButton button,
+        div[data-testid="stVerticalBlock"]:has(.review-toolbar-nav-scope) > div[data-testid="stHorizontalBlock"] > div:has(.review-toolbar-apply-marker) .stButton button:hover {{
             color: #16803C !important;
         }}
-        div[data-testid="stVerticalBlock"]:has(.review-toolbar-nav-scope) > div[data-testid="stHorizontalBlock"] > div:nth-child(4) .stButton button::before {{
+        div[data-testid="stVerticalBlock"]:has(.review-toolbar-nav-scope) > div[data-testid="stHorizontalBlock"] > div:has(.review-toolbar-apply-marker) .stButton button::before {{
             content: none !important;
             display: none !important;
         }}
-        div[data-testid="stVerticalBlock"]:has(.review-toolbar-nav-scope) > div[data-testid="stHorizontalBlock"] > div:nth-child(4) .stButton button p {{
+        div[data-testid="stVerticalBlock"]:has(.review-toolbar-nav-scope) > div[data-testid="stHorizontalBlock"] > div:has(.review-toolbar-apply-marker) .stButton button p {{
             color: #16803C !important;
             font-size: 1.08rem !important;
             font-weight: 600 !important;
         }}
-        div[data-testid="stVerticalBlock"]:has(.review-toolbar-nav-scope) > div[data-testid="stHorizontalBlock"] > div:nth-child(4) .stButton button:disabled,
-        div[data-testid="stVerticalBlock"]:has(.review-toolbar-nav-scope) > div[data-testid="stHorizontalBlock"] > div:nth-child(4) .stButton button:disabled p {{
+        div[data-testid="stVerticalBlock"]:has(.review-toolbar-nav-scope) > div[data-testid="stHorizontalBlock"] > div:has(.review-toolbar-apply-marker) .stButton button:disabled,
+        div[data-testid="stVerticalBlock"]:has(.review-toolbar-nav-scope) > div[data-testid="stHorizontalBlock"] > div:has(.review-toolbar-apply-marker) .stButton button:disabled p {{
             color: #7BC596 !important;
         }}
         div[data-testid="stVerticalBlock"]:has(.review-toolbar-nav-scope) .stSelectbox {{
@@ -4504,6 +4515,7 @@ Tu dois répondre exclusivement en JSON valide, sans texte avant ni après, avec
     gemini_clicked = False
 
     with toolbar_cols[0]:
+        st.markdown("<div class='review-toolbar-clear-marker' aria-hidden='true'></div>", unsafe_allow_html=True)
         clear_clicked = st.button(
             "⌫",
             key="review_toolbar_clear",
@@ -4526,6 +4538,7 @@ Tu dois répondre exclusivement en JSON valide, sans texte avant ni après, avec
             help="Choisissez le statut estimé à appliquer à toutes les lignes sélectionnées.",
         )
     with toolbar_cols[3]:
+        st.markdown("<div class='review-toolbar-apply-marker' aria-hidden='true'></div>", unsafe_allow_html=True)
         apply_clicked = st.button(
             "✔",
             key="review_toolbar_apply",
