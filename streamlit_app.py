@@ -1881,27 +1881,42 @@ def review_objectives_for_vigilance(vigilance: str) -> tuple[str, str]:
 
 
 
-def format_short_date(value) -> str:
+def coerce_mixed_date(value) -> pd.Timestamp | pd.NaT:
     if value is None:
-        return ""
+        return pd.NaT
+    if isinstance(value, pd.Timestamp):
+        return value
     if isinstance(value, str):
-        text = value.strip()
+        text = value.strip().replace(" ", " ")
         if not text or text.lower() in {"nan", "nat", "none"}:
-            return ""
+            return pd.NaT
+        numeric_text = text.replace(",", ".")
+        if re.fullmatch(r"\d+(?:\.\d+)?", numeric_text):
+            try:
+                numeric = float(numeric_text)
+                if 20_000 <= numeric <= 60_000:
+                    return pd.Timestamp("1899-12-30") + pd.to_timedelta(numeric, unit="D")
+            except Exception:
+                pass
         dt = pd.to_datetime(text, errors="coerce", dayfirst=True)
-    elif isinstance(value, (int, float, np.integer, np.floating)):
+        if pd.isna(dt):
+            dt = pd.to_datetime(text.replace('.', '/'), errors="coerce", dayfirst=True)
+        return dt
+    if isinstance(value, (int, float, np.integer, np.floating)):
         try:
             if pd.isna(value):
-                return ""
+                return pd.NaT
         except Exception:
             pass
         numeric = float(value)
         if 20_000 <= numeric <= 60_000:
-            dt = pd.Timestamp("1899-12-30") + pd.to_timedelta(numeric, unit="D")
-        else:
-            dt = pd.to_datetime(value, errors="coerce", dayfirst=True)
-    else:
-        dt = pd.to_datetime(value, errors="coerce", dayfirst=True)
+            return pd.Timestamp("1899-12-30") + pd.to_timedelta(numeric, unit="D")
+        return pd.to_datetime(value, errors="coerce", dayfirst=True)
+    return pd.to_datetime(value, errors="coerce", dayfirst=True)
+
+
+def format_short_date(value) -> str:
+    dt = coerce_mixed_date(value)
     if pd.isna(dt):
         return ""
     return pd.Timestamp(dt).strftime("%d/%m/%Y")
@@ -2834,11 +2849,8 @@ def build_review_simulation_working_table(df: pd.DataFrame) -> pd.DataFrame:
         return pd.DataFrame(columns=base_columns)
 
     scope = df.copy()
-    scope["Date prochaine revue"] = pd.to_datetime(
-        scope.get("Date prochaine revue", pd.Series(index=scope.index, dtype="datetime64[ns]")),
-        errors="coerce",
-        dayfirst=True,
-    )
+    next_review_series = scope.get("Date prochaine revue", pd.Series(index=scope.index, dtype="object"))
+    scope["Date prochaine revue"] = next_review_series.apply(coerce_mixed_date)
     scope[REVIEW_SIM_REAL_LABEL] = scope.apply(lambda row: review_vigilance_regime(row)[0], axis=1)
     scope["Type de revue"] = scope[REVIEW_SIM_REAL_LABEL].apply(review_type_for_vigilance)
     scope["Alertes actives"] = scope.apply(lambda row: ", ".join(build_row_alert_labels(row)) or "Aucune", axis=1)
