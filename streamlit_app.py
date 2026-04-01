@@ -464,6 +464,18 @@ def inject_brand_theme() -> None:
             letter-spacing: 0.02em;
         }}
 
+        .cm-subsection-title {{
+            font-family: 'Montserrat', sans-serif;
+            color: var(--cm-primary);
+            font-size: 1.04rem;
+            font-weight: 700;
+            letter-spacing: 0.02em;
+            margin: 0 0 0.55rem 0;
+            min-height: 1.75rem;
+            display: flex;
+            align-items: flex-end;
+        }}
+
         [data-testid="stMetric"] {{
             background: rgba(255,255,255,0.76);
             border: 1px solid var(--cm-border);
@@ -7719,18 +7731,22 @@ def main() -> None:
 
     render_kpis(filtered)
     st.divider()
+    st.markdown('<h3 class="cm-section-title">Répartition</h3>', unsafe_allow_html=True)
 
     col_left, col_mid, col_right = st.columns([1.15, 1.15, 1.0])
     with col_left:
+        st.markdown('<div class="cm-subsection-title">Vigilance</div>', unsafe_allow_html=True)
         vigilance_df = build_distribution(filtered, "Vigilance", VIGILANCE_ORDER).rename(columns={"Libellé": "Vigilance"})
-        render_distribution_block("Répartition par vigilance", vigilance_df, "Vigilance")
+        render_small_table(format_percent_column(vigilance_df), color_columns={"Vigilance": "vigilance"})
 
     with col_mid:
+        st.markdown('<div class="cm-subsection-title">Risques</div>', unsafe_allow_html=True)
         risk_df = build_distribution(filtered, "Risque", RISK_ORDER).rename(columns={"Libellé": "Statut"})
-        render_distribution_block("Répartition par statut de risque", risk_df, "Statut")
+        render_small_table(format_percent_column(risk_df), color_columns={"Statut": "risk"})
 
     with col_right:
-        render_alert_block("Alertes de gouvernance", build_alert_table(filtered))
+        st.markdown('<div class="cm-subsection-title">Gouvernance</div>', unsafe_allow_html=True)
+        render_small_table(build_alert_table(filtered))
 
     st.divider()
     st.markdown('<h3 class="cm-section-title">Concentrations</h3>', unsafe_allow_html=True)
