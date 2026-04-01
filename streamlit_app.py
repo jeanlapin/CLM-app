@@ -4131,8 +4131,12 @@ Tu dois répondre exclusivement en JSON valide, sans texte avant ni après, avec
             """,
             unsafe_allow_html=True,
         )
-        key_col, prompt_col = st.columns([1, 1], gap="medium")
-        with key_col:
+        prompt_state_key = "review_sim_show_prompt"
+        prompt_value_key = "review_sim_prompt_preview"
+        if prompt_value_key not in st.session_state:
+            st.session_state[prompt_value_key] = default_prompt
+        control_col, action_col = st.columns([1, 1], gap="medium")
+        with control_col:
             st.markdown('<div class="agent-ia-field-label">Clé Agent IA</div>', unsafe_allow_html=True)
             gemini_api_key = st.text_input(
                 "Clé Agent IA",
@@ -4142,16 +4146,30 @@ Tu dois répondre exclusivement en JSON valide, sans texte avant ni après, avec
                 help="Clé éphémère : elle n’est pas sauvegardée et est effacée lorsque vous changez d’écran ou fermez l’application.",
                 label_visibility="collapsed",
             ).strip()
-        with prompt_col:
+        with action_col:
             st.markdown('<div class="agent-ia-field-label">Prompt Agent IA</div>', unsafe_allow_html=True)
-            base_prompt = st.text_area(
+            prompt_is_visible = bool(st.session_state.get(prompt_state_key, False))
+            if st.button(
+                "Masquer le prompt" if prompt_is_visible else "Afficher le prompt",
+                key="review_sim_toggle_prompt_visibility",
+                use_container_width=True,
+                type="secondary",
+            ):
+                prompt_is_visible = not prompt_is_visible
+                st.session_state[prompt_state_key] = prompt_is_visible
+            else:
+                prompt_is_visible = bool(st.session_state.get(prompt_state_key, False))
+        if prompt_is_visible:
+            st.markdown("<div style='height: 0.45rem;'></div>", unsafe_allow_html=True)
+            st.markdown('<div class="agent-ia-field-label">Prompt Agent IA</div>', unsafe_allow_html=True)
+            st.text_area(
                 "Prompt Agent IA",
-                value=default_prompt,
-                height=44,
-                key="review_sim_prompt_preview",
+                height=160,
+                key=prompt_value_key,
                 help="Prompt standard modifiable pour l’analyse IA.",
                 label_visibility="collapsed",
-            ).strip() or default_prompt
+            )
+        base_prompt = str(st.session_state.get(prompt_value_key, default_prompt)).strip() or default_prompt
 
     st.markdown("<div style='height: 0.75rem;'></div>", unsafe_allow_html=True)
 
