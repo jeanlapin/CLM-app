@@ -4133,9 +4133,14 @@ Tu dois répondre exclusivement en JSON valide, sans texte avant ni après, avec
         )
         prompt_state_key = "review_sim_show_prompt"
         prompt_value_key = "review_sim_prompt_preview"
-        if prompt_value_key not in st.session_state:
-            st.session_state[prompt_value_key] = default_prompt
-        control_col, action_col = st.columns([1, 1], gap="medium")
+        if prompt_state_key not in st.session_state:
+            st.session_state[prompt_state_key] = False
+        stored_prompt = str(st.session_state.get(prompt_value_key, default_prompt) or default_prompt)
+        if not stored_prompt.strip():
+            stored_prompt = default_prompt
+        st.session_state[prompt_value_key] = stored_prompt
+
+        control_col, prompt_col = st.columns([1, 1], gap="medium")
         with control_col:
             st.markdown('<div class="agent-ia-field-label">Clé Agent IA</div>', unsafe_allow_html=True)
             gemini_api_key = st.text_input(
@@ -4146,29 +4151,28 @@ Tu dois répondre exclusivement en JSON valide, sans texte avant ni après, avec
                 help="Clé éphémère : elle n’est pas sauvegardée et est effacée lorsque vous changez d’écran ou fermez l’application.",
                 label_visibility="collapsed",
             ).strip()
-        with action_col:
+        with prompt_col:
             st.markdown('<div class="agent-ia-field-label">Prompt Agent IA</div>', unsafe_allow_html=True)
             prompt_is_visible = bool(st.session_state.get(prompt_state_key, False))
+            toggle_label = "Masquer le prompt" if prompt_is_visible else "Afficher le prompt"
             if st.button(
-                "Masquer le prompt" if prompt_is_visible else "Afficher le prompt",
+                toggle_label,
                 key="review_sim_toggle_prompt_visibility",
                 use_container_width=True,
                 type="secondary",
             ):
-                prompt_is_visible = not prompt_is_visible
-                st.session_state[prompt_state_key] = prompt_is_visible
-            else:
-                prompt_is_visible = bool(st.session_state.get(prompt_state_key, False))
-        if prompt_is_visible:
-            st.markdown("<div style='height: 0.45rem;'></div>", unsafe_allow_html=True)
-            st.markdown('<div class="agent-ia-field-label">Prompt Agent IA</div>', unsafe_allow_html=True)
-            st.text_area(
-                "Prompt Agent IA",
-                height=160,
-                key=prompt_value_key,
-                help="Prompt standard modifiable pour l’analyse IA.",
-                label_visibility="collapsed",
-            )
+                st.session_state[prompt_state_key] = not prompt_is_visible
+                st.rerun()
+            prompt_is_visible = bool(st.session_state.get(prompt_state_key, False))
+            if prompt_is_visible:
+                st.markdown("<div style='height: 0.35rem;'></div>", unsafe_allow_html=True)
+                st.text_area(
+                    "Prompt Agent IA",
+                    height=160,
+                    key=prompt_value_key,
+                    help="Prompt standard modifiable pour l’analyse IA.",
+                    label_visibility="collapsed",
+                )
         base_prompt = str(st.session_state.get(prompt_value_key, default_prompt)).strip() or default_prompt
 
     st.markdown("<div style='height: 0.75rem;'></div>", unsafe_allow_html=True)
@@ -4266,6 +4270,18 @@ Tu dois répondre exclusivement en JSON valide, sans texte avant ni après, avec
         st.info("Aucun SIREN ne correspond au filtre de statut de vigilance retenu.")
         return
 
+    if not isinstance(st.session_state.get("review_sim_selected_keys"), list):
+        st.session_state["review_sim_selected_keys"] = []
+
+    toolbar_placeholder = st.empty()
+    table_version = int(st.session_state.get("review_sim_table_version", 0))
+    table_selected_rows = render_review_simulation_table(working_df, key=f"review_sim_table_{table_version}")
+
+    if table_selected_rows:
+        st.session_state["review_sim_selected_keys"] = review_sim_selection_keys(working_df, table_selected_rows)
+    elif "review_sim_selected_keys" not in st.session_state:
+        st.session_state["review_sim_selected_keys"] = []
+
     selected_keys = st.session_state.get("review_sim_selected_keys", [])
     if not isinstance(selected_keys, list):
         selected_keys = []
@@ -4307,95 +4323,93 @@ Tu dois répondre exclusivement en JSON valide, sans texte avant ni après, avec
     zip_pdf_bytes = review_simulation_pdfs_zip_bytes(zip_pdf_items) if REPORTLAB_AVAILABLE and zip_pdf_items else None
     gemini_button_disabled = (selected_count == 0) or (not gemini_api_key)
 
-    toolbar_cols = st.columns([1.15, 1.95, 1.15, 1.15, 0.90, 1.10, 0.70], gap="small")
-
     clear_clicked = False
     apply_clicked = False
     gemini_clicked = False
 
-    with toolbar_cols[0]:
-        st.markdown("<div style='height: 1.9rem;'></div>", unsafe_allow_html=True)
-        clear_clicked = st.button(
-            "Effacer",
-            key="review_toolbar_clear",
-            type="secondary",
-            disabled=(selected_count == 0),
-            use_container_width=True,
-            help="Vide la sélection mémorisée du tableau des sociétés.",
-        )
-    with toolbar_cols[1]:
-        manual_status = st.selectbox(
-            "Statut estimé",
-            options=status_options,
-            index=status_options.index(default_value),
-            key="review_sim_manual_status",
-            disabled=(selected_count == 0),
-            format_func=lambda value: status_display_map.get(value, str(value).replace("Vigilance ", "")),
-            help="Choisissez le statut estimé à appliquer à toutes les lignes sélectionnées.",
-        )
-    with toolbar_cols[2]:
-        st.markdown("<div style='height: 1.9rem;'></div>", unsafe_allow_html=True)
-        apply_clicked = st.button(
-            "Appliquer",
-            key="review_toolbar_apply",
-            type="primary",
-            disabled=(selected_count == 0),
-            use_container_width=True,
-            help="Met à jour le statut estimé des sociétés sélectionnées.",
-        )
-    with toolbar_cols[3]:
-        st.markdown("<div style='height: 1.9rem;'></div>", unsafe_allow_html=True)
-        gemini_clicked = st.button(
-            "Agent IA",
-            key="review_toolbar_gemini",
-            type="secondary",
-            disabled=gemini_button_disabled,
-            use_container_width=True,
-            help=f"Analyse la sélection courante avec Gemini (maximum {GEMINI_MAX_BATCH_SIZE} SIREN envoyés).",
-        )
-    with toolbar_cols[4]:
-        st.markdown("<div style='height: 1.9rem;'></div>", unsafe_allow_html=True)
-        review_simulation_download_button(
-            "PDF",
-            data=(single_pdf_bytes or b""),
-            file_name=single_pdf_name,
-            mime="application/pdf",
-            key="review_toolbar_pdf",
-            disabled=(single_pdf_bytes is None),
-            use_container_width=True,
-            help="Télécharge le PDF du SIREN sélectionné lorsque la sélection contient une seule société.",
-        )
-    with toolbar_cols[5]:
-        st.markdown("<div style='height: 1.9rem;'></div>", unsafe_allow_html=True)
-        review_simulation_download_button(
-            "ZIP PDF",
-            data=(zip_pdf_bytes or b""),
-            file_name="revues_simulations_tous_pdfs.zip",
-            mime="application/zip",
-            key="review_toolbar_zip_pdf",
-            disabled=(zip_pdf_bytes is None),
-            use_container_width=True,
-            help="Télécharge tous les PDF structurés déjà générés sur le périmètre courant dans un fichier ZIP.",
-        )
-    with toolbar_cols[6]:
-        st.markdown("<div style='height: 1.9rem;'></div>", unsafe_allow_html=True)
-        review_simulation_download_button(
-            "CSV",
-            data=csv_export_bytes,
-            file_name="revues_et_simulations.csv",
-            mime="text/csv;charset=utf-8",
-            key="review_toolbar_csv",
-            use_container_width=True,
-            help="Exporte le tableau Revues & Simulations visible, y compris la colonne « Explique moi ».",
-        )
+    with toolbar_placeholder.container():
+        toolbar_cols = st.columns([1.15, 1.95, 1.15, 1.15, 0.90, 1.10, 0.70], gap="small")
+
+        with toolbar_cols[0]:
+            st.markdown("<div style='height: 1.9rem;'></div>", unsafe_allow_html=True)
+            clear_clicked = st.button(
+                "Effacer",
+                key="review_toolbar_clear",
+                type="secondary",
+                disabled=(selected_count == 0),
+                use_container_width=True,
+                help="Vide la sélection mémorisée du tableau des sociétés.",
+            )
+        with toolbar_cols[1]:
+            manual_status = st.selectbox(
+                "Statut estimé",
+                options=status_options,
+                index=status_options.index(default_value),
+                key="review_sim_manual_status",
+                disabled=(selected_count == 0),
+                format_func=lambda value: status_display_map.get(value, str(value).replace("Vigilance ", "")),
+                help="Choisissez le statut estimé à appliquer à toutes les lignes sélectionnées.",
+            )
+        with toolbar_cols[2]:
+            st.markdown("<div style='height: 1.9rem;'></div>", unsafe_allow_html=True)
+            apply_clicked = st.button(
+                "Appliquer",
+                key="review_toolbar_apply",
+                type="primary",
+                disabled=(selected_count == 0),
+                use_container_width=True,
+                help="Met à jour le statut estimé des sociétés sélectionnées.",
+            )
+        with toolbar_cols[3]:
+            st.markdown("<div style='height: 1.9rem;'></div>", unsafe_allow_html=True)
+            gemini_clicked = st.button(
+                "Agent IA",
+                key="review_toolbar_gemini",
+                type="secondary",
+                disabled=gemini_button_disabled,
+                use_container_width=True,
+                help=f"Analyse la sélection courante avec Gemini (maximum {GEMINI_MAX_BATCH_SIZE} SIREN envoyés).",
+            )
+        with toolbar_cols[4]:
+            st.markdown("<div style='height: 1.9rem;'></div>", unsafe_allow_html=True)
+            review_simulation_download_button(
+                "PDF",
+                data=(single_pdf_bytes or b""),
+                file_name=single_pdf_name,
+                mime="application/pdf",
+                key="review_toolbar_pdf",
+                disabled=(single_pdf_bytes is None),
+                use_container_width=True,
+                help="Télécharge le PDF du SIREN sélectionné lorsque la sélection contient une seule société.",
+            )
+        with toolbar_cols[5]:
+            st.markdown("<div style='height: 1.9rem;'></div>", unsafe_allow_html=True)
+            review_simulation_download_button(
+                "ZIP PDF",
+                data=(zip_pdf_bytes or b""),
+                file_name="revues_simulations_tous_pdfs.zip",
+                mime="application/zip",
+                key="review_toolbar_zip_pdf",
+                disabled=(zip_pdf_bytes is None),
+                use_container_width=True,
+                help="Télécharge tous les PDF structurés déjà générés sur le périmètre courant dans un fichier ZIP.",
+            )
+        with toolbar_cols[6]:
+            st.markdown("<div style='height: 1.9rem;'></div>", unsafe_allow_html=True)
+            review_simulation_download_button(
+                "CSV",
+                data=csv_export_bytes,
+                file_name="revues_et_simulations.csv",
+                mime="text/csv;charset=utf-8",
+                key="review_toolbar_csv",
+                use_container_width=True,
+                help="Exporte le tableau Revues & Simulations visible, y compris la colonne « Explique moi ».",
+            )
 
     if clear_clicked:
         st.session_state["review_sim_selected_keys"] = []
         st.session_state["review_sim_table_version"] = int(st.session_state.get("review_sim_table_version", 0)) + 1
-        selected_keys = []
-        selected_rows = []
-        selected_count = 0
-        selected_df = working_df.iloc[0:0].copy()
+        st.rerun()
 
     if apply_clicked and selected_rows:
         updated_df, updated_count = apply_manual_estimated_status(working_df, selected_rows, manual_status)
@@ -4407,6 +4421,7 @@ Tu dois répondre exclusivement en JSON valide, sans texte avant ni après, avec
         st.session_state["review_sim_notice"] = notice
         if pdf_errors:
             st.session_state["review_sim_warning"] = " | ".join(pdf_errors[:3])
+        st.rerun()
 
     if gemini_clicked and selected_rows:
         base_source_df, indicators_source_df, _ = load_source_data()
@@ -4444,20 +4459,7 @@ Tu dois répondre exclusivement en JSON valide, sans texte avant ni après, avec
                 if len(combined_errors) > 3:
                     preview_errors += f" | +{len(combined_errors) - 3} autre(s) erreur(s)"
                 st.session_state["review_sim_warning"] = preview_errors
-
-    if clear_clicked or apply_clicked or gemini_clicked:
-        selected_keys = st.session_state.get("review_sim_selected_keys", []) if not clear_clicked else []
-        if not isinstance(selected_keys, list):
-            selected_keys = []
-        selected_rows = review_sim_rows_from_selection(working_df, selected_keys)
-
-    table_version = int(st.session_state.get("review_sim_table_version", 0))
-    table_selected_rows = render_review_simulation_table(working_df, key=f"review_sim_table_{table_version}")
-
-    if table_selected_rows:
-        st.session_state["review_sim_selected_keys"] = review_sim_selection_keys(working_df, table_selected_rows)
-    elif "review_sim_selected_keys" not in st.session_state:
-        st.session_state["review_sim_selected_keys"] = []
+        st.rerun()
 
     if not REPORTLAB_AVAILABLE:
         st.info(PDF_DEPENDENCY_ERROR_MESSAGE)
