@@ -3044,7 +3044,8 @@ def render_review_status_gauges(df: pd.DataFrame) -> None:
         est_cards.append(build_card(label, est_count, total, "Statuts estimés"))
 
     grid_style = "display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:0.85rem;"
-    st.markdown(f"<div style='{grid_style} margin:0.2rem 0 0.55rem 0;'>" + "".join(real_cards) + "</div>", unsafe_allow_html=True)
+    st.markdown(f"<div style='{grid_style} margin:0.2rem 0 1.15rem 0;'>" + "".join(real_cards) + "</div>", unsafe_allow_html=True)
+    st.markdown(f"<div style='height:0.45rem;'></div>", unsafe_allow_html=True)
     st.markdown(f"<div style='{grid_style} margin:0.0rem 0 0.95rem 0;'>" + "".join(est_cards) + "</div>", unsafe_allow_html=True)
 
 
@@ -3437,10 +3438,20 @@ def render_review_simulations_screen(portfolio: pd.DataFrame, user: dict) -> Non
     )
 
 
-    top_left, top_right = st.columns([1.15, 3.85], gap="small")
+    st.markdown(
+        """
+        <div style="border:1px solid rgba(22,58,89,0.10); border-radius:18px; background:#FFFFFF; padding:1rem 1rem 0.85rem 1rem; margin:0.15rem 0 0.85rem 0; box-shadow:0 10px 24px rgba(22,58,89,0.04);">
+            <div style="font-size:0.90rem; font-weight:700; color:#163A59; margin-bottom:0.15rem;">Agent IA</div>
+            <div style="font-size:0.82rem; line-height:1.35; color:#5B7084; margin-bottom:0.75rem;">Renseignez la clé de l’agent et ajustez le prompt pour lancer les analyses IA et alimenter la colonne Explique moi.</div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    top_left, top_right = st.columns([1.2, 3.8], gap="small")
     with top_left:
         gemini_api_key = st.text_input(
-            "Clé API Gemini",
+            "Clé Agent IA",
             type="password",
             key=REVIEW_SIM_GEMINI_KEY_STATE,
             placeholder="AIza...",
@@ -3449,13 +3460,13 @@ def render_review_simulations_screen(portfolio: pd.DataFrame, user: dict) -> Non
         st.caption("Clé temporaire, non sauvegardée.")
     with top_right:
         base_prompt = st.text_area(
-            "Prompt Gemini prêt à l’emploi",
+            "Prompt Agent IA prêt à l’emploi",
             value=default_prompt,
             height=125,
             key="review_sim_prompt_preview",
         ).strip() or default_prompt
 
-    st.markdown("<div style='height: 0.6rem;'></div>", unsafe_allow_html=True)
+    st.markdown("<div style='height: 0.75rem;'></div>", unsafe_allow_html=True)
 
     search_catalog = (
         base_df[["SIREN", "Dénomination"]]
