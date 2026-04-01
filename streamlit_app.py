@@ -4400,6 +4400,40 @@ Tu dois répondre exclusivement en JSON valide, sans texte avant ni après, avec
             border: none !important;
             opacity: 1 !important;
         }}
+        div[data-testid="stVerticalBlock"]:has(.review-toolbar-nav-scope) > div[data-testid="stHorizontalBlock"] > div:nth-child(1) .stButton button,
+        div[data-testid="stVerticalBlock"]:has(.review-toolbar-nav-scope) > div[data-testid="stHorizontalBlock"] > div:nth-child(1) .stButton button:hover {{
+            color: #D97706 !important;
+        }}
+        div[data-testid="stVerticalBlock"]:has(.review-toolbar-nav-scope) > div[data-testid="stHorizontalBlock"] > div:nth-child(1) .stButton button::before {{
+            content: none !important;
+            display: none !important;
+        }}
+        div[data-testid="stVerticalBlock"]:has(.review-toolbar-nav-scope) > div[data-testid="stHorizontalBlock"] > div:nth-child(1) .stButton button p {{
+            color: #D97706 !important;
+            font-size: 1.08rem !important;
+            font-weight: 600 !important;
+        }}
+        div[data-testid="stVerticalBlock"]:has(.review-toolbar-nav-scope) > div[data-testid="stHorizontalBlock"] > div:nth-child(1) .stButton button:disabled,
+        div[data-testid="stVerticalBlock"]:has(.review-toolbar-nav-scope) > div[data-testid="stHorizontalBlock"] > div:nth-child(1) .stButton button:disabled p {{
+            color: #F2B36A !important;
+        }}
+        div[data-testid="stVerticalBlock"]:has(.review-toolbar-nav-scope) > div[data-testid="stHorizontalBlock"] > div:nth-child(4) .stButton button,
+        div[data-testid="stVerticalBlock"]:has(.review-toolbar-nav-scope) > div[data-testid="stHorizontalBlock"] > div:nth-child(4) .stButton button:hover {{
+            color: #16803C !important;
+        }}
+        div[data-testid="stVerticalBlock"]:has(.review-toolbar-nav-scope) > div[data-testid="stHorizontalBlock"] > div:nth-child(4) .stButton button::before {{
+            content: none !important;
+            display: none !important;
+        }}
+        div[data-testid="stVerticalBlock"]:has(.review-toolbar-nav-scope) > div[data-testid="stHorizontalBlock"] > div:nth-child(4) .stButton button p {{
+            color: #16803C !important;
+            font-size: 1.08rem !important;
+            font-weight: 600 !important;
+        }}
+        div[data-testid="stVerticalBlock"]:has(.review-toolbar-nav-scope) > div[data-testid="stHorizontalBlock"] > div:nth-child(4) .stButton button:disabled,
+        div[data-testid="stVerticalBlock"]:has(.review-toolbar-nav-scope) > div[data-testid="stHorizontalBlock"] > div:nth-child(4) .stButton button:disabled p {{
+            color: #7BC596 !important;
+        }}
         div[data-testid="stVerticalBlock"]:has(.review-toolbar-nav-scope) .stSelectbox {{
             width: 100% !important;
             min-width: 0 !important;
@@ -4471,7 +4505,7 @@ Tu dois répondre exclusivement en JSON valide, sans texte avant ni après, avec
 
     with toolbar_cols[0]:
         clear_clicked = st.button(
-            "Effacer",
+            "⌫",
             key="review_toolbar_clear",
             type="secondary",
             disabled=(selected_count == 0),
@@ -4493,7 +4527,7 @@ Tu dois répondre exclusivement en JSON valide, sans texte avant ni après, avec
         )
     with toolbar_cols[3]:
         apply_clicked = st.button(
-            "Appliquer",
+            "✔",
             key="review_toolbar_apply",
             type="secondary",
             disabled=(selected_count == 0),
