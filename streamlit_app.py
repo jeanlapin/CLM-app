@@ -3893,6 +3893,8 @@ def render_review_simulation_table(df: pd.DataFrame, key: str) -> list[int]:
     display_df["Explique moi"] = display_df["Explique moi"].apply(
         lambda value: "a lire" if str(value or "").strip() else ""
     )
+    if "SIREN" in display_df.columns:
+        display_df["SIREN"] = display_df["SIREN"].apply(lambda value: f"↗ {display_value(value)}")
     for status_col in (REVIEW_SIM_REAL_LABEL, REVIEW_SIM_EST_LABEL):
         if status_col in display_df.columns:
             display_df[status_col] = display_df[status_col].apply(review_simulation_short_vigilance_label)
