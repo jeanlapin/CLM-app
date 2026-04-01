@@ -4069,38 +4069,38 @@ Tu dois répondre exclusivement en JSON valide, sans texte avant ni après, avec
         }
         div[data-testid="stVerticalBlock"]:has(#agent-ia-config-anchor) div[data-testid="stTextInputRootElement"] > div,
         div[data-testid="stVerticalBlock"]:has(#agent-ia-config-anchor) div[data-baseweb="base-input"] > div,
-        div[data-testid="stVerticalBlock"]:has(#agent-ia-config-anchor) div[data-baseweb="textarea"] {
+        div[data-testid="stVerticalBlock"]:has(#agent-ia-config-anchor) div[data-testid="stTextArea"] div[data-baseweb="textarea"] {
             border-radius: 14px !important;
             border: 1px solid rgba(47, 107, 158, 0.22) !important;
             background: #FFFFFF !important;
             box-shadow: inset 0 1px 0 rgba(255,255,255,0.88), 0 1px 3px rgba(22,58,89,0.04) !important;
-            min-height: 3.45rem !important;
         }
-        div[data-testid="stVerticalBlock"]:has(#agent-ia-config-anchor) div[data-testid="stTextInputRootElement"] input,
-        div[data-testid="stVerticalBlock"]:has(#agent-ia-config-anchor) textarea {
-            font-size: 0.96rem !important;
-            line-height: 1.45 !important;
-            color: var(--cm-primary) !important;
-            background: #FFFFFF !important;
-            min-height: 3.45rem !important;
+        div[data-testid="stVerticalBlock"]:has(#agent-ia-config-anchor) div[data-baseweb="base-input"] > div {
+            min-height: 2.85rem !important;
         }
         div[data-testid="stVerticalBlock"]:has(#agent-ia-config-anchor) div[data-testid="stTextInputRootElement"] input {
-            height: 3.45rem !important;
-            padding: 0.72rem 3rem 0.72rem 0.95rem !important;
+            font-size: 0.96rem !important;
+            line-height: 1.35 !important;
+            color: var(--cm-primary) !important;
+            background: transparent !important;
         }
         div[data-testid="stVerticalBlock"]:has(#agent-ia-config-anchor) div[data-testid="stTextArea"] {
             width: 100% !important;
         }
         div[data-testid="stVerticalBlock"]:has(#agent-ia-config-anchor) div[data-testid="stTextArea"] div[data-baseweb="textarea"] {
-            min-height: 3.45rem !important;
+            min-height: 2.85rem !important;
             background: #FFFFFF !important;
         }
         div[data-testid="stVerticalBlock"]:has(#agent-ia-config-anchor) textarea {
-            height: 3.45rem !important;
+            font-size: 0.96rem !important;
+            line-height: 1.35 !important;
+            color: var(--cm-primary) !important;
+            background: #FFFFFF !important;
+            min-height: 2.85rem !important;
+            height: 2.85rem !important;
             resize: vertical !important;
             overflow: auto !important;
-            padding: 0.72rem 0.95rem !important;
-            background: #FFFFFF !important;
+            padding: 0.62rem 0.95rem !important;
         }
         </style>
         """,
@@ -4133,7 +4133,7 @@ Tu dois répondre exclusivement en JSON valide, sans texte avant ni après, avec
             base_prompt = st.text_area(
                 "Prompt Agent IA",
                 value=default_prompt,
-                height=56,
+                height=46,
                 key="review_sim_prompt_preview",
                 help="Prompt standard modifiable pour l’analyse IA.",
                 label_visibility="collapsed",
