@@ -4166,24 +4166,25 @@ Tu dois répondre exclusivement en JSON valide, sans texte avant ni après, avec
             min-height: 0 !important;
         }
         div[data-testid="stVerticalBlock"]:has(#agent-ia-config-anchor) div[data-testid="stTextArea"] div[data-baseweb="base-input"] {
-            min-height: 2.85rem !important;
-            height: 2.85rem !important;
+            min-height: 10rem !important;
+            height: auto !important;
             align-items: stretch !important;
             background: #FFFFFF !important;
+            overflow: visible !important;
         }
         div[data-testid="stVerticalBlock"]:has(#agent-ia-config-anchor) div[data-testid="stTextArea"] div[data-baseweb="textarea"] {
-            min-height: 2.85rem !important;
-            height: 2.85rem !important;
+            min-height: 10rem !important;
+            height: auto !important;
             background: #FFFFFF !important;
             box-sizing: border-box !important;
+            overflow: visible !important;
         }
         div[data-testid="stVerticalBlock"]:has(#agent-ia-config-anchor) textarea[aria-label="Prompt Agent IA"] {
             font-size: 0.96rem !important;
             line-height: 1.35 !important;
             color: var(--cm-primary) !important;
             background: #FFFFFF !important;
-            min-height: calc(2.85rem - 2px) !important;
-            height: calc(2.85rem - 2px) !important;
+            min-height: 10rem !important;
             box-sizing: border-box !important;
             resize: vertical !important;
             overflow: auto !important;
