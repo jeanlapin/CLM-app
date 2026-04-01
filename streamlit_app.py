@@ -3483,31 +3483,75 @@ def render_review_simulations_screen(portfolio: pd.DataFrame, user: dict) -> Non
 
     st.markdown(
         """
-        <div style="border:1px solid rgba(22,58,89,0.10); border-radius:18px; background:#FFFFFF; padding:1rem 1rem 0.85rem 1rem; margin:0.15rem 0 0.85rem 0; box-shadow:0 10px 24px rgba(22,58,89,0.04);">
-            <div style="font-size:0.90rem; font-weight:700; color:#163A59; margin-bottom:0.15rem;">Agent IA</div>
-            <div style="font-size:0.82rem; line-height:1.35; color:#5B7084; margin-bottom:0.75rem;">Renseignez la clé de l’agent et ajustez le prompt pour lancer les analyses IA et alimenter la colonne Explique moi.</div>
-        </div>
+        <style>
+        div[data-testid="stVerticalBlock"]:has(#agent-ia-config-anchor) {
+            margin: 0.2rem 0 0.95rem 0;
+            padding: 0.9rem 1rem 0.95rem 1rem;
+            border-radius: 18px;
+            border: 1px solid rgba(22, 58, 89, 0.16);
+            background: linear-gradient(180deg, rgba(221, 234, 248, 0.88), rgba(237, 244, 252, 0.78));
+            box-shadow: inset 0 1px 0 rgba(255,255,255,0.65);
+        }
+        div[data-testid="stVerticalBlock"]:has(#agent-ia-config-anchor) > div[data-testid="stHorizontalBlock"] {
+            margin-top: 0.25rem;
+        }
+        div[data-testid="stVerticalBlock"]:has(#agent-ia-config-anchor) p {
+            margin-bottom: 0;
+        }
+        .agent-ia-card-kicker {
+            font-family: 'Sora', sans-serif;
+            font-size: 0.78rem;
+            font-weight: 800;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            color: #2F6B9E;
+            margin-bottom: 0.12rem;
+        }
+        .agent-ia-card-title {
+            font-family: 'Montserrat', sans-serif;
+            font-size: 1.05rem;
+            font-weight: 800;
+            color: var(--cm-primary);
+            margin-bottom: 0.18rem;
+        }
+        .agent-ia-card-note {
+            font-size: 0.92rem;
+            line-height: 1.42;
+            color: var(--cm-muted);
+            margin-bottom: 0.55rem;
+        }
+        </style>
         """,
         unsafe_allow_html=True,
     )
 
-    top_left, top_right = st.columns([1.2, 3.8], gap="small")
-    with top_left:
-        gemini_api_key = st.text_input(
-            "Clé Agent IA",
-            type="password",
-            key=REVIEW_SIM_GEMINI_KEY_STATE,
-            placeholder="AIza...",
-            help="Clé éphémère : elle n’est pas sauvegardée et est effacée lorsque vous changez d’écran ou fermez l’application.",
-        ).strip()
-        st.caption("Clé temporaire, non sauvegardée.")
-    with top_right:
-        base_prompt = st.text_area(
-            "Prompt Agent IA prêt à l’emploi",
-            value=default_prompt,
-            height=125,
-            key="review_sim_prompt_preview",
-        ).strip() or default_prompt
+    with st.container():
+        st.markdown(
+            """
+            <div id="agent-ia-config-anchor"></div>
+            <div class="agent-ia-card-kicker">Agent IA</div>
+            <div class="agent-ia-card-title">Pilotez les analyses IA de la revue</div>
+            <div class="agent-ia-card-note">Renseignez la clé de l’agent et ajustez le prompt pour lancer les analyses IA et alimenter la colonne Explique moi.</div>
+            """,
+            unsafe_allow_html=True,
+        )
+        top_left, top_right = st.columns([1.2, 3.8], gap="small")
+        with top_left:
+            gemini_api_key = st.text_input(
+                "Clé Agent IA",
+                type="password",
+                key=REVIEW_SIM_GEMINI_KEY_STATE,
+                placeholder="AIza...",
+                help="Clé éphémère : elle n’est pas sauvegardée et est effacée lorsque vous changez d’écran ou fermez l’application.",
+            ).strip()
+            st.caption("Clé temporaire, non sauvegardée.")
+        with top_right:
+            base_prompt = st.text_area(
+                "Prompt Agent IA prêt à l’emploi",
+                value=default_prompt,
+                height=125,
+                key="review_sim_prompt_preview",
+            ).strip() or default_prompt
 
     st.markdown("<div style='height: 0.75rem;'></div>", unsafe_allow_html=True)
 
