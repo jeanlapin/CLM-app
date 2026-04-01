@@ -3057,6 +3057,13 @@ def format_review_simulation_vigilance_filter_option(label: str) -> str:
     return f"{status_emoji(label_text, 'vigilance')} {short_label}"
 
 
+def review_simulation_short_vigilance_label(value: object) -> str:
+    label_text = str(value or "").strip()
+    if not label_text:
+        return ""
+    return label_text.replace("Vigilance ", "").strip()
+
+
 def render_review_simulation_vigilance_legend(status_labels: list[str]) -> None:
     chips: list[str] = []
     for label in status_labels:
@@ -3315,6 +3322,9 @@ def render_review_simulation_table(df: pd.DataFrame, key: str) -> list[int]:
     display_df["Explique moi"] = display_df["Explique moi"].apply(
         lambda value: "a lire" if str(value or "").strip() else ""
     )
+    for status_col in (REVIEW_SIM_REAL_LABEL, REVIEW_SIM_EST_LABEL):
+        if status_col in display_df.columns:
+            display_df[status_col] = display_df[status_col].apply(review_simulation_short_vigilance_label)
     display_df[REVIEW_SIM_TREND_LABEL] = display_df[REVIEW_SIM_TREND_LABEL].apply(review_trend_icon)
 
     column_order = [
