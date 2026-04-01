@@ -2691,7 +2691,6 @@ def review_simulation_pdf_table(data: dict[str, object], styles: dict[str, Parag
 
 def review_simulation_pdf_indicator_table(
     data: dict[str, object],
-    indicator_analysis_map: dict[str, str],
     styles: dict[str, ParagraphStyle],
     col_widths: list[float] | None = None,
 ) -> Table:
@@ -2702,7 +2701,6 @@ def review_simulation_pdf_indicator_table(
             review_simulation_pdf_paragraph("Valeur", styles["table_header"]),
         ]
     ]
-    analysis_row_indices: list[int] = []
 
     for field_name, raw_value in data.items():
         rows.append([
@@ -2710,17 +2708,8 @@ def review_simulation_pdf_indicator_table(
             review_simulation_pdf_paragraph(review_simulation_pdf_value(field_name, raw_value), styles["field_value"]),
         ])
 
-        analysis_text = str(indicator_analysis_map.get(str(field_name), "") or "").strip()
-        analysis_chunks = review_simulation_pdf_text_chunks(analysis_text, max_chars=520) if analysis_text else ["Aucune analyse IA spécifique restituée pour cet indicateur."]
-        for idx, chunk in enumerate(analysis_chunks):
-            rows.append([
-                review_simulation_pdf_paragraph("Analyse IA" if idx == 0 else "Analyse IA (suite)", styles["field_name"]),
-                review_simulation_pdf_paragraph(chunk, styles["field_value"]),
-            ])
-            analysis_row_indices.append(len(rows) - 1)
-
     table = Table(rows, colWidths=col_widths, repeatRows=1, hAlign="LEFT")
-    style_commands = [
+    table.setStyle(TableStyle([
         ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor(PRIMARY_COLOR)),
         ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
         ("BACKGROUND", (0, 1), (-1, -1), colors.white),
@@ -2731,14 +2720,50 @@ def review_simulation_pdf_indicator_table(
         ("RIGHTPADDING", (0, 0), (-1, -1), 7),
         ("TOPPADDING", (0, 0), (-1, -1), 6),
         ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
-    ]
-    for row_idx in analysis_row_indices:
-        style_commands.extend([
-            ("BACKGROUND", (0, row_idx), (-1, row_idx), colors.HexColor("#F3F8FE")),
-            ("TEXTCOLOR", (0, row_idx), (0, row_idx), colors.HexColor(PRIMARY_COLOR)),
-        ])
-    table.setStyle(TableStyle(style_commands))
+    ]))
     return table
+
+
+def review_simulation_pdf_indicator_analysis_box(
+    indicator_name: str,
+    analysis_text: object,
+    styles: dict[str, ParagraphStyle],
+) -> Table:
+    chunks = review_simulation_pdf_text_chunks(analysis_text, max_chars=850)
+    rows: list[list[Paragraph]] = [[review_simulation_pdf_paragraph(indicator_name, styles["table_header"])]]
+    rows.extend([[review_simulation_pdf_paragraph(chunk, styles["body"])] for chunk in chunks])
+    table = Table(rows, colWidths=[174 * mm], hAlign="LEFT", splitByRow=1)
+    table.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor(PRIMARY_COLOR)),
+        ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+        ("BACKGROUND", (0, 1), (-1, -1), colors.HexColor("#F7FAFE")),
+        ("BOX", (0, 0), (-1, -1), 0.6, colors.HexColor("#D6E1EE")),
+        ("LINEBELOW", (0, 0), (-1, 0), 0.6, colors.HexColor(PRIMARY_COLOR)),
+        ("LINEBELOW", (0, 1), (-1, -2), 0.35, colors.HexColor("#D9E6F2")),
+        ("LEFTPADDING", (0, 0), (-1, -1), 9),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 9),
+        ("TOPPADDING", (0, 0), (-1, -1), 7),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 7),
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+    ]))
+    return table
+
+
+def review_simulation_pdf_indicator_analysis_boxes(
+    indicators_payload: dict[str, object],
+    explain_text: object,
+    styles: dict[str, ParagraphStyle],
+) -> list[Table]:
+    indicator_groups = indicator_group_map(list(indicators_payload.keys())) if indicators_payload else {}
+    indicator_names = list(indicator_groups.keys())
+    analysis_map = review_simulation_pdf_indicator_analysis_map(explain_text or "", indicator_names)
+    boxes: list[Table] = []
+    for indicator_name in indicator_names:
+        analysis_text = str(analysis_map.get(indicator_name, "") or "").strip()
+        if not analysis_text:
+            continue
+        boxes.append(review_simulation_pdf_indicator_analysis_box(indicator_name, analysis_text, styles))
+    return boxes
 
 
 def review_simulation_summary_payload(row: pd.Series) -> dict[str, object]:
@@ -2772,7 +2797,7 @@ def build_review_simulation_pdf_story(
     generated_text = pd.Timestamp(generated_at_utc).strftime("%d/%m/%Y %H:%M UTC")
     explain_text = str(row.get("Explique moi", "") or "").strip()
     explain_summary_text = review_simulation_pdf_summary_explanation_text(explain_text or "")
-    indicator_analysis_map = review_simulation_pdf_indicator_analysis_map(explain_text or "", list(indicators_payload.keys()))
+    indicator_analysis_boxes = review_simulation_pdf_indicator_analysis_boxes(indicators_payload, explain_text or "", styles)
     prompt_text = format_review_prompt_template(prompt_template, source_row)
 
     story: list[object] = [
@@ -2787,13 +2812,23 @@ def build_review_simulation_pdf_story(
         review_simulation_pdf_paragraph("Synthèse du dossier", styles["section"]),
         review_simulation_pdf_table(summary_payload, styles, col_widths=[60 * mm, 114 * mm]),
         Spacer(1, 5 * mm),
-        review_simulation_pdf_paragraph("Explication / consignes", styles["section"]),
+        review_simulation_pdf_paragraph("Explication & Consignes générales", styles["section"]),
     ]
 
     explanation_box = review_simulation_pdf_explanation_table(explain_summary_text or "Non renseigné", styles)
     story.extend([
         explanation_box,
         Spacer(1, 5 * mm),
+    ])
+
+    if indicator_analysis_boxes:
+        for idx, indicator_box in enumerate(indicator_analysis_boxes):
+            story.append(indicator_box)
+            if idx < len(indicator_analysis_boxes) - 1:
+                story.append(Spacer(1, 4 * mm))
+        story.append(Spacer(1, 5 * mm))
+
+    story.extend([
         review_simulation_pdf_paragraph("Contexte de simulation", styles["section"]),
         review_simulation_pdf_table(context_payload or {"Contexte": "Aucune donnée complémentaire"}, styles),
         Spacer(1, 5 * mm),
@@ -2801,7 +2836,7 @@ def build_review_simulation_pdf_story(
         review_simulation_pdf_table(base_payload or {"Données de base source": "Aucune donnée disponible"}, styles),
         Spacer(1, 5 * mm),
         review_simulation_pdf_paragraph("Indicateurs source", styles["section"]),
-        review_simulation_pdf_indicator_table(indicators_payload or {"Indicateurs source": "Aucune donnée disponible"}, indicator_analysis_map, styles),
+        review_simulation_pdf_indicator_table(indicators_payload or {"Indicateurs source": "Aucune donnée disponible"}, styles),
     ])
 
     if prompt_text:
