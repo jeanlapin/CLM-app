@@ -3763,105 +3763,23 @@ def review_simulation_emit_feedback() -> None:
             st.warning(warning)
 
 
-def inject_review_simulation_toolbar_theme() -> None:
-    st.markdown(
-        f"""
-        <style>
-        .st-key-review_toolbar_clear button,
-        .st-key-review_toolbar_apply button,
-        .st-key-review_toolbar_gemini button,
-        .st-key-review_toolbar_pdf button,
-        .st-key-review_toolbar_zip_pdf button,
-        .st-key-review_toolbar_csv button,
-        .st-key-review_toolbar_clear .stButton > button,
-        .st-key-review_toolbar_apply .stButton > button,
-        .st-key-review_toolbar_gemini .stButton > button,
-        .st-key-review_toolbar_pdf .stDownloadButton > button,
-        .st-key-review_toolbar_zip_pdf .stDownloadButton > button,
-        .st-key-review_toolbar_csv .stDownloadButton > button {{
-            background: linear-gradient(135deg, {PRIMARY_COLOR} 0%, #245782 100%) !important;
-            color: #FFFFFF !important;
-            border: 1px solid rgba(22, 58, 89, 0.18) !important;
-            border-radius: 14px !important;
-            box-shadow: 0 12px 24px rgba(22, 58, 89, 0.18) !important;
-            font-weight: 800 !important;
-            min-height: 2.75rem !important;
-            transition: all 0.18s ease !important;
-        }}
-
-        .st-key-review_toolbar_clear button:hover,
-        .st-key-review_toolbar_apply button:hover,
-        .st-key-review_toolbar_gemini button:hover,
-        .st-key-review_toolbar_pdf button:hover,
-        .st-key-review_toolbar_zip_pdf button:hover,
-        .st-key-review_toolbar_csv button:hover,
-        .st-key-review_toolbar_clear .stButton > button:hover,
-        .st-key-review_toolbar_apply .stButton > button:hover,
-        .st-key-review_toolbar_gemini .stButton > button:hover,
-        .st-key-review_toolbar_pdf .stDownloadButton > button:hover,
-        .st-key-review_toolbar_zip_pdf .stDownloadButton > button:hover,
-        .st-key-review_toolbar_csv .stDownloadButton > button:hover {{
-            color: #FFFFFF !important;
-            border-color: rgba(94, 143, 199, 0.42) !important;
-            box-shadow: 0 14px 28px rgba(22, 58, 89, 0.24) !important;
-            filter: brightness(1.03);
-            transform: translateY(-1px);
-        }}
-
-        .st-key-review_toolbar_clear button:disabled,
-        .st-key-review_toolbar_apply button:disabled,
-        .st-key-review_toolbar_gemini button:disabled,
-        .st-key-review_toolbar_pdf button:disabled,
-        .st-key-review_toolbar_zip_pdf button:disabled,
-        .st-key-review_toolbar_csv button:disabled,
-        .st-key-review_toolbar_clear .stButton > button:disabled,
-        .st-key-review_toolbar_apply .stButton > button:disabled,
-        .st-key-review_toolbar_gemini .stButton > button:disabled,
-        .st-key-review_toolbar_pdf .stDownloadButton > button:disabled,
-        .st-key-review_toolbar_zip_pdf .stDownloadButton > button:disabled,
-        .st-key-review_toolbar_csv .stDownloadButton > button:disabled {{
-            background: #EAF2FB !important;
-            color: #7C90A5 !important;
-            border: 1px solid rgba(22, 58, 89, 0.10) !important;
-            box-shadow: none !important;
-            filter: none !important;
-            transform: none !important;
-            opacity: 1 !important;
-        }}
-
-        .st-key-review_sim_manual_status label p {{
-            color: {PRIMARY_COLOR} !important;
-            font-weight: 700 !important;
-        }}
-
-        .st-key-review_sim_manual_status [data-baseweb="select"] > div {{
-            background: linear-gradient(180deg, rgba(255, 255, 255, 0.99) 0%, #F2F7FD 100%) !important;
-            border: 1px solid rgba(22, 58, 89, 0.18) !important;
-            border-radius: 14px !important;
-            min-height: 2.75rem !important;
-            box-shadow: 0 8px 18px rgba(22, 58, 89, 0.08) !important;
-        }}
-
-        .st-key-review_sim_manual_status [data-baseweb="select"] div,
-        .st-key-review_sim_manual_status [data-baseweb="select"] span,
-        .st-key-review_sim_manual_status [data-baseweb="select"] input,
-        .st-key-review_sim_manual_status [data-baseweb="select"] svg {{
-            color: {PRIMARY_COLOR} !important;
-            fill: {PRIMARY_COLOR} !important;
-        }}
-        </style>
-        """,
-        unsafe_allow_html=True,
-    )
-
-
 def review_simulation_download_button(label: str, **kwargs):
     try:
-        if "on_click" in inspect.signature(st.download_button).parameters:
-            kwargs.setdefault("on_click", "ignore")
+        supported_params = set(inspect.signature(st.download_button).parameters)
     except Exception:
-        pass
-    return st.download_button(label, **kwargs)
+        supported_params = set()
+
+    if "on_click" in supported_params:
+        kwargs.setdefault("on_click", "ignore")
+
+    if supported_params:
+        filtered_kwargs = {key: value for key, value in kwargs.items() if key in supported_params}
+    else:
+        filtered_kwargs = dict(kwargs)
+        filtered_kwargs.pop("on_click", None)
+        filtered_kwargs.pop("type", None)
+
+    return st.download_button(label, **filtered_kwargs)
 
 
 def build_review_simulation_detail_df(portfolio: pd.DataFrame, review_df: pd.DataFrame, selected_keys: list[str]) -> pd.DataFrame:
@@ -4400,7 +4318,6 @@ Tu dois répondre exclusivement en JSON valide, sans texte avant ni après, avec
     zip_pdf_bytes = review_simulation_pdfs_zip_bytes(zip_pdf_items) if REPORTLAB_AVAILABLE and zip_pdf_items else None
     gemini_button_disabled = (selected_count == 0) or (not gemini_api_key)
 
-    inject_review_simulation_toolbar_theme()
     toolbar_cols = st.columns([1.15, 1.95, 1.15, 1.15, 0.90, 1.10, 0.70], gap="small")
 
     clear_clicked = False
@@ -4412,7 +4329,7 @@ Tu dois répondre exclusivement en JSON valide, sans texte avant ni après, avec
         clear_clicked = st.button(
             "Effacer",
             key="review_toolbar_clear",
-            type="secondary",
+            type="primary",
             disabled=(selected_count == 0),
             use_container_width=True,
             help="Vide la sélection mémorisée du tableau des sociétés.",
@@ -4442,7 +4359,7 @@ Tu dois répondre exclusivement en JSON valide, sans texte avant ni après, avec
         gemini_clicked = st.button(
             "Agent IA",
             key="review_toolbar_gemini",
-            type="secondary",
+            type="primary",
             disabled=gemini_button_disabled,
             use_container_width=True,
             help=f"Analyse la sélection courante avec Gemini (maximum {GEMINI_MAX_BATCH_SIZE} SIREN envoyés).",
@@ -4456,6 +4373,7 @@ Tu dois répondre exclusivement en JSON valide, sans texte avant ni après, avec
             mime="application/pdf",
             key="review_toolbar_pdf",
             disabled=(single_pdf_bytes is None),
+            type="primary",
             use_container_width=True,
             help="Télécharge le PDF du SIREN sélectionné lorsque la sélection contient une seule société.",
         )
@@ -4468,6 +4386,7 @@ Tu dois répondre exclusivement en JSON valide, sans texte avant ni après, avec
             mime="application/zip",
             key="review_toolbar_zip_pdf",
             disabled=(zip_pdf_bytes is None),
+            type="primary",
             use_container_width=True,
             help="Télécharge tous les PDF structurés déjà générés sur le périmètre courant dans un fichier ZIP.",
         )
@@ -4479,6 +4398,7 @@ Tu dois répondre exclusivement en JSON valide, sans texte avant ni après, avec
             file_name="revues_et_simulations.csv",
             mime="text/csv;charset=utf-8",
             key="review_toolbar_csv",
+            type="primary",
             use_container_width=True,
             help="Exporte le tableau Revues & Simulations visible, y compris la colonne « Explique moi ».",
         )
