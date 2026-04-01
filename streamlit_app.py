@@ -206,6 +206,79 @@ class NoPublishedDatasetError(FileNotFoundError):
     pass
 
 
+def render_html_block(html: str) -> None:
+    html_renderer = getattr(st, "html", None)
+    if callable(html_renderer):
+        html_renderer(html)
+    else:
+        st.markdown(html, unsafe_allow_html=True)
+
+
+def inject_review_sim_toolbar_style() -> None:
+    render_html_block(
+        f"""
+        <style>
+        .st-key-review_toolbar_clear button,
+        .st-key-review_toolbar_apply button,
+        .st-key-review_toolbar_gemini button,
+        .st-key-review_toolbar_pdf button,
+        .st-key-review_toolbar_zip_pdf button,
+        .st-key-review_toolbar_csv button {{
+            border-radius: 14px;
+            border: 1px solid rgba(22, 58, 89, 0.10) !important;
+            font-weight: 800;
+            padding: 0.6rem 1rem;
+            box-shadow: 0 10px 24px rgba(22, 58, 89, 0.14);
+            background: linear-gradient(135deg, {PRIMARY_COLOR}, #245782) !important;
+            color: #FFFFFF !important;
+        }}
+
+        .st-key-review_toolbar_clear button:hover,
+        .st-key-review_toolbar_apply button:hover,
+        .st-key-review_toolbar_gemini button:hover,
+        .st-key-review_toolbar_pdf button:hover,
+        .st-key-review_toolbar_zip_pdf button:hover,
+        .st-key-review_toolbar_csv button:hover {{
+            color: #FFFFFF !important;
+            filter: brightness(1.04);
+            transform: translateY(-1px);
+        }}
+
+        .st-key-review_toolbar_clear button:disabled,
+        .st-key-review_toolbar_apply button:disabled,
+        .st-key-review_toolbar_gemini button:disabled,
+        .st-key-review_toolbar_pdf button:disabled,
+        .st-key-review_toolbar_zip_pdf button:disabled,
+        .st-key-review_toolbar_csv button:disabled {{
+            background: linear-gradient(135deg, rgba(22, 58, 89, 0.38), rgba(36, 87, 130, 0.38)) !important;
+            color: rgba(255, 255, 255, 0.80) !important;
+            box-shadow: none;
+            transform: none;
+            cursor: not-allowed;
+        }}
+
+        .st-key-review_sim_manual_status label[data-testid="stWidgetLabel"] p {{
+            font-family: 'Sora', sans-serif;
+            font-weight: 800;
+            color: {PRIMARY_COLOR};
+        }}
+
+        .st-key-review_sim_manual_status div[data-baseweb="select"] > div {{
+            min-height: 2.78rem;
+            border-radius: 14px !important;
+            border: 1px solid rgba(22, 58, 89, 0.18) !important;
+            background: #FFFFFF !important;
+            box-shadow: 0 8px 20px rgba(22, 58, 89, 0.08);
+        }}
+
+        .st-key-review_sim_manual_status div[data-baseweb="select"] * {{
+            color: {PRIMARY_COLOR} !important;
+        }}
+        </style>
+        """
+    )
+
+
 
 def inject_brand_theme() -> None:
     st.markdown(
@@ -3765,21 +3838,11 @@ def review_simulation_emit_feedback() -> None:
 
 def review_simulation_download_button(label: str, **kwargs):
     try:
-        supported_params = set(inspect.signature(st.download_button).parameters)
+        if "on_click" in inspect.signature(st.download_button).parameters:
+            kwargs.setdefault("on_click", "ignore")
     except Exception:
-        supported_params = set()
-
-    if "on_click" in supported_params:
-        kwargs.setdefault("on_click", "ignore")
-
-    if supported_params:
-        filtered_kwargs = {key: value for key, value in kwargs.items() if key in supported_params}
-    else:
-        filtered_kwargs = dict(kwargs)
-        filtered_kwargs.pop("on_click", None)
-        filtered_kwargs.pop("type", None)
-
-    return st.download_button(label, **filtered_kwargs)
+        pass
+    return st.download_button(label, **kwargs)
 
 
 def build_review_simulation_detail_df(portfolio: pd.DataFrame, review_df: pd.DataFrame, selected_keys: list[str]) -> pd.DataFrame:
@@ -4318,6 +4381,7 @@ Tu dois répondre exclusivement en JSON valide, sans texte avant ni après, avec
     zip_pdf_bytes = review_simulation_pdfs_zip_bytes(zip_pdf_items) if REPORTLAB_AVAILABLE and zip_pdf_items else None
     gemini_button_disabled = (selected_count == 0) or (not gemini_api_key)
 
+    inject_review_sim_toolbar_style()
     toolbar_cols = st.columns([1.15, 1.95, 1.15, 1.15, 0.90, 1.10, 0.70], gap="small")
 
     clear_clicked = False
@@ -4329,7 +4393,7 @@ Tu dois répondre exclusivement en JSON valide, sans texte avant ni après, avec
         clear_clicked = st.button(
             "Effacer",
             key="review_toolbar_clear",
-            type="primary",
+            type="secondary",
             disabled=(selected_count == 0),
             use_container_width=True,
             help="Vide la sélection mémorisée du tableau des sociétés.",
@@ -4359,7 +4423,7 @@ Tu dois répondre exclusivement en JSON valide, sans texte avant ni après, avec
         gemini_clicked = st.button(
             "Agent IA",
             key="review_toolbar_gemini",
-            type="primary",
+            type="secondary",
             disabled=gemini_button_disabled,
             use_container_width=True,
             help=f"Analyse la sélection courante avec Gemini (maximum {GEMINI_MAX_BATCH_SIZE} SIREN envoyés).",
@@ -4373,7 +4437,6 @@ Tu dois répondre exclusivement en JSON valide, sans texte avant ni après, avec
             mime="application/pdf",
             key="review_toolbar_pdf",
             disabled=(single_pdf_bytes is None),
-            type="primary",
             use_container_width=True,
             help="Télécharge le PDF du SIREN sélectionné lorsque la sélection contient une seule société.",
         )
@@ -4386,7 +4449,6 @@ Tu dois répondre exclusivement en JSON valide, sans texte avant ni après, avec
             mime="application/zip",
             key="review_toolbar_zip_pdf",
             disabled=(zip_pdf_bytes is None),
-            type="primary",
             use_container_width=True,
             help="Télécharge tous les PDF structurés déjà générés sur le périmètre courant dans un fichier ZIP.",
         )
@@ -4398,7 +4460,6 @@ Tu dois répondre exclusivement en JSON valide, sans texte avant ni après, avec
             file_name="revues_et_simulations.csv",
             mime="text/csv;charset=utf-8",
             key="review_toolbar_csv",
-            type="primary",
             use_container_width=True,
             help="Exporte le tableau Revues & Simulations visible, y compris la colonne « Explique moi ».",
         )
