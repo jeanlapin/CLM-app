@@ -4782,21 +4782,77 @@ def build_alert_table(df: pd.DataFrame) -> pd.DataFrame:
     return pd.DataFrame(rows, columns=["Alerte", "Nb"])
 
 
-def ranked_counts(df: pd.DataFrame, column: str, top_n: int = 5) -> pd.DataFrame:
-    if column not in df.columns:
-        return pd.DataFrame(columns=["Libellé", "Nb"])
-    series = df[column].dropna().astype(str).str.strip()
-    series = series[series.ne("")]
-    if series.empty:
-        return pd.DataFrame(columns=["Libellé", "Nb"])
-    return (
-        series.value_counts()
-        .rename_axis("Libellé")
-        .reset_index(name="Nb")
-        .sort_values(["Nb", "Libellé"], ascending=[False, True], kind="stable")
-        .head(top_n)
-        .reset_index(drop=True)
+CONCENTRATION_VIGILANCE_PERCENT_COLUMNS = [
+    ("Vigilance Critique", "% Vig. crit."),
+    ("Vigilance Élevée", "% Vig. élev."),
+    ("Vigilance Modérée", "% Vig. mod."),
+    ("Vigilance Allégée", "% Vig. all."),
+    ("Vigilance Aucune", "% Vig. auc."),
+]
+
+CONCENTRATION_RISK_PERCENT_COLUMNS = [
+    ("Risque avéré", "% Risq. av."),
+    ("Risque potentiel", "% Risq. pot."),
+    ("Risque mitigé", "% Risq. mit."),
+    ("Risque levé", "% Risq. lev."),
+    ("Non calculable", "% Risq. NC"),
+    ("Aucun risque détecté", "% Risq. aucun"),
+]
+
+
+def build_concentration_top_table(df: pd.DataFrame, group_col: str, group_label: str, top_n: int = 5) -> pd.DataFrame:
+    percent_columns = CONCENTRATION_VIGILANCE_PERCENT_COLUMNS + CONCENTRATION_RISK_PERCENT_COLUMNS
+    output_columns = [group_label, "Nb clients"] + [column_name for _, column_name in percent_columns]
+
+    if group_col not in df.columns:
+        return pd.DataFrame(columns=output_columns)
+
+    work = df.copy()
+    work[group_col] = (
+        work[group_col]
+        .fillna("Non renseigné")
+        .astype(str)
+        .str.strip()
+        .replace({"": "Non renseigné"})
     )
+
+    if "Vigilance" not in work.columns:
+        work["Vigilance"] = ""
+    if "Risque" not in work.columns:
+        work["Risque"] = ""
+
+    if SOC_COL in work.columns and "SIREN" in work.columns:
+        work["cm_client_key"] = work[SOC_COL].astype(str).str.strip() + "|" + work["SIREN"].astype(str).str.strip()
+    elif "SIREN" in work.columns:
+        work["cm_client_key"] = work["SIREN"].astype(str).str.strip()
+    else:
+        work["cm_client_key"] = pd.Series(range(len(work)), index=work.index).astype(str)
+
+    agg_spec: dict[str, tuple[str, object]] = {"Nb clients": ("cm_client_key", "nunique")}
+    for status_label, column_name in CONCENTRATION_VIGILANCE_PERCENT_COLUMNS:
+        agg_spec[column_name] = (
+            "Vigilance",
+            lambda s, target=status_label: s.astype("string").eq(target).sum(),
+        )
+    for status_label, column_name in CONCENTRATION_RISK_PERCENT_COLUMNS:
+        agg_spec[column_name] = (
+            "Risque",
+            lambda s, target=status_label: s.astype("string").eq(target).sum(),
+        )
+
+    grouped = (
+        work.groupby(group_col, dropna=False)
+        .agg(**agg_spec)
+        .reset_index()
+        .rename(columns={group_col: group_label})
+    )
+
+    denominator = grouped["Nb clients"].replace(0, np.nan)
+    for _, column_name in percent_columns:
+        grouped[column_name] = grouped[column_name].div(denominator).fillna(0.0)
+
+    grouped = grouped.sort_values(["Nb clients", group_label], ascending=[False, True], kind="stable")
+    return grouped[output_columns].head(top_n).reset_index(drop=True)
 
 
 def build_priority_table(df: pd.DataFrame, top_n: int = 10) -> pd.DataFrame:
@@ -4902,13 +4958,20 @@ def render_status_badge(value: object, status_type: str) -> str:
     return f'<span class="cm-badge" style="background:{bg}; color:{fg};">{escape(str(value))}</span>'
 
 
-def render_small_table(df: pd.DataFrame, color_columns: dict[str, str] | None = None, *, bold_numbers: bool = True) -> None:
+def render_small_table(
+    df: pd.DataFrame,
+    color_columns: dict[str, str] | None = None,
+    *,
+    bold_numbers: bool = True,
+    scroll_x: bool = False,
+) -> None:
     color_columns = color_columns or {}
     if df is None or df.empty:
         st.info("Aucune donnée à afficher.")
         return
 
-    html = ["<div class='cm-mini-table-wrap'><table class='cm-mini-table'><thead><tr>"]
+    wrap_style = " style='overflow-x: auto; overflow-y: hidden;'" if scroll_x else ""
+    html = [f"<div class='cm-mini-table-wrap'{wrap_style}><table class='cm-mini-table'><thead><tr>"]
     for col in df.columns:
         html.append(f"<th>{escape(str(col))}</th>")
     html.append("</tr></thead><tbody>")
@@ -5111,9 +5174,17 @@ def render_distribution_block(title: str, dist_df: pd.DataFrame, index_col: str)
     render_small_table(format_percent_column(dist_df), color_columns=color_columns)
 
 
+def format_small_table_percent_columns(df: pd.DataFrame) -> pd.DataFrame:
+    output = df.copy()
+    for col in output.columns:
+        if str(col).startswith("%"):
+            output[col] = output[col].map(lambda x: "" if pd.isna(x) else f"{float(x):.1%}".replace(".", ","))
+    return output
+
+
 def render_top_block(title: str, df: pd.DataFrame) -> None:
     st.markdown(f'<h3 class="cm-section-title">{escape(title)}</h3>', unsafe_allow_html=True)
-    render_small_table(df)
+    render_small_table(format_small_table_percent_columns(df), scroll_x=True)
 
 
 def render_alert_block(title: str, df: pd.DataFrame) -> None:
@@ -7752,13 +7823,13 @@ def main() -> None:
     st.markdown('<h3 class="cm-section-title">Concentrations</h3>', unsafe_allow_html=True)
     t1, t2, t3, t4 = st.columns(4)
     with t1:
-        render_top_block("Top segments", ranked_counts(filtered, "Segment"))
+        render_top_block("Top segments", build_concentration_top_table(filtered, "Segment", "Segment"))
     with t2:
-        render_top_block("Top pays", ranked_counts(filtered, "Pays de résidence"))
+        render_top_block("Top pays", build_concentration_top_table(filtered, "Pays de résidence", "Pays"))
     with t3:
-        render_top_block("Top produits", ranked_counts(filtered, "Produit(service) principal"))
+        render_top_block("Top produits", build_concentration_top_table(filtered, "Produit(service) principal", "Produit"))
     with t4:
-        render_top_block("Top canaux", ranked_counts(filtered, "Canal d’opérations principal 12 mois"))
+        render_top_block("Top canaux", build_concentration_top_table(filtered, "Canal d’opérations principal 12 mois", "Canal"))
 
     st.divider()
     st.markdown('<h3 class="cm-section-title">Dossiers prioritaires</h3>', unsafe_allow_html=True)
