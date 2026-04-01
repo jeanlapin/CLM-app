@@ -4307,256 +4307,54 @@ Tu dois répondre exclusivement en JSON valide, sans texte avant ni après, avec
     zip_pdf_bytes = review_simulation_pdfs_zip_bytes(zip_pdf_items) if REPORTLAB_AVAILABLE and zip_pdf_items else None
     gemini_button_disabled = (selected_count == 0) or (not gemini_api_key)
 
-    st.markdown(
-        f"""
-        <style>
-        div[data-testid="stVerticalBlock"]:has(.review-toolbar-nav-scope) {{
-            gap: 0.24rem;
-            margin-top: 0.18rem;
-        }}
-        div[data-testid="stVerticalBlock"]:has(.review-toolbar-nav-scope) > div[data-testid="stHorizontalBlock"] {{
-            align-items: center;
-            gap: 0.95rem;
-            flex-wrap: nowrap;
-        }}
-        div[data-testid="stVerticalBlock"]:has(.review-toolbar-nav-scope) p {{
-            margin: 0 !important;
-        }}
-        .review-toolbar-nav-item,
-        .review-toolbar-nav-disabled,
-        div[data-testid="stVerticalBlock"]:has(.review-toolbar-nav-scope) .stButton button,
-        div[data-testid="stVerticalBlock"]:has(.review-toolbar-nav-scope) .stDownloadButton button {{
-            display: inline-flex !important;
-            align-items: center !important;
-            justify-content: flex-start !important;
-            color: {PRIMARY_COLOR} !important;
-            text-decoration: none !important;
-            background: transparent !important;
-            border: none !important;
-            box-shadow: none !important;
-            font-family: "Source Sans Pro", sans-serif !important;
-            font-size: 1rem !important;
-            font-weight: 400 !important;
-            line-height: 1.25 !important;
-            white-space: nowrap !important;
-            padding: 0 !important;
-            min-height: 0 !important;
-            height: auto !important;
-            width: auto !important;
-        }}
-        div[data-testid="stVerticalBlock"]:has(.review-toolbar-nav-scope) .stButton,
-        div[data-testid="stVerticalBlock"]:has(.review-toolbar-nav-scope) .stDownloadButton {{
-            display: inline-flex !important;
-            width: auto !important;
-        }}
-        div[data-testid="stVerticalBlock"]:has(.review-toolbar-nav-scope) .stButton button p,
-        div[data-testid="stVerticalBlock"]:has(.review-toolbar-nav-scope) .stDownloadButton button p {{
-            font-family: "Source Sans Pro", sans-serif !important;
-            font-size: 1rem !important;
-            font-weight: 400 !important;
-            line-height: 1.25 !important;
-            color: inherit !important;
-            margin: 0 !important;
-        }}
-        .review-toolbar-status-label {{
-            display: inline-flex;
-            align-items: center;
-            color: #4E6276;
-            text-decoration: none !important;
-            background: transparent !important;
-            border: none !important;
-            font-family: "Source Sans Pro", sans-serif !important;
-            font-size: 1rem !important;
-            font-weight: 400 !important;
-            line-height: 1.25 !important;
-            white-space: nowrap;
-        }}
-        .review-toolbar-nav-item::before,
-        .review-toolbar-nav-disabled::before,
-        div[data-testid="stVerticalBlock"]:has(.review-toolbar-nav-scope) .stButton button::before,
-        div[data-testid="stVerticalBlock"]:has(.review-toolbar-nav-scope) .stDownloadButton button::before {{
-            content: "○";
-            display: inline-block;
-            margin-right: 0.40rem;
-            font-size: 1.03rem;
-            line-height: 1;
-            color: currentColor;
-        }}
-        .review-toolbar-nav-item:hover,
-        div[data-testid="stVerticalBlock"]:has(.review-toolbar-nav-scope) .stButton button:hover,
-        div[data-testid="stVerticalBlock"]:has(.review-toolbar-nav-scope) .stDownloadButton button:hover {{
-            color: #245782 !important;
-            text-decoration: none !important;
-            background: transparent !important;
-            border: none !important;
-        }}
-        .review-toolbar-nav-disabled,
-        div[data-testid="stVerticalBlock"]:has(.review-toolbar-nav-scope) .stButton button:disabled,
-        div[data-testid="stVerticalBlock"]:has(.review-toolbar-nav-scope) .stDownloadButton button:disabled {{
-            color: #A2B3C3 !important;
-            cursor: default !important;
-            pointer-events: none !important;
-            background: transparent !important;
-            border: none !important;
-            opacity: 1 !important;
-        }}
-        .review-toolbar-clear-marker,
-        .review-toolbar-apply-marker {{
-            display: block;
-            width: 0 !important;
-            height: 0 !important;
-            margin: 0 !important;
-            padding: 0 !important;
-            overflow: hidden !important;
-            opacity: 0 !important;
-            pointer-events: none !important;
-        }}
-        div[data-testid="stVerticalBlock"]:has(.review-toolbar-nav-scope) > div[data-testid="stHorizontalBlock"] > div:has(.review-toolbar-clear-marker) .stButton button,
-        div[data-testid="stVerticalBlock"]:has(.review-toolbar-nav-scope) > div[data-testid="stHorizontalBlock"] > div:has(.review-toolbar-clear-marker) .stButton button:hover {{
-            color: #D97706 !important;
-        }}
-        div[data-testid="stVerticalBlock"]:has(.review-toolbar-nav-scope) > div[data-testid="stHorizontalBlock"] > div:has(.review-toolbar-clear-marker) .stButton button::before {{
-            content: none !important;
-            display: none !important;
-        }}
-        div[data-testid="stVerticalBlock"]:has(.review-toolbar-nav-scope) > div[data-testid="stHorizontalBlock"] > div:has(.review-toolbar-clear-marker) .stButton button p {{
-            color: #D97706 !important;
-            font-size: 1.08rem !important;
-            font-weight: 600 !important;
-        }}
-        div[data-testid="stVerticalBlock"]:has(.review-toolbar-nav-scope) > div[data-testid="stHorizontalBlock"] > div:has(.review-toolbar-clear-marker) .stButton button:disabled,
-        div[data-testid="stVerticalBlock"]:has(.review-toolbar-nav-scope) > div[data-testid="stHorizontalBlock"] > div:has(.review-toolbar-clear-marker) .stButton button:disabled p {{
-            color: #F2B36A !important;
-        }}
-        div[data-testid="stVerticalBlock"]:has(.review-toolbar-nav-scope) > div[data-testid="stHorizontalBlock"] > div:has(.review-toolbar-apply-marker) .stButton button,
-        div[data-testid="stVerticalBlock"]:has(.review-toolbar-nav-scope) > div[data-testid="stHorizontalBlock"] > div:has(.review-toolbar-apply-marker) .stButton button:hover {{
-            color: #16803C !important;
-        }}
-        div[data-testid="stVerticalBlock"]:has(.review-toolbar-nav-scope) > div[data-testid="stHorizontalBlock"] > div:has(.review-toolbar-apply-marker) .stButton button::before {{
-            content: none !important;
-            display: none !important;
-        }}
-        div[data-testid="stVerticalBlock"]:has(.review-toolbar-nav-scope) > div[data-testid="stHorizontalBlock"] > div:has(.review-toolbar-apply-marker) .stButton button p {{
-            color: #16803C !important;
-            font-size: 1.08rem !important;
-            font-weight: 600 !important;
-        }}
-        div[data-testid="stVerticalBlock"]:has(.review-toolbar-nav-scope) > div[data-testid="stHorizontalBlock"] > div:has(.review-toolbar-apply-marker) .stButton button:disabled,
-        div[data-testid="stVerticalBlock"]:has(.review-toolbar-nav-scope) > div[data-testid="stHorizontalBlock"] > div:has(.review-toolbar-apply-marker) .stButton button:disabled p {{
-            color: #7BC596 !important;
-        }}
-        div[data-testid="stVerticalBlock"]:has(.review-toolbar-nav-scope) .stSelectbox {{
-            width: 100% !important;
-            min-width: 0 !important;
-        }}
-        div[data-testid="stVerticalBlock"]:has(.review-toolbar-nav-scope) .stSelectbox label {{
-            display: none !important;
-        }}
-        div[data-testid="stVerticalBlock"]:has(.review-toolbar-nav-scope) div[data-baseweb="select"] {{
-            min-width: 0 !important;
-        }}
-        div[data-testid="stVerticalBlock"]:has(.review-toolbar-nav-scope) div[data-baseweb="select"] > div {{
-            min-height: 2.15rem !important;
-            height: 2.15rem !important;
-            padding-top: 0 !important;
-            padding-bottom: 0 !important;
-            border-radius: 999px !important;
-            border: 1px solid rgba(22, 58, 89, 0.16) !important;
-            background: #FFFFFF !important;
-            box-shadow: none !important;
-            display: flex !important;
-            align-items: center !important;
-            overflow: visible !important;
-        }}
-        div[data-testid="stVerticalBlock"]:has(.review-toolbar-nav-scope) div[data-baseweb="select"] > div:hover,
-        div[data-testid="stVerticalBlock"]:has(.review-toolbar-nav-scope) div[data-baseweb="select"] > div:focus-within {{
-            border: 1px solid rgba(22, 58, 89, 0.22) !important;
-            box-shadow: none !important;
-        }}
-        div[data-testid="stVerticalBlock"]:has(.review-toolbar-nav-scope) div[data-baseweb="select"] span,
-        div[data-testid="stVerticalBlock"]:has(.review-toolbar-nav-scope) div[data-baseweb="select"] input {{
-            color: #4E6276 !important;
-            font-family: "Source Sans Pro", sans-serif !important;
-            font-size: 0.88rem !important;
-            font-weight: 400 !important;
-            line-height: normal !important;
-            overflow: visible !important;
-        }}
-        div[data-testid="stVerticalBlock"]:has(.review-toolbar-nav-scope) div[data-baseweb="select"] svg {{
-            color: #4E6276 !important;
-        }}
-        div[data-testid="stVerticalBlock"]:has(.review-toolbar-nav-scope) div[data-baseweb="select"] > div > div,
-        div[data-testid="stVerticalBlock"]:has(.review-toolbar-nav-scope) div[data-baseweb="select"] [data-testid="stSelectbox"] > div,
-        div[data-testid="stVerticalBlock"]:has(.review-toolbar-nav-scope) div[data-baseweb="select"] div[role="combobox"] {{
-            display: flex !important;
-            align-items: center !important;
-            min-height: 100% !important;
-            overflow: visible !important;
-        }}
-        div[role="listbox"] [role="option"],
-        div[role="listbox"] [role="option"] span,
-        ul[role="listbox"] li,
-        ul[role="listbox"] li span {{
-            font-family: "Source Sans Pro", sans-serif !important;
-            font-size: 0.88rem !important;
-            font-weight: 400 !important;
-            line-height: normal !important;
-        }}
-        </style>
-        """,
-        unsafe_allow_html=True,
-    )
-
-    st.markdown("<div class='review-toolbar-nav-scope'></div>", unsafe_allow_html=True)
-    toolbar_cols = st.columns([0.90, 1.00, 1.72, 0.96, 0.92, 0.78, 0.98, 0.56], gap="small")
+    toolbar_cols = st.columns([1.15, 1.95, 1.15, 1.15, 0.90, 1.10, 0.70], gap="small")
 
     clear_clicked = False
     apply_clicked = False
     gemini_clicked = False
 
     with toolbar_cols[0]:
-        st.markdown("<div class='review-toolbar-clear-marker' aria-hidden='true'></div>", unsafe_allow_html=True)
+        st.markdown("<div style='height: 1.9rem;'></div>", unsafe_allow_html=True)
         clear_clicked = st.button(
-            "⌫",
+            "Effacer",
             key="review_toolbar_clear",
             type="secondary",
             disabled=(selected_count == 0),
-            use_container_width=False,
+            use_container_width=True,
             help="Vide la sélection mémorisée du tableau des sociétés.",
         )
     with toolbar_cols[1]:
-        st.markdown("<span class='review-toolbar-status-label'>Statut estimé</span>", unsafe_allow_html=True)
-    with toolbar_cols[2]:
         manual_status = st.selectbox(
             "Statut estimé",
             options=status_options,
             index=status_options.index(default_value),
             key="review_sim_manual_status",
             disabled=(selected_count == 0),
-            label_visibility="collapsed",
             format_func=lambda value: status_display_map.get(value, str(value).replace("Vigilance ", "")),
             help="Choisissez le statut estimé à appliquer à toutes les lignes sélectionnées.",
         )
-    with toolbar_cols[3]:
-        st.markdown("<div class='review-toolbar-apply-marker' aria-hidden='true'></div>", unsafe_allow_html=True)
+    with toolbar_cols[2]:
+        st.markdown("<div style='height: 1.9rem;'></div>", unsafe_allow_html=True)
         apply_clicked = st.button(
-            "✔",
+            "Appliquer",
             key="review_toolbar_apply",
-            type="secondary",
+            type="primary",
             disabled=(selected_count == 0),
-            use_container_width=False,
+            use_container_width=True,
             help="Met à jour le statut estimé des sociétés sélectionnées.",
         )
-    with toolbar_cols[4]:
+    with toolbar_cols[3]:
+        st.markdown("<div style='height: 1.9rem;'></div>", unsafe_allow_html=True)
         gemini_clicked = st.button(
             "Agent IA",
             key="review_toolbar_gemini",
             type="secondary",
             disabled=gemini_button_disabled,
-            use_container_width=False,
+            use_container_width=True,
             help=f"Analyse la sélection courante avec Gemini (maximum {GEMINI_MAX_BATCH_SIZE} SIREN envoyés).",
         )
-    with toolbar_cols[5]:
+    with toolbar_cols[4]:
+        st.markdown("<div style='height: 1.9rem;'></div>", unsafe_allow_html=True)
         review_simulation_download_button(
             "PDF",
             data=(single_pdf_bytes or b""),
@@ -4564,10 +4362,11 @@ Tu dois répondre exclusivement en JSON valide, sans texte avant ni après, avec
             mime="application/pdf",
             key="review_toolbar_pdf",
             disabled=(single_pdf_bytes is None),
-            use_container_width=False,
+            use_container_width=True,
             help="Télécharge le PDF du SIREN sélectionné lorsque la sélection contient une seule société.",
         )
-    with toolbar_cols[6]:
+    with toolbar_cols[5]:
+        st.markdown("<div style='height: 1.9rem;'></div>", unsafe_allow_html=True)
         review_simulation_download_button(
             "ZIP PDF",
             data=(zip_pdf_bytes or b""),
@@ -4575,17 +4374,18 @@ Tu dois répondre exclusivement en JSON valide, sans texte avant ni après, avec
             mime="application/zip",
             key="review_toolbar_zip_pdf",
             disabled=(zip_pdf_bytes is None),
-            use_container_width=False,
+            use_container_width=True,
             help="Télécharge tous les PDF structurés déjà générés sur le périmètre courant dans un fichier ZIP.",
         )
-    with toolbar_cols[7]:
+    with toolbar_cols[6]:
+        st.markdown("<div style='height: 1.9rem;'></div>", unsafe_allow_html=True)
         review_simulation_download_button(
             "CSV",
             data=csv_export_bytes,
             file_name="revues_et_simulations.csv",
             mime="text/csv;charset=utf-8",
             key="review_toolbar_csv",
-            use_container_width=False,
+            use_container_width=True,
             help="Exporte le tableau Revues & Simulations visible, y compris la colonne « Explique moi ».",
         )
 
