@@ -4382,6 +4382,15 @@ Tu dois répondre exclusivement en JSON valide, sans texte avant ni après, avec
             line-height: 1;
             color: currentColor;
         }}
+        div[data-testid="stVerticalBlock"]:has(.review-toolbar-nav-scope) .stButton:first-of-type button::before {{
+            content: none !important;
+            margin-right: 0 !important;
+        }}
+        div[data-testid="stVerticalBlock"]:has(.review-toolbar-nav-scope) .stButton:first-of-type button,
+        div[data-testid="stVerticalBlock"]:has(.review-toolbar-nav-scope) .stButton:first-of-type button p {{
+            font-size: 1.08rem !important;
+            line-height: 1 !important;
+        }}
         .review-toolbar-nav-item:hover,
         div[data-testid="stVerticalBlock"]:has(.review-toolbar-nav-scope) .stButton button:hover,
         div[data-testid="stVerticalBlock"]:has(.review-toolbar-nav-scope) .stDownloadButton button:hover {{
@@ -4471,7 +4480,7 @@ Tu dois répondre exclusivement en JSON valide, sans texte avant ni après, avec
 
     with toolbar_cols[0]:
         clear_clicked = st.button(
-            "Effacer",
+            "⌫",
             key="review_toolbar_clear",
             type="secondary",
             disabled=(selected_count == 0),
