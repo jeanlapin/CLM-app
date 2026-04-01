@@ -2494,6 +2494,74 @@ def review_simulation_pdf_paragraph(text: object, style: ParagraphStyle) -> Para
     return Paragraph(escape(rendered).replace("\n", "<br/>"), style)
 
 
+def review_simulation_pdf_text_chunks(text: object, max_chars: int = 900) -> list[str]:
+    rendered = str(text or "").replace("\r\n", "\n").replace("\r", "\n").strip()
+    if not rendered:
+        return ["Non renseigné"]
+
+    raw_blocks = [block.strip() for block in re.split(r"\n\s*\n", rendered) if block.strip()]
+    if not raw_blocks:
+        raw_blocks = [rendered]
+
+    logical_blocks: list[str] = []
+    for block in raw_blocks:
+        lines = [line.strip() for line in block.splitlines() if line.strip()]
+        if len(lines) > 1:
+            logical_blocks.extend(lines)
+        else:
+            logical_blocks.append(block)
+
+    chunks: list[str] = []
+    for block in logical_blocks:
+        normalized = re.sub(r"\s+", " ", block).strip()
+        if not normalized:
+            continue
+        if len(normalized) <= max_chars:
+            chunks.append(normalized)
+            continue
+
+        sentences = [part.strip() for part in re.split(r"(?<=[\.!?;:])\s+", normalized) if part.strip()]
+        if not sentences:
+            sentences = [normalized]
+
+        current = ""
+        for sentence in sentences:
+            candidate = f"{current} {sentence}".strip()
+            if current and len(candidate) > max_chars:
+                chunks.append(current)
+                current = sentence
+            elif len(sentence) > max_chars:
+                if current:
+                    chunks.append(current)
+                    current = ""
+                for start_idx in range(0, len(sentence), max_chars):
+                    piece = sentence[start_idx:start_idx + max_chars].strip()
+                    if piece:
+                        chunks.append(piece)
+            else:
+                current = candidate
+        if current:
+            chunks.append(current)
+
+    return chunks or ["Non renseigné"]
+
+
+def review_simulation_pdf_explanation_table(text: object, styles: dict[str, ParagraphStyle]) -> Table:
+    rows = [[review_simulation_pdf_paragraph(chunk, styles["body"])] for chunk in review_simulation_pdf_text_chunks(text)]
+    table = Table(rows, colWidths=[174 * mm], hAlign="LEFT", splitByRow=1)
+    table.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#F3F8FE")),
+        ("BOX", (0, 0), (-1, -1), 0.6, colors.HexColor("#C6D8EA")),
+        ("LEFTPADDING", (0, 0), (-1, -1), 9),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 9),
+        ("TOPPADDING", (0, 0), (-1, -1), 8),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 8),
+        ("LINEBELOW", (0, 0), (-1, -2), 0.35, colors.HexColor("#D9E6F2")),
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+    ]))
+    return table
+
+
 def review_simulation_pdf_field_label(field_name: object) -> str:
     label = str(field_name or "").strip()
     return {
@@ -2577,19 +2645,7 @@ def build_review_simulation_pdf_story(
         review_simulation_pdf_paragraph("Explication / consignes", styles["section"]),
     ]
 
-    explanation_box = Table(
-        [[review_simulation_pdf_paragraph(explain_text or "Non renseigné", styles["body"])]],
-        colWidths=[174 * mm],
-        hAlign="LEFT",
-    )
-    explanation_box.setStyle(TableStyle([
-        ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#F3F8FE")),
-        ("BOX", (0, 0), (-1, -1), 0.6, colors.HexColor("#C6D8EA")),
-        ("LEFTPADDING", (0, 0), (-1, -1), 9),
-        ("RIGHTPADDING", (0, 0), (-1, -1), 9),
-        ("TOPPADDING", (0, 0), (-1, -1), 8),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 8),
-    ]))
+    explanation_box = review_simulation_pdf_explanation_table(explain_text or "Non renseigné", styles)
     story.extend([
         explanation_box,
         Spacer(1, 5 * mm),
