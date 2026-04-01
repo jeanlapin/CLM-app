@@ -1882,7 +1882,26 @@ def review_objectives_for_vigilance(vigilance: str) -> tuple[str, str]:
 
 
 def format_short_date(value) -> str:
-    dt = pd.to_datetime(value, errors="coerce", dayfirst=True)
+    if value is None:
+        return ""
+    if isinstance(value, str):
+        text = value.strip()
+        if not text or text.lower() in {"nan", "nat", "none"}:
+            return ""
+        dt = pd.to_datetime(text, errors="coerce", dayfirst=True)
+    elif isinstance(value, (int, float, np.integer, np.floating)):
+        try:
+            if pd.isna(value):
+                return ""
+        except Exception:
+            pass
+        numeric = float(value)
+        if 20_000 <= numeric <= 60_000:
+            dt = pd.Timestamp("1899-12-30") + pd.to_timedelta(numeric, unit="D")
+        else:
+            dt = pd.to_datetime(value, errors="coerce", dayfirst=True)
+    else:
+        dt = pd.to_datetime(value, errors="coerce", dayfirst=True)
     if pd.isna(dt):
         return ""
     return pd.Timestamp(dt).strftime("%d/%m/%Y")
@@ -2996,6 +3015,8 @@ def style_review_simulation_table(display_df: pd.DataFrame) -> pd.io.formats.sty
             if text:
                 return base + "background-color: rgba(22,58,89,0.06); color:#163A59; font-weight:700; letter-spacing:0.01em; text-decoration: underline; text-underline-offset: 0.12rem;"
             return base + "background-color: transparent; color: transparent;"
+        if column_name in {"Date prochaine revue", REVIEW_SIM_NEXT_REVIEW_DISPLAY_LABEL}:
+            return base + "font-weight:600; color:#163A59; white-space:nowrap; font-size:0.94rem;"
         return base
 
     zebra = pd.DataFrame("", index=display_df.index, columns=display_df.columns)
@@ -3363,7 +3384,7 @@ def render_review_simulation_table(df: pd.DataFrame, key: str) -> list[int]:
         ),
         REVIEW_SIM_TREND_DISPLAY_LABEL: st.column_config.TextColumn(REVIEW_SIM_TREND_DISPLAY_LABEL, width="small"),
         REVIEW_SIM_EST_DISPLAY_LABEL: st.column_config.TextColumn(REVIEW_SIM_EST_DISPLAY_LABEL, width="small"),
-        REVIEW_SIM_NEXT_REVIEW_DISPLAY_LABEL: st.column_config.TextColumn(REVIEW_SIM_NEXT_REVIEW_DISPLAY_LABEL, width="small"),
+        REVIEW_SIM_NEXT_REVIEW_DISPLAY_LABEL: st.column_config.TextColumn(REVIEW_SIM_NEXT_REVIEW_DISPLAY_LABEL, width="medium"),
     }
 
     event = st.dataframe(
@@ -4243,10 +4264,15 @@ def status_palette(value: object, status_type: str) -> tuple[str, str]:
     if status_type == "vigilance":
         mapping = {
             "Vigilance Critique": ("#D92D20", "#FFFFFF"),
+            "Critique": ("#D92D20", "#FFFFFF"),
             "Vigilance Élevée": ("#F79009", "#FFFFFF"),
+            "Élevée": ("#F79009", "#FFFFFF"),
             "Vigilance Modérée": ("#FEEFC6", "#8A4B00"),
+            "Modérée": ("#FEEFC6", "#8A4B00"),
             "Vigilance Allégée": ("#D1FADF", "#065F46"),
+            "Allégée": ("#D1FADF", "#065F46"),
             "Vigilance Aucune": ("#EAF2FB", "#163A59"),
+            "Aucune": ("#EAF2FB", "#163A59"),
         }
         return mapping.get(val, ("#EEF2F7", "#334155"))
     mapping = {
