@@ -4059,6 +4059,14 @@ Tu dois répondre exclusivement en JSON valide, sans texte avant ni après, avec
             color: var(--cm-muted);
             margin-bottom: 0.55rem;
         }
+        .agent-ia-field-label {
+            font-size: 0.9rem;
+            font-weight: 700;
+            color: var(--cm-primary);
+            line-height: 1.15;
+            min-height: 1.15rem;
+            margin: 0 0 0.32rem 0;
+        }
         div[data-testid="stVerticalBlock"]:has(#agent-ia-config-anchor) div[data-testid="stTextInputRootElement"] > div,
         div[data-testid="stVerticalBlock"]:has(#agent-ia-config-anchor) div[data-baseweb="base-input"] > div,
         div[data-testid="stVerticalBlock"]:has(#agent-ia-config-anchor) div[data-baseweb="textarea"] {
@@ -4066,6 +4074,7 @@ Tu dois répondre exclusivement en JSON valide, sans texte avant ni après, avec
             border: 1px solid rgba(47, 107, 158, 0.22) !important;
             background: #FFFFFF !important;
             box-shadow: inset 0 1px 0 rgba(255,255,255,0.88), 0 1px 3px rgba(22,58,89,0.04) !important;
+            min-height: 3.45rem !important;
         }
         div[data-testid="stVerticalBlock"]:has(#agent-ia-config-anchor) div[data-testid="stTextInputRootElement"] input,
         div[data-testid="stVerticalBlock"]:has(#agent-ia-config-anchor) textarea {
@@ -4073,21 +4082,24 @@ Tu dois répondre exclusivement en JSON valide, sans texte avant ni après, avec
             line-height: 1.45 !important;
             color: var(--cm-primary) !important;
             background: #FFFFFF !important;
+            min-height: 3.45rem !important;
+        }
+        div[data-testid="stVerticalBlock"]:has(#agent-ia-config-anchor) div[data-testid="stTextInputRootElement"] input {
+            height: 3.45rem !important;
+            padding: 0.72rem 3rem 0.72rem 0.95rem !important;
         }
         div[data-testid="stVerticalBlock"]:has(#agent-ia-config-anchor) div[data-testid="stTextArea"] {
             width: 100% !important;
         }
         div[data-testid="stVerticalBlock"]:has(#agent-ia-config-anchor) div[data-testid="stTextArea"] div[data-baseweb="textarea"] {
             min-height: 3.45rem !important;
-            height: 3.45rem !important;
             background: #FFFFFF !important;
         }
         div[data-testid="stVerticalBlock"]:has(#agent-ia-config-anchor) textarea {
-            min-height: 3.45rem !important;
             height: 3.45rem !important;
-            resize: both !important;
+            resize: vertical !important;
             overflow: auto !important;
-            padding: 0.7rem 0.95rem !important;
+            padding: 0.72rem 0.95rem !important;
             background: #FFFFFF !important;
         }
         </style>
@@ -4107,20 +4119,24 @@ Tu dois répondre exclusivement en JSON valide, sans texte avant ni après, avec
         )
         key_col, prompt_col = st.columns([1, 1], gap="medium")
         with key_col:
+            st.markdown('<div class="agent-ia-field-label">Clé Agent IA</div>', unsafe_allow_html=True)
             gemini_api_key = st.text_input(
                 "Clé Agent IA",
                 type="password",
                 key=REVIEW_SIM_GEMINI_KEY_STATE,
                 placeholder="AIza...",
                 help="Clé éphémère : elle n’est pas sauvegardée et est effacée lorsque vous changez d’écran ou fermez l’application.",
+                label_visibility="collapsed",
             ).strip()
         with prompt_col:
+            st.markdown('<div class="agent-ia-field-label">Prompt Agent IA</div>', unsafe_allow_html=True)
             base_prompt = st.text_area(
-                "Prompt Agent IA prêt à l’emploi",
+                "Prompt Agent IA",
                 value=default_prompt,
                 height=56,
                 key="review_sim_prompt_preview",
                 help="Prompt standard modifiable pour l’analyse IA.",
+                label_visibility="collapsed",
             ).strip() or default_prompt
 
     st.markdown("<div style='height: 0.75rem;'></div>", unsafe_allow_html=True)
