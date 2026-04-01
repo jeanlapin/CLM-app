@@ -4390,6 +4390,11 @@ Tu dois répondre exclusivement en JSON valide, sans texte avant ni après, avec
         div[data-testid="stVerticalBlock"]:has(.review-toolbar-nav-scope) .stButton:first-of-type button p {{
             font-size: 1.08rem !important;
             line-height: 1 !important;
+            color: #E67E22 !important;
+        }}
+        div[data-testid="stVerticalBlock"]:has(.review-toolbar-nav-scope) .stButton:first-of-type button:hover,
+        div[data-testid="stVerticalBlock"]:has(.review-toolbar-nav-scope) .stButton:first-of-type button:hover p {{
+            color: #C96A10 !important;
         }}
         .review-toolbar-nav-item:hover,
         div[data-testid="stVerticalBlock"]:has(.review-toolbar-nav-scope) .stButton button:hover,
