@@ -3486,11 +3486,11 @@ def render_review_simulations_screen(portfolio: pd.DataFrame, user: dict) -> Non
         <style>
         div[data-testid="stVerticalBlock"]:has(#agent-ia-config-anchor) {
             margin: 0.2rem 0 0.95rem 0;
-            padding: 0.9rem 1rem 0.95rem 1rem;
-            border-radius: 18px;
-            border: 1px solid rgba(22, 58, 89, 0.16);
-            background: linear-gradient(180deg, rgba(221, 234, 248, 0.88), rgba(237, 244, 252, 0.78));
-            box-shadow: inset 0 1px 0 rgba(255,255,255,0.65);
+            padding: 1rem 1.05rem 1rem 1.05rem;
+            border-radius: 22px;
+            border: 1px solid rgba(22, 58, 89, 0.14);
+            background: linear-gradient(180deg, rgba(230, 238, 247, 0.92), rgba(242, 247, 253, 0.88));
+            box-shadow: inset 0 1px 0 rgba(255,255,255,0.72), 0 4px 14px rgba(22,58,89,0.04);
         }
         div[data-testid="stVerticalBlock"]:has(#agent-ia-config-anchor) > div[data-testid="stHorizontalBlock"] {
             margin-top: 0.25rem;
@@ -3530,7 +3530,7 @@ def render_review_simulations_screen(portfolio: pd.DataFrame, user: dict) -> Non
             """
             <div id="agent-ia-config-anchor"></div>
             <div class="agent-ia-card-kicker">Agent IA</div>
-            <div class="agent-ia-card-title">Pilotez les analyses IA de la revue</div>
+            <div class="agent-ia-card-title">Pilotez vos revues avec les analyses de l’agent IA BeCLM</div>
             <div class="agent-ia-card-note">Renseignez la clé de l’agent et ajustez le prompt pour lancer les analyses IA et alimenter la colonne Explique moi.</div>
             """,
             unsafe_allow_html=True,
