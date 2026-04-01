@@ -4064,7 +4064,7 @@ Tu dois répondre exclusivement en JSON valide, sans texte avant ni après, avec
         div[data-testid="stVerticalBlock"]:has(#agent-ia-config-anchor) div[data-baseweb="textarea"] {
             border-radius: 14px !important;
             border: 1px solid rgba(47, 107, 158, 0.22) !important;
-            background: rgba(255, 255, 255, 0.96) !important;
+            background: #FFFFFF !important;
             box-shadow: inset 0 1px 0 rgba(255,255,255,0.88), 0 1px 3px rgba(22,58,89,0.04) !important;
         }
         div[data-testid="stVerticalBlock"]:has(#agent-ia-config-anchor) div[data-testid="stTextInputRootElement"] input,
@@ -4072,6 +4072,7 @@ Tu dois répondre exclusivement en JSON valide, sans texte avant ni après, avec
             font-size: 0.96rem !important;
             line-height: 1.45 !important;
             color: var(--cm-primary) !important;
+            background: #FFFFFF !important;
         }
         div[data-testid="stVerticalBlock"]:has(#agent-ia-config-anchor) div[data-testid="stTextArea"] {
             width: 100% !important;
@@ -4079,6 +4080,7 @@ Tu dois répondre exclusivement en JSON valide, sans texte avant ni après, avec
         div[data-testid="stVerticalBlock"]:has(#agent-ia-config-anchor) div[data-testid="stTextArea"] div[data-baseweb="textarea"] {
             min-height: 3.45rem !important;
             height: 3.45rem !important;
+            background: #FFFFFF !important;
         }
         div[data-testid="stVerticalBlock"]:has(#agent-ia-config-anchor) textarea {
             min-height: 3.45rem !important;
@@ -4086,6 +4088,7 @@ Tu dois répondre exclusivement en JSON valide, sans texte avant ni après, avec
             resize: both !important;
             overflow: auto !important;
             padding: 0.7rem 0.95rem !important;
+            background: #FFFFFF !important;
         }
         </style>
         """,
@@ -4102,8 +4105,8 @@ Tu dois répondre exclusivement en JSON valide, sans texte avant ni après, avec
             """,
             unsafe_allow_html=True,
         )
-        fields_col, _fields_spacer = st.columns([1.2, 3.8], gap="small")
-        with fields_col:
+        key_col, prompt_col = st.columns([1, 1], gap="medium")
+        with key_col:
             gemini_api_key = st.text_input(
                 "Clé Agent IA",
                 type="password",
@@ -4111,12 +4114,13 @@ Tu dois répondre exclusivement en JSON valide, sans texte avant ni après, avec
                 placeholder="AIza...",
                 help="Clé éphémère : elle n’est pas sauvegardée et est effacée lorsque vous changez d’écran ou fermez l’application.",
             ).strip()
-            st.caption("Clé temporaire, non sauvegardée.")
+        with prompt_col:
             base_prompt = st.text_area(
                 "Prompt Agent IA prêt à l’emploi",
                 value=default_prompt,
                 height=56,
                 key="review_sim_prompt_preview",
+                help="Prompt standard modifiable pour l’analyse IA.",
             ).strip() or default_prompt
 
     st.markdown("<div style='height: 0.75rem;'></div>", unsafe_allow_html=True)
