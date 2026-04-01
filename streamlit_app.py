@@ -114,6 +114,7 @@ REVIEW_TYPE_BY_VIGILANCE = {
 REVIEW_SIM_REAL_LABEL = "Statut de vigilance réel"
 REVIEW_SIM_EST_LABEL = "Statut de vigilance estimé après remédiation"
 REVIEW_SIM_TREND_LABEL = "Indicateur de tendance"
+REVIEW_SIM_AI_STRUCTURED_LABEL = "Analyse IA structurée"
 REVIEW_SIM_REAL_DISPLAY_LABEL = "Statut réel"
 REVIEW_SIM_EST_DISPLAY_LABEL = "Statut estimé"
 REVIEW_SIM_TREND_DISPLAY_LABEL = "Tendance"
@@ -1833,6 +1834,7 @@ def load_review_simulation_store() -> pd.DataFrame:
     columns = KEY_COLUMNS + [
         "Explique moi",
         REVIEW_SIM_EST_LABEL,
+        REVIEW_SIM_AI_STRUCTURED_LABEL,
         "updated_at_utc",
     ]
     if not path.exists():
@@ -1848,7 +1850,7 @@ def load_review_simulation_store() -> pd.DataFrame:
             df[col] = ""
     df[SOC_COL] = normalize_societe_id(df[SOC_COL])
     df["SIREN"] = normalize_siren(df["SIREN"])
-    for col in ["Explique moi", REVIEW_SIM_EST_LABEL, "updated_at_utc"]:
+    for col in ["Explique moi", REVIEW_SIM_EST_LABEL, REVIEW_SIM_AI_STRUCTURED_LABEL, "updated_at_utc"]:
         df[col] = df[col].fillna("").astype(str)
     return df[columns].dropna(subset=KEY_COLUMNS).drop_duplicates(subset=KEY_COLUMNS, keep="last")
 
@@ -1858,7 +1860,7 @@ def save_review_simulation_store(df: pd.DataFrame) -> None:
     path = review_simulations_path()
     path.parent.mkdir(parents=True, exist_ok=True)
     save_df = df.copy()
-    for col in KEY_COLUMNS + ["Explique moi", REVIEW_SIM_EST_LABEL, "updated_at_utc"]:
+    for col in KEY_COLUMNS + ["Explique moi", REVIEW_SIM_EST_LABEL, REVIEW_SIM_AI_STRUCTURED_LABEL, "updated_at_utc"]:
         if col not in save_df.columns:
             save_df[col] = ""
     save_df[SOC_COL] = normalize_societe_id(save_df[SOC_COL])
@@ -1968,6 +1970,27 @@ def row_payload_from_columns(row: pd.Series, columns: list[str]) -> dict[str, ob
     return payload
 
 
+def grouped_indicators_payload(indicators_payload: dict[str, object]) -> list[dict[str, object]]:
+    if not indicators_payload:
+        return []
+    groups = indicator_group_map(list(indicators_payload.keys()))
+    grouped: list[dict[str, object]] = []
+    for indicator_name, mapping in groups.items():
+        item_payload: dict[str, object] = {}
+        for field_label, raw_col in mapping.items():
+            item_payload[field_label] = prompt_json_value(indicators_payload.get(raw_col))
+        if not any(value not in (None, "", [], {}) for value in item_payload.values()):
+            continue
+        grouped.append({"nom_indicateur": indicator_name, "donnees": item_payload})
+    grouped.sort(key=lambda item: normalize_text_for_matching(item.get("nom_indicateur", "")))
+    return grouped
+
+
+def available_indicator_names_from_row(row: pd.Series) -> list[str]:
+    indicators_payload = row_payload_from_prefix(row, GEMINI_INDICATORS_SOURCE_PREFIX)
+    return [str(item.get("nom_indicateur", "") or "").strip() for item in grouped_indicators_payload(indicators_payload) if str(item.get("nom_indicateur", "") or "").strip()]
+
+
 
 def build_gemini_source_payload(row: pd.Series) -> dict[str, object]:
     context_columns = [
@@ -2023,11 +2046,13 @@ def build_gemini_source_payload(row: pd.Series) -> dict[str, object]:
                 "Nb Non calculable",
             ],
         )
+    indicator_groups_payload = grouped_indicators_payload(indicators_source_payload)
     return {
         "contexte_simulation": row_payload_from_columns(row, context_columns),
-        "alertes_calculees_actives": build_row_alert_labels(row),
+        "alertes_calculees": build_row_alert_labels(row),
         "donnees_base_source": base_source_payload,
         "indicateurs_source": indicators_source_payload,
+        "indicateurs_source_groupes": indicator_groups_payload,
     }
 
 
@@ -2142,9 +2167,36 @@ def gemini_review_response_schema() -> dict[str, object]:
     return {
         "type": "object",
         "properties": {
-            "explique_moi": {
+            "explication_generale": {
                 "type": "string",
-                "description": "Synthèse en français, exploitable telle quelle dans la colonne Explique moi.",
+                "description": "Analyse générale du risque sur le SIREN, en 2 lignes maximum.",
+            },
+            "analyses_indicateurs": {
+                "type": "array",
+                "description": "Une entrée par indicateur réel de la source 02 analysé.",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "nom_indicateur": {"type": "string"},
+                        "constat": {"type": "string"},
+                        "niveau_attention": {"type": "string"},
+                        "mesures_attenuation": {"type": "string"},
+                        "controles_necessaires": {"type": "string"},
+                        "pieces_a_demander": {"type": "string"},
+                    },
+                    "required": [
+                        "nom_indicateur",
+                        "constat",
+                        "niveau_attention",
+                        "mesures_attenuation",
+                        "controles_necessaires",
+                        "pieces_a_demander",
+                    ],
+                },
+            },
+            "conclusion_generale": {
+                "type": "string",
+                "description": "Conclusion générale et justification du statut estimé.",
             },
             "statut_estime": {
                 "type": "string",
@@ -2152,8 +2204,98 @@ def gemini_review_response_schema() -> dict[str, object]:
                 "description": "Statut de vigilance estimé après remédiation.",
             },
         },
-        "required": ["explique_moi", "statut_estime"],
+        "required": ["explication_generale", "analyses_indicateurs", "conclusion_generale", "statut_estime"],
     }
+
+
+def canonical_indicator_name(value: object, available_names: list[str]) -> str:
+    raw_value = str(value or "").strip()
+    if not raw_value:
+        return ""
+    normalized = normalize_text_for_matching(raw_value)
+    exact_map = {normalize_text_for_matching(name): name for name in available_names if str(name or "").strip()}
+    if normalized in exact_map:
+        return exact_map[normalized]
+    for name in available_names:
+        candidate = normalize_text_for_matching(name)
+        if normalized in candidate or candidate in normalized:
+            return name
+    return raw_value
+
+
+def normalize_gemini_indicator_analyses(raw_items: object, available_names: list[str]) -> list[dict[str, str]]:
+    if not isinstance(raw_items, list):
+        return []
+    normalized_items: list[dict[str, str]] = []
+    seen_names: set[str] = set()
+    for item in raw_items:
+        if not isinstance(item, dict):
+            continue
+        name = canonical_indicator_name(item.get("nom_indicateur", item.get("nomIndicateur", "")), available_names)
+        if not name:
+            continue
+        payload = {
+            "nom_indicateur": name,
+            "constat": str(item.get("constat", "") or "").strip(),
+            "niveau_attention": str(item.get("niveau_attention", item.get("niveauAttention", "")) or "").strip(),
+            "mesures_attenuation": str(item.get("mesures_attenuation", item.get("mesuresAttenuation", "")) or "").strip(),
+            "controles_necessaires": str(item.get("controles_necessaires", item.get("controlesNecessaires", "")) or "").strip(),
+            "pieces_a_demander": str(item.get("pieces_a_demander", item.get("piecesADemander", "")) or "").strip(),
+        }
+        if name in seen_names:
+            continue
+        seen_names.add(name)
+        normalized_items.append(payload)
+    order_map = {name: idx for idx, name in enumerate(available_names)}
+    normalized_items.sort(key=lambda item: (order_map.get(item["nom_indicateur"], 10**6), normalize_text_for_matching(item["nom_indicateur"])))
+    return normalized_items
+
+
+def structured_explain_text_from_payload(explication_generale: str, analyses_indicateurs: list[dict[str, str]], conclusion_generale: str, statut_estime: str) -> str:
+    parts: list[str] = []
+    general = str(explication_generale or "").strip()
+    if general:
+        parts.append("PARTIE 1 — Analyse globale du risque\n" + general)
+    indicator_blocks: list[str] = []
+    for item in analyses_indicateurs:
+        name = str(item.get("nom_indicateur", "") or "").strip()
+        if not name:
+            continue
+        block_lines = [name]
+        for label, key in [
+            ("Constat", "constat"),
+            ("Niveau d’attention", "niveau_attention"),
+            ("Mesures d’atténuation", "mesures_attenuation"),
+            ("Contrôles nécessaires", "controles_necessaires"),
+            ("Pièces à demander", "pieces_a_demander"),
+        ]:
+            value = str(item.get(key, "") or "").strip()
+            if value:
+                block_lines.append(f"{label} : {value}")
+        indicator_blocks.append("\n".join(block_lines))
+    if indicator_blocks:
+        parts.append("PARTIE 2 — Analyse détaillée indicateur par indicateur\n" + "\n\n".join(indicator_blocks))
+    conclusion_lines: list[str] = []
+    conclusion = str(conclusion_generale or "").strip()
+    if conclusion:
+        conclusion_lines.append(conclusion)
+    if str(statut_estime or "").strip():
+        conclusion_lines.append(f"Statut estimé proposé : {statut_estime}")
+    if conclusion_lines:
+        parts.append("PARTIE 3 — Conclusion et statut de vigilance estimé\n" + "\n".join(conclusion_lines))
+    return "\n\n".join(parts).strip()
+
+
+def review_simulation_parse_structured_ai_payload(value: object) -> dict[str, object]:
+    if isinstance(value, dict):
+        return value
+    if value is None:
+        return {}
+    try:
+        parsed = json.loads(str(value or "").strip())
+    except Exception:
+        return {}
+    return parsed if isinstance(parsed, dict) else {}
 
 
 def format_review_prompt_template(prompt_template: str, row: pd.Series) -> str:
@@ -2280,15 +2422,33 @@ def call_gemini_json(prompt: str, api_key: str, model: str = GEMINI_MODEL_DEFAUL
     return result
 
 
-def run_gemini_review_simulation(row: pd.Series, api_key: str, base_prompt: str, model: str = GEMINI_MODEL_DEFAULT) -> tuple[str, str]:
+def run_gemini_review_simulation(row: pd.Series, api_key: str, base_prompt: str, model: str = GEMINI_MODEL_DEFAULT) -> tuple[str, str, str]:
+    available_names = available_indicator_names_from_row(row)
     result = call_gemini_json(build_gemini_review_prompt(base_prompt, row), api_key=api_key, model=model)
-    explanation = str(result.get("explique_moi", result.get("expliqueMoi", "")) or "").strip()
+    explication_generale = str(result.get("explication_generale", result.get("explicationGenerale", "")) or "").strip()
+    conclusion_generale = str(result.get("conclusion_generale", result.get("conclusionGenerale", "")) or "").strip()
     estimated_status = canonical_vigilance_label(result.get("statut_estime", result.get("statutEstime", "")))
-    if not explanation:
-        raise ValueError("Gemini a renvoyé un champ 'explique_moi' vide.")
+    analyses_indicateurs = normalize_gemini_indicator_analyses(
+        result.get("analyses_indicateurs", result.get("analysesIndicateurs", [])),
+        available_names,
+    )
+    explanation = structured_explain_text_from_payload(explication_generale, analyses_indicateurs, conclusion_generale, estimated_status)
+    if not explication_generale:
+        raise ValueError("Gemini a renvoyé un champ 'explication_generale' vide.")
+    if not conclusion_generale:
+        raise ValueError("Gemini a renvoyé un champ 'conclusion_generale' vide.")
     if not estimated_status:
         raise ValueError("Gemini a renvoyé un statut estimé invalide.")
-    return explanation, estimated_status
+    if available_names and not analyses_indicateurs:
+        raise ValueError("Gemini n’a renvoyé aucune analyse structurée par indicateur de la source 02.")
+    structured_payload = {
+        "schema_version": 2,
+        "explication_generale": explication_generale,
+        "analyses_indicateurs": analyses_indicateurs,
+        "conclusion_generale": conclusion_generale,
+        "statut_estime": estimated_status,
+    }
+    return explanation, estimated_status, json.dumps(structured_payload, ensure_ascii=False)
 
 
 def review_simulation_source_row(row: pd.Series, source_df: pd.DataFrame) -> pd.Series:
@@ -2338,9 +2498,10 @@ def apply_gemini_review_simulation_batch(
         row = result.iloc[idx]
         try:
             source_row = review_simulation_source_row(row, source)
-            explanation, estimated_status = run_gemini_review_simulation(source_row, api_key=api_key, base_prompt=base_prompt, model=model)
+            explanation, estimated_status, structured_payload = run_gemini_review_simulation(source_row, api_key=api_key, base_prompt=base_prompt, model=model)
             result.at[row_label, "Explique moi"] = explanation
             result.at[row_label, REVIEW_SIM_EST_LABEL] = estimated_status
+            result.at[row_label, REVIEW_SIM_AI_STRUCTURED_LABEL] = structured_payload
             result.at[row_label, REVIEW_SIM_TREND_LABEL] = build_review_trend(
                 result.at[row_label, REVIEW_SIM_REAL_LABEL],
                 result.at[row_label, REVIEW_SIM_EST_LABEL],
@@ -2749,15 +2910,51 @@ def review_simulation_pdf_indicator_analysis_box(
     return table
 
 
+def review_simulation_pdf_indicator_analysis_text(item: dict[str, object]) -> str:
+    lines: list[str] = []
+    for label, key in [
+        ("Constat", "constat"),
+        ("Niveau d’attention", "niveau_attention"),
+        ("Mesures d’atténuation", "mesures_attenuation"),
+        ("Contrôles nécessaires", "controles_necessaires"),
+        ("Pièces à demander", "pieces_a_demander"),
+    ]:
+        value = str(item.get(key, "") or "").strip()
+        if value:
+            lines.append(f"{label} : {value}")
+    return "\n\n".join(lines).strip()
+
+
 def review_simulation_pdf_indicator_analysis_boxes(
     indicators_payload: dict[str, object],
     explain_text: object,
     styles: dict[str, ParagraphStyle],
+    structured_payload: dict[str, object] | None = None,
 ) -> list[Table]:
+    structured_payload = structured_payload or {}
     indicator_groups = indicator_group_map(list(indicators_payload.keys())) if indicators_payload else {}
     indicator_names = list(indicator_groups.keys())
-    analysis_map = review_simulation_pdf_indicator_analysis_map(explain_text or "", indicator_names)
     boxes: list[Table] = []
+
+    structured_items = structured_payload.get("analyses_indicateurs")
+    if isinstance(structured_items, list) and structured_items:
+        structured_map: dict[str, dict[str, object]] = {}
+        for raw_item in structured_items:
+            if not isinstance(raw_item, dict):
+                continue
+            name = str(raw_item.get("nom_indicateur", "") or "").strip()
+            if not name:
+                continue
+            structured_map[name] = raw_item
+        ordered_names = [name for name in indicator_names if name in structured_map]
+        for indicator_name in ordered_names:
+            analysis_text = review_simulation_pdf_indicator_analysis_text(structured_map[indicator_name])
+            if not analysis_text:
+                continue
+            boxes.append(review_simulation_pdf_indicator_analysis_box(indicator_name, analysis_text, styles))
+        return boxes
+
+    analysis_map = review_simulation_pdf_indicator_analysis_map(explain_text or "", indicator_names)
     for indicator_name in indicator_names:
         analysis_text = str(analysis_map.get(indicator_name, "") or "").strip()
         if not analysis_text:
@@ -2796,8 +2993,9 @@ def build_review_simulation_pdf_story(
     indicators_payload = payload.get("indicateurs_source") if isinstance(payload.get("indicateurs_source"), dict) else {}
     generated_text = pd.Timestamp(generated_at_utc).strftime("%d/%m/%Y %H:%M UTC")
     explain_text = str(row.get("Explique moi", "") or "").strip()
-    explain_summary_text = review_simulation_pdf_summary_explanation_text(explain_text or "")
-    indicator_analysis_boxes = review_simulation_pdf_indicator_analysis_boxes(indicators_payload, explain_text or "", styles)
+    structured_ai_payload = review_simulation_parse_structured_ai_payload(row.get(REVIEW_SIM_AI_STRUCTURED_LABEL, ""))
+    explain_summary_text = review_simulation_pdf_summary_explanation_text(explain_text or "", structured_ai_payload)
+    indicator_analysis_boxes = review_simulation_pdf_indicator_analysis_boxes(indicators_payload, explain_text or "", styles, structured_ai_payload)
     prompt_text = format_review_prompt_template(prompt_template, source_row)
 
     story: list[object] = [
@@ -3075,6 +3273,7 @@ def build_review_simulation_working_table(df: pd.DataFrame) -> pd.DataFrame:
         "Dénomination",
         REVIEW_SIM_REAL_LABEL,
         "Explique moi",
+        REVIEW_SIM_AI_STRUCTURED_LABEL,
         REVIEW_SIM_TREND_LABEL,
         REVIEW_SIM_EST_LABEL,
         "Type de revue",
@@ -3097,6 +3296,7 @@ def build_review_simulation_working_table(df: pd.DataFrame) -> pd.DataFrame:
     else:
         scope["Explique moi"] = ""
         scope[REVIEW_SIM_EST_LABEL] = ""
+        scope[REVIEW_SIM_AI_STRUCTURED_LABEL] = ""
         scope["updated_at_utc"] = ""
 
     if "Explique moi" not in scope.columns:
@@ -3105,6 +3305,9 @@ def build_review_simulation_working_table(df: pd.DataFrame) -> pd.DataFrame:
     if REVIEW_SIM_EST_LABEL not in scope.columns:
         scope[REVIEW_SIM_EST_LABEL] = ""
     scope[REVIEW_SIM_EST_LABEL] = scope[REVIEW_SIM_EST_LABEL].fillna("").astype(str)
+    if REVIEW_SIM_AI_STRUCTURED_LABEL not in scope.columns:
+        scope[REVIEW_SIM_AI_STRUCTURED_LABEL] = ""
+    scope[REVIEW_SIM_AI_STRUCTURED_LABEL] = scope[REVIEW_SIM_AI_STRUCTURED_LABEL].fillna("").astype(str)
     empty_expected = scope[REVIEW_SIM_EST_LABEL].str.strip().eq("")
     scope.loc[empty_expected, REVIEW_SIM_EST_LABEL] = scope.loc[empty_expected].apply(build_simulated_expected_vigilance, axis=1)
     scope[REVIEW_SIM_TREND_LABEL] = scope.apply(lambda row: build_review_trend(row.get(REVIEW_SIM_REAL_LABEL, ""), row.get(REVIEW_SIM_EST_LABEL, "")), axis=1)
@@ -3115,6 +3318,7 @@ def build_review_simulation_working_table(df: pd.DataFrame) -> pd.DataFrame:
         "Dénomination": scope.get("Dénomination", pd.Series("", index=scope.index)),
         REVIEW_SIM_REAL_LABEL: scope[REVIEW_SIM_REAL_LABEL],
         "Explique moi": scope["Explique moi"],
+        REVIEW_SIM_AI_STRUCTURED_LABEL: scope[REVIEW_SIM_AI_STRUCTURED_LABEL],
         REVIEW_SIM_TREND_LABEL: scope[REVIEW_SIM_TREND_LABEL],
         REVIEW_SIM_EST_LABEL: scope[REVIEW_SIM_EST_LABEL],
         "Type de revue": scope["Type de revue"],
@@ -3146,12 +3350,16 @@ def persist_review_simulation_subset(
         store = pd.DataFrame(columns=KEY_COLUMNS + [
             "Explique moi",
             REVIEW_SIM_EST_LABEL,
+            REVIEW_SIM_AI_STRUCTURED_LABEL,
             "updated_at_utc",
         ])
-    subset = target_df[[SOC_COL, "SIREN", "Explique moi", REVIEW_SIM_EST_LABEL]].copy()
+    if REVIEW_SIM_AI_STRUCTURED_LABEL not in target_df.columns:
+        target_df[REVIEW_SIM_AI_STRUCTURED_LABEL] = ""
+    subset = target_df[[SOC_COL, "SIREN", "Explique moi", REVIEW_SIM_EST_LABEL, REVIEW_SIM_AI_STRUCTURED_LABEL]].copy()
     subset["Explique moi"] = subset["Explique moi"].fillna("").astype(str)
     subset[REVIEW_SIM_EST_LABEL] = subset[REVIEW_SIM_EST_LABEL].fillna("").astype(str)
-    subset = subset[subset["Explique moi"].str.strip().ne("") | subset[REVIEW_SIM_EST_LABEL].str.strip().ne("")].copy()
+    subset[REVIEW_SIM_AI_STRUCTURED_LABEL] = subset[REVIEW_SIM_AI_STRUCTURED_LABEL].fillna("").astype(str)
+    subset = subset[subset["Explique moi"].str.strip().ne("") | subset[REVIEW_SIM_EST_LABEL].str.strip().ne("") | subset[REVIEW_SIM_AI_STRUCTURED_LABEL].str.strip().ne("")].copy()
     if not subset.empty:
         subset[SOC_COL] = normalize_societe_id(subset[SOC_COL])
         subset["SIREN"] = normalize_siren(subset["SIREN"])
@@ -3714,6 +3922,7 @@ Tu reçois en entrée la fiche client complète disponible pour le SIREN analys�
 - contexte_simulation
 - donnees_base_source
 - indicateurs_source
+- indicateurs_source_groupes
 - alertes_calculees
 
 Consigne impérative :
@@ -3731,35 +3940,38 @@ Consigne impérative :
    - et au statut réel de chaque indicateur.
 
 Objectif :
-Produire une analyse opérationnelle pour la revue du SIREN, structurée en 3 parties.
+Produire une analyse opérationnelle pour la revue du SIREN avec une sortie JSON structurée directement exploitable par l’application et par le PDF.
 
-PARTIE 1 — Analyse globale du risque
-- Rédige une analyse globale du risque sur le SIREN.
-- Cette partie doit faire 2 lignes maximum.
-- Elle doit résumer le profil de risque global de la société à partir de la fiche client.
-
-PARTIE 2 — Analyse détaillée indicateur par indicateur
-- Analyse chaque indicateur disponible dans la fiche client.
-- Pour chaque indicateur, fais apparaître clairement :
-  1. le nom de l’indicateur,
-  2. le constat issu des données de la fiche client,
-  3. le niveau d’attention ou de risque associé,
-  4. les mesures d’atténuation recommandées,
-  5. les contrôles nécessaires à réaliser,
-  6. les pièces justificatives / documents à demander.
-- Tu dois être concret, opérationnel et proportionné.
-- Si un indicateur ne justifie pas d’action particulière, indique-le clairement.
+Règles d’analyse :
+- Appuie-toi explicitement sur la fiche client complète.
+- Analyse les vrais indicateurs de la source 02 présents dans `indicateurs_source_groupes`.
+- Utilise exactement les noms des indicateurs fournis dans `indicateurs_source_groupes[].nom_indicateur`.
+- N’invente pas d’indicateur absent de la source 02.
+- N’agrège pas plusieurs indicateurs dans un seul objet.
+- Si un indicateur ne justifie pas d’action particulière, indique-le clairement de façon proportionnée.
 - Si un indicateur appelle un renforcement, détaille précisément ce qui doit être contrôlé et quelles pièces sont attendues.
-- Les pièces doivent être listées de façon explicite et exploitable par un analyste.
 
-PARTIE 3 — Conclusion et statut de vigilance estimé
-- Conclus de manière synthétique.
-- Propose un statut de vigilance estimé après remédiation.
-- Le statut estimé doit être cohérent avec :
-  - le statut de vigilance réel,
-  - le profil de risque global,
-  - les indicateurs analysés,
-  - les mesures d’atténuation et contrôles demandés.
+Contenu attendu :
+1. `explication_generale`
+- Analyse globale du risque sur le SIREN.
+- 2 lignes maximum.
+
+2. `analyses_indicateurs`
+- Une entrée par indicateur réel de la source 02 effectivement analysé.
+- Pour chaque indicateur, renseigne obligatoirement :
+  - `nom_indicateur`
+  - `constat`
+  - `niveau_attention`
+  - `mesures_attenuation`
+  - `controles_necessaires`
+  - `pieces_a_demander`
+- Les éléments doivent être concrets, opérationnels et directement exploitables par un analyste.
+
+3. `conclusion_generale`
+- Conclusion synthétique générale.
+- Justifie le statut de vigilance estimé après remédiation.
+
+4. `statut_estime`
 - Tu peux proposer uniquement l’un des statuts suivants :
   - Aucune
   - Allégée
@@ -3767,18 +3979,22 @@ PARTIE 3 — Conclusion et statut de vigilance estimé
   - Élevée
   - Critique
 
-Règles de rédaction :
-- Ton style doit être clair, professionnel, précis et directement exploitable.
-- Tu ne dois pas inventer de données absentes de la fiche client.
-- Tu dois tenir compte des données favorables et défavorables.
-- Tu dois éviter les phrases vagues de type “à approfondir” sans expliquer comment.
-- Tu dois faire ressortir les points réellement importants pour la décision de revue.
-
 Format de sortie attendu :
 Tu dois répondre exclusivement en JSON valide, sans texte avant ni après, avec la structure suivante :
 
 {
-  "explique_moi": "Texte complet structuré en 3 parties : 1) analyse globale du risque en 2 lignes max ; 2) analyse détaillée indicateur par indicateur avec mesures d'atténuation, contrôles et pièces nécessaires ; 3) conclusion avec statut de vigilance estimé.",
+  "explication_generale": "Analyse générale du risque sur le SIREN en 2 lignes maximum.",
+  "analyses_indicateurs": [
+    {
+      "nom_indicateur": "Nom exact de l’indicateur de la source 02",
+      "constat": "Constat factuel appuyé sur la fiche client.",
+      "niveau_attention": "Niveau d’attention ou de risque associé à l’indicateur.",
+      "mesures_attenuation": "Mesures d’atténuation recommandées.",
+      "controles_necessaires": "Contrôles nécessaires à réaliser.",
+      "pieces_a_demander": "Pièces justificatives ou documents à demander."
+    }
+  ],
+  "conclusion_generale": "Conclusion synthétique générale et justification du statut estimé.",
   "statut_estime": "Aucune | Allégée | Modérée | Élevée | Critique"
 }"""
 
