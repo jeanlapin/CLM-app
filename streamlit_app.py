@@ -88,7 +88,7 @@ RISK_COUNT_COLUMNS = [f"Nb {label}" for label in RISK_ORDER]
 STATUS_COUNT_COLUMNS = VIGILANCE_COUNT_COLUMNS + RISK_COUNT_COLUMNS
 
 BASE_RISK_SOURCE_COLUMN = "Statut de risque (import SaaS source)"
-PORTFOLIO_PIPELINE_VERSION = "v190_portfolio_committee_expander"
+PORTFOLIO_PIPELINE_VERSION = "v191_portfolio_committee_exports"
 CRITICAL_VIGILANCE = {"Vigilance Élevée", "Vigilance Critique"}
 PRIORITY_RISK = {"Risque potentiel", "Risque avéré"}
 
@@ -5219,6 +5219,70 @@ def dataframe_to_csv_bytes(df: pd.DataFrame) -> bytes:
     return export.to_csv(index=False, sep=";", encoding="utf-8-sig").encode("utf-8-sig")
 
 
+def dataframe_to_export_copy(df: pd.DataFrame) -> pd.DataFrame:
+    export = df.copy()
+    for col in export.columns:
+        if pd.api.types.is_datetime64_any_dtype(export[col]):
+            export[col] = export[col].dt.strftime("%Y-%m-%d")
+    return export
+
+
+def _safe_excel_sheet_name(name: str, fallback: str = "Feuille") -> str:
+    safe = re.sub(r"[\/*?:\[\]]", " ", str(name or fallback)).strip()
+    safe = safe or fallback
+    return safe[:31]
+
+
+def dataframes_to_excel_bytes(sheets: list[tuple[str, pd.DataFrame]]) -> bytes:
+    from openpyxl.styles import Font, PatternFill
+    from openpyxl.utils import get_column_letter
+
+    buffer = BytesIO()
+    with pd.ExcelWriter(buffer, engine="openpyxl") as writer:
+        used_sheet_names: set[str] = set()
+        for index, (sheet_name, df) in enumerate(sheets, start=1):
+            base_name = _safe_excel_sheet_name(sheet_name, fallback=f"Feuille {index}")
+            safe_name = base_name
+            suffix = 2
+            while safe_name in used_sheet_names:
+                suffix_label = f" ({suffix})"
+                safe_name = f"{base_name[: max(1, 31 - len(suffix_label))]}{suffix_label}"
+                suffix += 1
+            used_sheet_names.add(safe_name)
+
+            export_df = dataframe_to_export_copy(df)
+            export_df.to_excel(writer, sheet_name=safe_name, index=False)
+            ws = writer.sheets[safe_name]
+            ws.freeze_panes = "A2"
+            ws.auto_filter.ref = ws.dimensions
+
+            header_fill = PatternFill(fill_type="solid", fgColor="DDEAF8")
+            for cell in ws[1]:
+                cell.font = Font(bold=True)
+                cell.fill = header_fill
+
+            percent_columns = [
+                idx
+                for idx, column_name in enumerate(export_df.columns, start=1)
+                if str(column_name).strip().startswith("%")
+            ]
+            for col_idx in percent_columns:
+                for row_idx in range(2, ws.max_row + 1):
+                    ws.cell(row=row_idx, column=col_idx).number_format = "0.0%"
+
+            for col_idx, column_name in enumerate(export_df.columns, start=1):
+                values = [str(column_name)]
+                values.extend(
+                    "" if value is None or (isinstance(value, float) and pd.isna(value)) else str(value)
+                    for value in export_df.iloc[:, col_idx - 1].tolist()
+                )
+                max_length = max((len(value) for value in values), default=0)
+                ws.column_dimensions[get_column_letter(col_idx)].width = min(max(max_length + 2, 10), 42)
+
+    buffer.seek(0)
+    return buffer.getvalue()
+
+
 def reset_filters() -> None:
     for key in list(st.session_state.keys()):
         if key.startswith("filter_"):
@@ -8592,18 +8656,55 @@ def main() -> None:
         product_label="Produit",
     )
 
+    top_risks_export_sheets = [
+        ("Top segments", top_segments_df),
+        ("Top pays", top_pays_df),
+        ("Top produits", top_produits_df),
+        ("Top canaux", top_canaux_df),
+    ]
+    repartition_export_sheets = [
+        ("Vigilance", vigilance_df),
+        ("Risques maximum", risk_df),
+        ("Gouvernance", build_alert_table(filtered)),
+    ]
+
     with st.expander("Préparer votre Comité des Risques", expanded=False):
-        committee_action_col, committee_spacer_col = st.columns([1.45, 4.55])
-        with committee_action_col:
+        committee_row_1_col_1, committee_row_1_col_2 = st.columns(2)
+        with committee_row_1_col_1:
             st.download_button(
                 label="Exporter la vue filtrée (.csv)",
                 data=dataframe_to_csv_bytes(filtered_export_df),
                 file_name="tableau1_portefeuille_filtre.csv",
                 mime="text/csv",
                 type="primary",
+                use_container_width=True,
             )
-        with committee_spacer_col:
-            st.empty()
+        with committee_row_1_col_2:
+            st.download_button(
+                label="Exporter les dossiers prioritaires (.csv)",
+                data=dataframe_to_csv_bytes(priority_df),
+                file_name="tableau2_dossiers_prioritaires.csv",
+                mime="text/csv",
+                use_container_width=True,
+            )
+
+        committee_row_2_col_1, committee_row_2_col_2 = st.columns(2)
+        with committee_row_2_col_1:
+            st.download_button(
+                label="Exporter les Top Risques (4 onglets .xlsx)",
+                data=dataframes_to_excel_bytes(top_risks_export_sheets),
+                file_name="tableau3_top_risques.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                use_container_width=True,
+            )
+        with committee_row_2_col_2:
+            st.download_button(
+                label="Exporter la répartition (3 onglets .xlsx)",
+                data=dataframes_to_excel_bytes(repartition_export_sheets),
+                file_name="tableau4_repartition.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                use_container_width=True,
+            )
 
     with st.expander("Aperçu des données sous-jacentes filtrées"):
         render_clickable_styled_dataframe(
