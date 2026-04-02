@@ -4995,6 +4995,24 @@ def build_portfolio_underlying_table(df: pd.DataFrame, *, include_hidden_societe
     )
 
 
+def infer_portfolio_shared_column_widths(columns: list[str]) -> dict[str, str | None]:
+    widths: dict[str, str | None] = {}
+    for col in columns:
+        if str(col).startswith("__"):
+            continue
+        if col == "SIREN":
+            widths[col] = "small"
+        elif col in {"Dénomination", "Client", "Produit", "Canaux"}:
+            widths[col] = "large"
+        elif col in {"Vigilance", "Risque", "Statut", SOC_COL, "Société", "Segment", "Pays"}:
+            widths[col] = "medium"
+        elif col in {"Nb", "%", "#", "Rang", "Score", "Score priorité"}:
+            widths[col] = "small"
+        else:
+            widths[col] = "medium"
+    return widths
+
+
 def format_percent_column(df: pd.DataFrame) -> pd.DataFrame:
     output = df.copy()
     if "%" in output.columns:
@@ -5597,6 +5615,7 @@ def render_clickable_streamlit_table(
     auto_size_columns: bool = False,
     pinned_columns: list[str] | None = None,
     table_width: str = "stretch",
+    column_width_overrides: dict[str, str | None] | None = None,
 ) -> None:
     if df is None or df.empty:
         st.info("Aucune donnée disponible.")
@@ -5610,6 +5629,7 @@ def render_clickable_streamlit_table(
     display_df = format_table_display_dataframe(raw_df, preserve_order=preserve_order)
     society_col = siren_society_column(raw_df)
     pinned_set = {str(col) for col in (pinned_columns or [])}
+    width_overrides = {str(col): width for col, width in (column_width_overrides or {}).items()}
 
     if "SIREN" in raw_df.columns and society_col is not None:
         st.markdown(
@@ -5640,7 +5660,10 @@ def render_clickable_streamlit_table(
     column_config: dict[str, object] = {}
     for col in display_df.columns:
         is_pinned = str(col) in pinned_set
-        if auto_size_columns:
+        forced_width = width_overrides.get(str(col))
+        if forced_width is not None:
+            column_config[col] = _text_column("SIREN" if col == "SIREN" else col, width=forced_width, pinned=is_pinned)
+        elif auto_size_columns:
             column_config[col] = _text_column(col, pinned=is_pinned)
         elif col == "SIREN":
             column_config[col] = _text_column("SIREN", width="small", pinned=is_pinned)
@@ -5692,6 +5715,7 @@ def render_clickable_dataframe(
     auto_size_columns: bool = False,
     pinned_columns: list[str] | None = None,
     table_width: str = "stretch",
+    column_width_overrides: dict[str, str | None] | None = None,
 ) -> None:
     render_clickable_streamlit_table(
         df,
@@ -5701,6 +5725,7 @@ def render_clickable_dataframe(
         auto_size_columns=auto_size_columns,
         pinned_columns=pinned_columns,
         table_width=table_width,
+        column_width_overrides=column_width_overrides,
     )
 
 
@@ -5716,6 +5741,7 @@ def render_clickable_styled_dataframe(
     auto_size_columns: bool = False,
     pinned_columns: list[str] | None = None,
     table_width: str = "stretch",
+    column_width_overrides: dict[str, str | None] | None = None,
 ) -> None:
     render_clickable_streamlit_table(
         source_df,
@@ -5725,6 +5751,7 @@ def render_clickable_styled_dataframe(
         auto_size_columns=auto_size_columns,
         pinned_columns=pinned_columns,
         table_width=table_width,
+        column_width_overrides=column_width_overrides,
     )
 
 
@@ -8127,6 +8154,8 @@ def main() -> None:
         unsafe_allow_html=True,
     )
     priority_df = build_priority_table(filtered, top_n=10)
+    priority_reference_columns = list(priority_df.columns)
+    shared_portfolio_column_widths = infer_portfolio_shared_column_widths(priority_reference_columns)
     render_clickable_styled_dataframe(
         style_dataframe(priority_df),
         priority_df,
@@ -8135,12 +8164,12 @@ def main() -> None:
         hide_index=True,
         key_prefix="priority_table",
         preserve_order=True,
-        auto_size_columns=True,
+        auto_size_columns=False,
         pinned_columns=["SIREN", "Dénomination"],
         table_width="content",
+        column_width_overrides=shared_portfolio_column_widths,
     )
 
-    priority_reference_columns = list(priority_df.columns)
     filtered_display_df = build_portfolio_underlying_table(filtered, include_hidden_societe=True)
     filtered_display_df = filtered_display_df[
         [col for col in priority_reference_columns if col in filtered_display_df.columns]
@@ -8164,9 +8193,10 @@ def main() -> None:
             hide_index=True,
             key_prefix="filtered_table",
             preserve_order=True,
-            auto_size_columns=True,
+            auto_size_columns=False,
             pinned_columns=["SIREN", "Dénomination"],
             table_width="content",
+            column_width_overrides=shared_portfolio_column_widths,
         )
 
 
