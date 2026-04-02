@@ -2248,6 +2248,24 @@ def canonical_vigilance_label(value: object) -> str:
     return ""
 
 
+def canonical_risk_label(value: object) -> str:
+    raw_value = str(value or "").strip()
+    if raw_value in RISK_ORDER:
+        return raw_value
+    normalized = normalize_text_for_matching(raw_value)
+    aliases = {
+        "sans risque": "Aucun risque détecté",
+        "aucun risque": "Aucun risque détecté",
+        "aucun risque detecte": "Aucun risque détecté",
+    }
+    if normalized in aliases:
+        return aliases[normalized]
+    for label in RISK_ORDER:
+        if normalize_text_for_matching(label) == normalized:
+            return label
+    return raw_value
+
+
 def gemini_review_response_schema() -> dict[str, object]:
     return {
         "type": "object",
@@ -4655,6 +4673,31 @@ def load_source_data() -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
             if col in frame.columns:
                 frame[col] = clean_text_column(frame[col])
 
+    if "Statut de risque (import SaaS source)" in base.columns:
+        base["Statut de risque (import SaaS source)"] = (
+            base["Statut de risque (import SaaS source)"]
+            .apply(canonical_risk_label)
+            .replace({"": pd.NA})
+            .astype("string")
+        )
+
+    if "Vigilance statut" in indicators.columns:
+        indicators["Vigilance statut"] = (
+            indicators["Vigilance statut"]
+            .apply(canonical_vigilance_label)
+            .replace({"": pd.NA})
+            .astype("string")
+        )
+
+    for col in status_columns(indicators):
+        if col in indicators.columns:
+            indicators[col] = (
+                indicators[col]
+                .apply(canonical_risk_label)
+                .replace({"": pd.NA})
+                .astype("string")
+            )
+
     return base, indicators, history
 
 
@@ -4985,15 +5028,21 @@ def build_priority_table(df: pd.DataFrame, top_n: int = 10) -> pd.DataFrame:
     return build_portfolio_underlying_table(priority, include_hidden_societe=True)
 
 
-def build_portfolio_underlying_table(df: pd.DataFrame, *, include_hidden_societe: bool = True) -> pd.DataFrame:
+def build_portfolio_underlying_table(
+    df: pd.DataFrame,
+    *,
+    include_hidden_societe: bool = True,
+    strip_status_prefixes: bool = True,
+) -> pd.DataFrame:
     table = df.copy()
     if table is None or table.empty:
         return table
 
-    if "Vigilance" in table.columns:
-        table["Vigilance"] = table["Vigilance"].apply(lambda value: strip_leading_status_prefix(value, "Vigilance"))
-    if "Risque" in table.columns:
-        table["Risque"] = table["Risque"].apply(lambda value: strip_leading_status_prefix(value, "Risque"))
+    if strip_status_prefixes:
+        if "Vigilance" in table.columns:
+            table["Vigilance"] = table["Vigilance"].apply(lambda value: strip_leading_status_prefix(value, "Vigilance"))
+        if "Risque" in table.columns:
+            table["Risque"] = table["Risque"].apply(lambda value: strip_leading_status_prefix(value, "Risque"))
 
     if include_hidden_societe and SOC_COL in table.columns:
         table["__societe_id"] = table[SOC_COL]
@@ -8208,11 +8257,27 @@ def main() -> None:
         column_width_overrides=shared_portfolio_column_widths,
     )
 
-    filtered_display_df = build_portfolio_underlying_table(filtered, include_hidden_societe=True)
+    filtered_display_df = build_portfolio_underlying_table(
+        filtered,
+        include_hidden_societe=True,
+        strip_status_prefixes=True,
+    )
     filtered_display_df = filtered_display_df[
         [col for col in priority_reference_columns if col in filtered_display_df.columns]
     ].copy()
-    filtered_export_df = filtered_display_df.drop(columns=["__societe_id"], errors="ignore")
+
+    filtered_export_df = build_portfolio_underlying_table(
+        filtered,
+        include_hidden_societe=False,
+        strip_status_prefixes=False,
+    )
+    filtered_export_df = filtered_export_df[
+        [
+            col
+            for col in priority_reference_columns
+            if col in filtered_export_df.columns and not str(col).startswith("__")
+        ]
+    ].copy()
 
     st.download_button(
         label="Exporter la vue filtrée (.csv)",
