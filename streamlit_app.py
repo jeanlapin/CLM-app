@@ -88,7 +88,7 @@ RISK_COUNT_COLUMNS = [f"Nb {label}" for label in RISK_ORDER]
 STATUS_COUNT_COLUMNS = VIGILANCE_COUNT_COLUMNS + RISK_COUNT_COLUMNS
 
 BASE_RISK_SOURCE_COLUMN = "Statut de risque (import SaaS source)"
-PORTFOLIO_PIPELINE_VERSION = "v186_status_counts_fix"
+PORTFOLIO_PIPELINE_VERSION = "v188_portfolio_glossary_help"
 CRITICAL_VIGILANCE = {"Vigilance Élevée", "Vigilance Critique"}
 PRIORITY_RISK = {"Risque potentiel", "Risque avéré"}
 
@@ -5495,6 +5495,167 @@ def render_kpis(df: pd.DataFrame) -> None:
             st.caption("Fraîcheur visible : dernière mise à jour vigilance = {}.".format(last_update.strftime("%d/%m/%Y")))
 
 
+def render_portfolio_glossary_expander() -> None:
+    glossary_rows = [
+        ["Segment", "Segment de rattachement du client dans le portefeuille."],
+        ["Pays", "Pays de résidence du client."],
+        ["Produit", "Produit(service) principal associé au client."],
+        ["Canal", "Canal d’opérations principal observé sur 12 mois."],
+        ["Vigilance", "Statut de vigilance du client."],
+        ["Risque", "Statut de risque maximum du client."],
+        ["EDD", "Statut EDD du dossier."],
+        ["Analyste", "Analyste en charge du dossier."],
+        ["Valideur", "Valideur du dossier."],
+        ["Clients visibles", "Nombre de clients uniques visibles après application du périmètre société et des filtres."],
+        ["Vigilance renforcée", "Clients dont la vigilance est 'Vigilance Élevée' ou 'Vigilance Critique'."],
+        ["Risque avéré", "Clients dont le statut de risque est 'Risque avéré'."],
+        ["Justificatifs incomplets", "Clients avec alerte de justificatif incomplet."],
+        ["Sans prochaine revue", "Clients sans date de prochaine revue renseignée."],
+        ["Historique disponible", "Clients avec au moins un historique disponible."],
+        ["Fraîcheur visible", "Dernière date de mise à jour vigilance visible sur le portefeuille filtré."],
+        ["Gouvernance", "Bloc de synthèse des alertes portefeuille."],
+        ["Justificatif incomplet", "Alerte de complétude documentaire sur dossier renforcé."],
+        ["Vigilance critique", "Alerte activée lorsque la vigilance du client est critique."],
+        ["Revue trop ancienne", "Alerte activée quand la dernière revue dépasse le seuil métier prévu."],
+        ["Cross-border élevé", "Alerte activée quand l’indicateur cross-border atteint un niveau élevé."],
+        ["Cash intensité élevée", "Alerte activée quand le statut de cash intensité est jugé sensible."],
+        ["% clients", "Poids du groupe dans le portefeuille filtré."],
+        ["% de statut", "Poids du groupe dans le total d’un statut donné de vigilance ou de risque."],
+        ["Dossiers prioritaires", "Top 10 des clients uniques classés par priorité décroissante."],
+        ["Score priorité", "Score de classement des dossiers prioritaires, calculé à partir des vigilances, risques et alertes actives."],
+        ["Motifs", "Liste textuelle des alertes actives expliquant la priorité du dossier."],
+    ]
+
+    calc_rows = [
+        [
+            "Clients visibles",
+            "Nombre de clients uniques après déduplication par clé client",
+            "Portefeuille filtré",
+            "",
+        ],
+        [
+            "Vigilance renforcée",
+            "count(Vigilance ∈ {'Vigilance Élevée', 'Vigilance Critique'})",
+            "Clients uniques",
+            "",
+        ],
+        [
+            "Risque avéré",
+            "count(Risque == 'Risque avéré')",
+            "Clients uniques",
+            "",
+        ],
+        [
+            "Justificatifs incomplets",
+            "count(Alerte justificatif incomplet)",
+            "Clients uniques",
+            "L’alerte est calculée séparément ci-dessous.",
+        ],
+        [
+            "Sans prochaine revue",
+            "count(Alerte sans prochaine revue)",
+            "Clients uniques",
+            "",
+        ],
+        [
+            "Historique disponible",
+            "count(Nb historique > 0)",
+            "Clients uniques",
+            "",
+        ],
+        [
+            "Fraîcheur visible",
+            "max('Vigilance Date de mise à jour')",
+            "Portefeuille filtré",
+            "",
+        ],
+        [
+            "Alerte justificatif incomplet",
+            "(Flag justificatif complet != 'Oui') AND Vigilance ∈ {'Vigilance Élevée', 'Vigilance Critique'}",
+            "Client",
+            "",
+        ],
+        [
+            "Alerte vigilance critique",
+            "Vigilance == 'Vigilance Critique'",
+            "Client",
+            "",
+        ],
+        [
+            "Alerte revue trop ancienne",
+            "Vigilance renforcée AND Date dernière revue renseignée AND ancienneté > 90 jours",
+            "Client",
+            "",
+        ],
+        [
+            "Alerte sans prochaine revue",
+            "Date prochaine revue vide",
+            "Client",
+            "",
+        ],
+        [
+            "Alerte cross-border élevé",
+            "Cross border >= 0.25",
+            "Client",
+            "",
+        ],
+        [
+            "Alerte cash intensité élevée",
+            "Cash intensité Statut ∈ {'Risque potentiel', 'Risque avéré'}",
+            "Client",
+            "Affiché en Gouvernance, mais non utilisé dans le score priorité actuel.",
+        ],
+        [
+            "% clients",
+            "Nb clients du groupe / total clients du portefeuille filtré",
+            "Groupe",
+            "",
+        ],
+        [
+            "% de statut en concentrations",
+            "Nb clients du groupe dans le statut / total clients du portefeuille dans ce statut",
+            "Groupe × statut",
+            "S’applique aux statuts de vigilance et de risque.",
+        ],
+        [
+            "Score priorité",
+            "25×Vig. Critique + 15×Vig. Élevée + 20×Risq. avéré + 10×Risq. potentiel + "
+            "12×Alerte justificatif incomplet + 8×Alerte vigilance critique + "
+            "6×Alerte revue trop ancienne + 8×Alerte sans prochaine revue + "
+            "5×Alerte cross-border élevé",
+            "Client",
+            "Utilisé pour classer les dossiers prioritaires.",
+        ],
+        [
+            "Dossiers prioritaires",
+            "Tri décroissant sur Score priorité, puis déduplication client, puis top 10",
+            "Portefeuille filtré",
+            "",
+        ],
+    ]
+
+    with st.expander("Glossaire & calculs de l’écran Portefeuille", expanded=False):
+        st.caption("Aide documentaire de lecture. Ce bloc n’a aucun impact sur le tableau affiché plus haut.")
+
+        glossary_tab, calculation_tab = st.tabs(["Glossaire", "Calculs"])
+
+        with glossary_tab:
+            st.dataframe(
+                pd.DataFrame(glossary_rows, columns=["Terme", "Définition"]),
+                use_container_width=True,
+                hide_index=True,
+                height=520,
+            )
+
+        with calculation_tab:
+            st.dataframe(
+                pd.DataFrame(calc_rows, columns=["Indicateur", "Calcul / règle", "Périmètre", "Note"]),
+                use_container_width=True,
+                hide_index=True,
+                height=520,
+            )
+
+
 
 def render_distribution_block(title: str, dist_df: pd.DataFrame, index_col: str) -> None:
     st.markdown(f'<h3 class="cm-section-title">{escape(title)}</h3>', unsafe_allow_html=True)
@@ -8413,6 +8574,8 @@ def main() -> None:
             table_width="content",
             column_width_overrides=shared_portfolio_column_widths,
         )
+
+    render_portfolio_glossary_expander()
 
 
 
