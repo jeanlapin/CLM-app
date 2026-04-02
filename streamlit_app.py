@@ -5177,7 +5177,7 @@ def infer_portfolio_shared_column_widths(columns: list[str]) -> dict[str, str | 
             widths[col] = "large"
         elif col in {"Vigilance", "Risque", "Statut", SOC_COL, "Société", "Segment", "Pays"}:
             widths[col] = "medium"
-        elif col in {"Nb", "%", "#", "Rang", "Score", "Score priorité"}:
+        elif col in {"Nb", "%", "#", "Rang", "Score", "Score priorité"} or str(col).startswith("Nb "):
             widths[col] = "small"
         else:
             widths[col] = "medium"
@@ -8282,7 +8282,7 @@ def main() -> None:
         render_small_table(format_percent_column(vigilance_df), color_columns={"Vigilance": "vigilance"})
 
     with col_mid:
-        st.markdown('<div class="cm-subsection-title">Risques Maximum</div>', unsafe_allow_html=True)
+        st.markdown('<div class="cm-subsection-title">Risques</div>', unsafe_allow_html=True)
         risk_df = build_distribution(filtered, "Risque", RISK_ORDER).rename(columns={"Libellé": "Statut"})
         render_small_table(format_percent_column(risk_df), color_columns={"Statut": "risk"})
 
