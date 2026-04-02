@@ -5334,7 +5334,6 @@ def _build_concentration_table_html(df: pd.DataFrame) -> str:
 if hasattr(st, "dialog"):
     @st.dialog("Vue agrandie", width="large", icon=":material/open_in_full:")
     def show_concentration_top_dialog(title: str, df: pd.DataFrame) -> None:
-        st.caption("Même tableau qu'à l'écran, affiché dans une modale large pour faciliter la lecture horizontale.")
         st.markdown(f'<div class="cm-subsection-title">{escape(title)}</div>', unsafe_allow_html=True)
         if df is None or df.empty:
             st.info("Aucune donnée à afficher.")
@@ -5352,7 +5351,7 @@ def render_top_block(title: str, df: pd.DataFrame, *, dialog_key: str | None = N
     with action_col:
         st.markdown("<div style='height: 0.20rem;'></div>", unsafe_allow_html=True)
         if dialog_key and st.button(
-            "Agrandir",
+            " ",
             key=f"cm_expand_{dialog_key}",
             type="tertiary",
             icon=":material/open_in_full:",
