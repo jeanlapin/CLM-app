@@ -8134,17 +8134,22 @@ def main() -> None:
         pinned_columns=["SIREN", "Dénomination"],
     )
 
-    export_columns = [c for c in DISPLAY_COLUMNS if c in filtered.columns]
+    priority_reference_columns = list(priority_df.columns)
+    filtered_display_df = build_portfolio_underlying_table(filtered, include_hidden_societe=True)
+    filtered_display_df = filtered_display_df[
+        [col for col in priority_reference_columns if col in filtered_display_df.columns]
+    ].copy()
+    filtered_export_df = filtered_display_df.drop(columns=["__societe_id"], errors="ignore")
+
     st.download_button(
         label="Exporter la vue filtrée (.csv)",
-        data=dataframe_to_csv_bytes(filtered[export_columns]),
+        data=dataframe_to_csv_bytes(filtered_export_df),
         file_name="tableau1_portefeuille_filtre.csv",
         mime="text/csv",
         type="primary",
     )
 
     with st.expander("Aperçu des données sous-jacentes filtrées"):
-        filtered_display_df = build_portfolio_underlying_table(filtered[export_columns], include_hidden_societe=True)
         render_clickable_styled_dataframe(
             style_dataframe(filtered_display_df),
             filtered_display_df,
