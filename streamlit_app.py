@@ -2243,7 +2243,9 @@ def normalize_text_for_matching(value: object) -> str:
 
 
 def canonical_vigilance_label(value: object) -> str:
-    raw_value = str(value or "").strip()
+    if value is None or pd.isna(value):
+        return ""
+    raw_value = str(value).strip()
     if raw_value in VIGILANCE_ORDER:
         return raw_value
     normalized = normalize_text_for_matching(raw_value)
@@ -2254,7 +2256,9 @@ def canonical_vigilance_label(value: object) -> str:
 
 
 def canonical_risk_label(value: object) -> str:
-    raw_value = str(value or "").strip()
+    if value is None or pd.isna(value):
+        return ""
+    raw_value = str(value).strip()
     if raw_value in RISK_ORDER:
         return raw_value
     normalized = normalize_text_for_matching(raw_value)
@@ -2268,7 +2272,7 @@ def canonical_risk_label(value: object) -> str:
     for label in RISK_ORDER:
         if normalize_text_for_matching(label) == normalized:
             return label
-    return raw_value
+    return ""
 
 
 def gemini_review_response_schema() -> dict[str, object]:
@@ -4717,38 +4721,45 @@ def indicator_risk_breakdown_columns(indicators_df: pd.DataFrame) -> list[str]:
 
 
 def build_indicator_status_occurrence_counts(indicators_df: pd.DataFrame) -> pd.DataFrame:
-    empty = indicators_df[KEY_COLUMNS].copy() if all(col in indicators_df.columns for col in KEY_COLUMNS) else pd.DataFrame(columns=KEY_COLUMNS)
+    empty = (
+        indicators_df[KEY_COLUMNS].copy()
+        if indicators_df is not None and all(col in indicators_df.columns for col in KEY_COLUMNS)
+        else pd.DataFrame(columns=KEY_COLUMNS)
+    )
     for column_name in STATUS_COUNT_COLUMNS:
         empty[column_name] = 0
 
     if indicators_df is None or indicators_df.empty or not all(col in indicators_df.columns for col in KEY_COLUMNS):
         return empty
 
-    scan_columns = [
-        col
-        for col in indicators_df.columns
-        if col not in KEY_COLUMNS and col != BASE_RISK_SOURCE_COLUMN
-    ]
-    if not scan_columns:
-        return empty
-
-    stacked = indicators_df[scan_columns].stack(dropna=True)
-    if stacked.empty:
-        return empty
-
-    risk_statuses = stacked.map(canonical_risk_label)
-    vigilance_statuses = stacked.map(canonical_vigilance_label)
-
     counts = indicators_df[KEY_COLUMNS].copy()
-    row_index = indicators_df.index
 
-    for label in VIGILANCE_ORDER:
-        series = vigilance_statuses.eq(label).groupby(level=0).sum()
-        counts[f"Nb {label}"] = series.reindex(row_index, fill_value=0).astype(int).to_numpy()
+    risk_scan_columns = [col for col in indicator_status_columns(indicators_df) if col in indicators_df.columns]
+    vigilance_scan_columns = [
+        col
+        for col in dict.fromkeys(["Vigilance statut", *risk_scan_columns])
+        if col in indicators_df.columns
+    ]
 
-    for label in RISK_ORDER:
-        series = risk_statuses.eq(label).groupby(level=0).sum()
-        counts[f"Nb {label}"] = series.reindex(row_index, fill_value=0).astype(int).to_numpy()
+    if vigilance_scan_columns:
+        vigilance_statuses = indicators_df[vigilance_scan_columns].apply(
+            lambda series: series.map(canonical_vigilance_label)
+        )
+        for label in VIGILANCE_ORDER:
+            counts[f"Nb {label}"] = vigilance_statuses.eq(label).sum(axis=1).astype(int)
+    else:
+        for label in VIGILANCE_ORDER:
+            counts[f"Nb {label}"] = 0
+
+    if risk_scan_columns:
+        risk_statuses = indicators_df[risk_scan_columns].apply(
+            lambda series: series.map(canonical_risk_label)
+        )
+        for label in RISK_ORDER:
+            counts[f"Nb {label}"] = risk_statuses.eq(label).sum(axis=1).astype(int)
+    else:
+        for label in RISK_ORDER:
+            counts[f"Nb {label}"] = 0
 
     numeric_cols = [col for col in counts.columns if col not in KEY_COLUMNS]
     if numeric_cols:
@@ -5177,7 +5188,7 @@ def infer_portfolio_shared_column_widths(columns: list[str]) -> dict[str, str | 
             widths[col] = "large"
         elif col in {"Vigilance", "Risque", "Statut", SOC_COL, "Société", "Segment", "Pays"}:
             widths[col] = "medium"
-        elif col in {"Nb", "%", "#", "Rang", "Score", "Score priorité"} or str(col).startswith("Nb "):
+        elif col in {"Nb", "%", "#", "Rang", "Score", "Score priorité"}:
             widths[col] = "small"
         else:
             widths[col] = "medium"
@@ -8282,7 +8293,7 @@ def main() -> None:
         render_small_table(format_percent_column(vigilance_df), color_columns={"Vigilance": "vigilance"})
 
     with col_mid:
-        st.markdown('<div class="cm-subsection-title">Risques</div>', unsafe_allow_html=True)
+        st.markdown('<div class="cm-subsection-title">Risques Maximum</div>', unsafe_allow_html=True)
         risk_df = build_distribution(filtered, "Risque", RISK_ORDER).rename(columns={"Libellé": "Statut"})
         render_small_table(format_percent_column(risk_df), color_columns={"Statut": "risk"})
 
