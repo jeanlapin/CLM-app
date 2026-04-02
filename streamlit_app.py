@@ -4799,6 +4799,23 @@ CONCENTRATION_RISK_PERCENT_COLUMNS = [
     ("Aucun risque détecté", "% Risq. aucun"),
 ]
 
+CONCENTRATION_SORT_OPTIONS = ["% clients", "% vigilance", "% risque"]
+CONCENTRATION_VIGILANCE_SORT_PRIORITY = [
+    "% Vig. crit.",
+    "% Vig. élev.",
+    "% Vig. mod.",
+    "% Vig. all.",
+    "% Vig. auc.",
+]
+CONCENTRATION_RISK_SORT_PRIORITY = [
+    "% Risq. av.",
+    "% Risq. pot.",
+    "% Risq. NC",
+    "% Risq. mit.",
+    "% Risq. lev.",
+    "% Risq. aucun",
+]
+
 CONCENTRATION_STATUS_STYLE = {
     "% Vig. crit.": {"tone": "negative", "base": "#D92D20", "text": "#7A271A"},
     "% Vig. élev.": {"tone": "negative", "base": "#F79009", "text": "#8A4B00"},
@@ -4814,7 +4831,36 @@ CONCENTRATION_STATUS_STYLE = {
 }
 
 
-def build_concentration_top_table(df: pd.DataFrame, group_col: str, group_label: str, top_n: int = 5) -> pd.DataFrame:
+def sort_concentration_top_table(df: pd.DataFrame, group_label: str, sort_mode: str) -> pd.DataFrame:
+    if df is None or df.empty:
+        return df
+
+    sort_value = str(sort_mode or "% clients").strip().lower()
+    if sort_value == "% vigilance":
+        sort_columns = [col for col in CONCENTRATION_VIGILANCE_SORT_PRIORITY if col in df.columns]
+        ascending = [False] * len(sort_columns)
+    elif sort_value == "% risque":
+        sort_columns = [col for col in CONCENTRATION_RISK_SORT_PRIORITY if col in df.columns]
+        ascending = [False] * len(sort_columns)
+    else:
+        sort_columns = ["% clients"]
+        ascending = [False]
+
+    for column_name, is_ascending in [("Nb clients", False), (group_label, True)]:
+        if column_name in df.columns:
+            sort_columns.append(column_name)
+            ascending.append(is_ascending)
+
+    return df.sort_values(sort_columns, ascending=ascending, kind="stable").reset_index(drop=True)
+
+
+def build_concentration_top_table(
+    df: pd.DataFrame,
+    group_col: str,
+    group_label: str,
+    top_n: int = 5,
+    sort_mode: str = "% clients",
+) -> pd.DataFrame:
     percent_columns = CONCENTRATION_VIGILANCE_PERCENT_COLUMNS + CONCENTRATION_RISK_PERCENT_COLUMNS
     output_columns = [group_label, "Nb clients", "% clients"] + [column_name for _, column_name in percent_columns]
 
@@ -4887,7 +4933,7 @@ def build_concentration_top_table(df: pd.DataFrame, group_col: str, group_label:
         denominator = total_risk.get(status_label, 0)
         grouped[column_name] = grouped[column_name].div(denominator if denominator else np.nan).fillna(0.0)
 
-    grouped = grouped.sort_values(["Nb clients", group_label], ascending=[False, True], kind="stable")
+    grouped = sort_concentration_top_table(grouped, group_label, sort_mode)
     return grouped[output_columns].head(top_n).reset_index(drop=True)
 
 
@@ -7924,15 +7970,36 @@ def main() -> None:
 
     st.divider()
     st.markdown('<h3 class="cm-section-title">Concentrations</h3>', unsafe_allow_html=True)
+
+    concentration_header_left, concentration_header_right = st.columns([1.25, 2.75])
+    with concentration_header_left:
+        st.markdown('<div class="cm-subsection-title">Classement des 4 TOP</div>', unsafe_allow_html=True)
+        st.caption("Un tri unique s’applique aux segments, pays, produits et canaux.")
+    with concentration_header_right:
+        concentration_sort = st.radio(
+            "Tri des concentrations",
+            options=CONCENTRATION_SORT_OPTIONS,
+            horizontal=True,
+            label_visibility="collapsed",
+            key="portfolio_concentration_sort_mode",
+        )
+
+    if concentration_sort == "% clients":
+        st.caption("Tri actif : poids du groupe dans le portefeuille filtré.")
+    elif concentration_sort == "% vigilance":
+        st.caption("Tri actif : lecture métier des vigilances, de la plus sensible à la plus favorable (Critique → Élevée → Modérée → Allégée → Aucune).")
+    else:
+        st.caption("Tri actif : lecture métier des risques, de la plus sensible à la plus favorable (Avéré → Potentiel → Non calculable → Mitigé → Levé → Aucun).")
+
     t1, t2, t3, t4 = st.columns(4)
     with t1:
-        render_top_block("Top segments", build_concentration_top_table(filtered, "Segment", "Segment"))
+        render_top_block("Top segments", build_concentration_top_table(filtered, "Segment", "Segment", sort_mode=concentration_sort))
     with t2:
-        render_top_block("Top pays", build_concentration_top_table(filtered, "Pays de résidence", "Pays"))
+        render_top_block("Top pays", build_concentration_top_table(filtered, "Pays de résidence", "Pays", sort_mode=concentration_sort))
     with t3:
-        render_top_block("Top produits", build_concentration_top_table(filtered, "Produit(service) principal", "Produit"))
+        render_top_block("Top produits", build_concentration_top_table(filtered, "Produit(service) principal", "Produit", sort_mode=concentration_sort))
     with t4:
-        render_top_block("Top canaux", build_concentration_top_table(filtered, "Canal d’opérations principal 12 mois", "Canal"))
+        render_top_block("Top canaux", build_concentration_top_table(filtered, "Canal d’opérations principal 12 mois", "Canal", sort_mode=concentration_sort))
 
     st.caption("Lecture des concentrations : % clients = poids du groupe dans le portefeuille filtré. Chaque % de statut mesure le poids du groupe dans le total de ce statut ; la cellule se colore uniquement quand ce poids dépasse le % clients. Rouge / orange = statuts sensibles surreprésentés, vert = statuts favorables surreprésentés, ambre / gris = statuts intermédiaires ou non calculables.")
 
