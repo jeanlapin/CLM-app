@@ -4769,7 +4769,7 @@ def build_portfolio_dataset() -> pd.DataFrame:
     portfolio["Vigilance"] = portfolio.get("Vigilance statut")
     portfolio["Risque"] = portfolio.get(BASE_RISK_SOURCE_COLUMN, pd.Series(index=portfolio.index, dtype="string"))
 
-    for label in ["Risque avéré", "Risque potentiel", "Risque mitigé", "Risque levé", "Non calculable"]:
+    for label in ["Risque avéré", "Risque potentiel", "Risque mitigé", "Risque levé", "Non calculable", "Aucun risque détecté"]:
         portfolio[f"Nb {label}"] = portfolio[ind_status_cols].eq(label).sum(axis=1) if ind_status_cols else 0
 
     today = pd.Timestamp.today().normalize()
@@ -8260,7 +8260,7 @@ def main() -> None:
 
     with col_mid:
         st.markdown('<div class="cm-subsection-title">Risques</div>', unsafe_allow_html=True)
-        risk_df = build_risk_alert_distribution(filtered).rename(columns={"Libellé": "Statut"})
+        risk_df = build_distribution(filtered, "Risque", RISK_ORDER).rename(columns={"Libellé": "Statut"})
         render_small_table(format_percent_column(risk_df), color_columns={"Statut": "risk"})
 
     with col_right:
