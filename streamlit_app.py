@@ -5120,12 +5120,22 @@ def strip_leading_status_prefix(value: object, prefix: str) -> object:
 def build_priority_table(df: pd.DataFrame, top_n: int = 10) -> pd.DataFrame:
     priority = df.copy()
     if priority.empty:
-        return build_portfolio_underlying_table(priority, include_hidden_societe=True)
+        return build_portfolio_underlying_table(
+            priority,
+            include_hidden_societe=True,
+            display_columns_only=True,
+            product_label="Produits",
+        )
 
     priority = priority.sort_values(["Score priorité", SOC_COL, "SIREN"], ascending=[False, True, False], kind="stable")
     priority = build_unique_client_snapshot(priority)
     priority = priority.drop(columns=["cm_client_key"], errors="ignore").head(top_n).copy()
-    return build_portfolio_underlying_table(priority, include_hidden_societe=True)
+    return build_portfolio_underlying_table(
+        priority,
+        include_hidden_societe=True,
+        display_columns_only=True,
+        product_label="Produits",
+    )
 
 
 def build_portfolio_underlying_table(
@@ -5133,6 +5143,8 @@ def build_portfolio_underlying_table(
     *,
     include_hidden_societe: bool = True,
     strip_status_prefixes: bool = True,
+    display_columns_only: bool = False,
+    product_label: str = "Produit",
 ) -> pd.DataFrame:
     table = df.copy()
     if table is None or table.empty:
@@ -5147,7 +5159,7 @@ def build_portfolio_underlying_table(
     if include_hidden_societe and SOC_COL in table.columns:
         table["__societe_id"] = table[SOC_COL]
 
-    preferred = [
+    base_columns = [
         "SIREN",
         "Dénomination",
         "Vigilance",
@@ -5156,18 +5168,19 @@ def build_portfolio_underlying_table(
         "Pays de résidence",
         "Produit(service) principal",
         "Canal d’opérations principal 12 mois",
-        *VIGILANCE_COUNT_COLUMNS,
-        *RISK_COUNT_COLUMNS,
     ]
+    preferred = list(base_columns)
+    if not display_columns_only:
+        preferred.extend([*VIGILANCE_COUNT_COLUMNS, *RISK_COUNT_COLUMNS])
     technical = ["__societe_id"] if "__societe_id" in table.columns else []
     excluded = {SOC_COL, *technical}
-    remaining = [c for c in table.columns if c not in preferred and c not in excluded]
+    remaining = [] if display_columns_only else [c for c in table.columns if c not in preferred and c not in excluded]
     columns = [c for c in preferred if c in table.columns] + remaining + technical
 
     return table[columns].rename(
         columns={
             "Pays de résidence": "Pays",
-            "Produit(service) principal": "Produit",
+            "Produit(service) principal": product_label,
             "Canal d’opérations principal 12 mois": "Canaux",
         }
     )
@@ -5180,7 +5193,7 @@ def infer_portfolio_shared_column_widths(columns: list[str]) -> dict[str, str | 
             continue
         if col == "SIREN":
             widths[col] = "small"
-        elif col in {"Dénomination", "Client", "Produit", "Canaux"}:
+        elif col in {"Dénomination", "Client", "Produit", "Produits", "Canaux"}:
             widths[col] = "large"
         elif col in {"Vigilance", "Risque", "Statut", SOC_COL, "Société", "Segment", "Pays"}:
             widths[col] = "medium"
@@ -8363,6 +8376,8 @@ def main() -> None:
         filtered,
         include_hidden_societe=True,
         strip_status_prefixes=True,
+        display_columns_only=True,
+        product_label="Produits",
     )
     filtered_display_df = filtered_display_df[
         [col for col in priority_reference_columns if col in filtered_display_df.columns]
@@ -8372,14 +8387,9 @@ def main() -> None:
         filtered,
         include_hidden_societe=False,
         strip_status_prefixes=False,
+        display_columns_only=False,
+        product_label="Produit",
     )
-    filtered_export_df = filtered_export_df[
-        [
-            col
-            for col in priority_reference_columns
-            if col in filtered_export_df.columns and not str(col).startswith("__")
-        ]
-    ].copy()
 
     st.download_button(
         label="Exporter la vue filtrée (.csv)",
