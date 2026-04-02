@@ -88,7 +88,7 @@ RISK_COUNT_COLUMNS = [f"Nb {label}" for label in RISK_ORDER]
 STATUS_COUNT_COLUMNS = VIGILANCE_COUNT_COLUMNS + RISK_COUNT_COLUMNS
 
 BASE_RISK_SOURCE_COLUMN = "Statut de risque (import SaaS source)"
-PORTFOLIO_PIPELINE_VERSION = "v189_portfolio_glossary_scroll_and_concentration_cleanup"
+PORTFOLIO_PIPELINE_VERSION = "v190_portfolio_committee_expander"
 CRITICAL_VIGILANCE = {"Vigilance Élevée", "Vigilance Critique"}
 PRIORITY_RISK = {"Risque potentiel", "Risque avéré"}
 
@@ -8592,13 +8592,18 @@ def main() -> None:
         product_label="Produit",
     )
 
-    st.download_button(
-        label="Exporter la vue filtrée (.csv)",
-        data=dataframe_to_csv_bytes(filtered_export_df),
-        file_name="tableau1_portefeuille_filtre.csv",
-        mime="text/csv",
-        type="primary",
-    )
+    with st.expander("Préparer votre Comité des Risques", expanded=False):
+        committee_action_col, committee_spacer_col = st.columns([1.45, 4.55])
+        with committee_action_col:
+            st.download_button(
+                label="Exporter la vue filtrée (.csv)",
+                data=dataframe_to_csv_bytes(filtered_export_df),
+                file_name="tableau1_portefeuille_filtre.csv",
+                mime="text/csv",
+                type="primary",
+            )
+        with committee_spacer_col:
+            st.empty()
 
     with st.expander("Aperçu des données sous-jacentes filtrées"):
         render_clickable_styled_dataframe(
