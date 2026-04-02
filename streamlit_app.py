@@ -83,6 +83,10 @@ RISK_ORDER = [
     "Aucun risque détecté",
 ]
 
+VIGILANCE_COUNT_COLUMNS = [f"Nb {label}" for label in VIGILANCE_ORDER]
+RISK_COUNT_COLUMNS = [f"Nb {label}" for label in RISK_ORDER]
+STATUS_COUNT_COLUMNS = VIGILANCE_COUNT_COLUMNS + RISK_COUNT_COLUMNS
+
 BASE_RISK_SOURCE_COLUMN = "Statut de risque (import SaaS source)"
 CRITICAL_VIGILANCE = {"Vigilance Élevée", "Vigilance Critique"}
 PRIORITY_RISK = {"Risque potentiel", "Risque avéré"}
@@ -4712,9 +4716,44 @@ def indicator_risk_breakdown_columns(indicators_df: pd.DataFrame) -> list[str]:
     return [c for c in indicator_status_columns(indicators_df) if c not in excluded]
 
 
-def portfolio_risk_alert_status_columns(df: pd.DataFrame) -> list[str]:
-    excluded = {"Cash intensité Statut", BASE_RISK_SOURCE_COLUMN, "Risque", "Vigilance", "Vigilance statut"}
-    return [c for c in indicator_status_columns(df) if c in df.columns and c not in excluded]
+def build_indicator_status_occurrence_counts(indicators_df: pd.DataFrame) -> pd.DataFrame:
+    empty = indicators_df[KEY_COLUMNS].copy() if all(col in indicators_df.columns for col in KEY_COLUMNS) else pd.DataFrame(columns=KEY_COLUMNS)
+    for column_name in STATUS_COUNT_COLUMNS:
+        empty[column_name] = 0
+
+    if indicators_df is None or indicators_df.empty or not all(col in indicators_df.columns for col in KEY_COLUMNS):
+        return empty
+
+    scan_columns = [
+        col
+        for col in indicators_df.columns
+        if col not in KEY_COLUMNS and col != BASE_RISK_SOURCE_COLUMN
+    ]
+    if not scan_columns:
+        return empty
+
+    stacked = indicators_df[scan_columns].stack(dropna=True)
+    if stacked.empty:
+        return empty
+
+    risk_statuses = stacked.map(canonical_risk_label)
+    vigilance_statuses = stacked.map(canonical_vigilance_label)
+
+    counts = indicators_df[KEY_COLUMNS].copy()
+    row_index = indicators_df.index
+
+    for label in VIGILANCE_ORDER:
+        series = vigilance_statuses.eq(label).groupby(level=0).sum()
+        counts[f"Nb {label}"] = series.reindex(row_index, fill_value=0).astype(int).to_numpy()
+
+    for label in RISK_ORDER:
+        series = risk_statuses.eq(label).groupby(level=0).sum()
+        counts[f"Nb {label}"] = series.reindex(row_index, fill_value=0).astype(int).to_numpy()
+
+    numeric_cols = [col for col in counts.columns if col not in KEY_COLUMNS]
+    if numeric_cols:
+        counts = counts.groupby(KEY_COLUMNS, as_index=False)[numeric_cols].sum()
+    return counts
 
 
 def build_risk_alert_distribution(df: pd.DataFrame) -> pd.DataFrame:
@@ -4722,27 +4761,15 @@ def build_risk_alert_distribution(df: pd.DataFrame) -> pd.DataFrame:
     if df is None or df.empty:
         return empty
 
-    status_cols = portfolio_risk_alert_status_columns(df)
-    if not status_cols:
-        return empty
-
-    client_level = build_unique_client_snapshot(df, status_cols)
+    client_level = build_unique_client_snapshot(df, RISK_COUNT_COLUMNS)
     if client_level.empty:
         return empty
 
-    melted = client_level[status_cols].melt(value_name="__risk_status")
-    statuses = (
-        melted["__risk_status"]
-        .astype("string")
-        .map(canonical_risk_label)
-        .replace({"": pd.NA})
-        .dropna()
-    )
-    total = int(len(statuses))
-    counts = statuses.value_counts(dropna=False)
+    total = int(client_level[RISK_COUNT_COLUMNS].apply(pd.to_numeric, errors="coerce").fillna(0).to_numpy().sum()) if all(col in client_level.columns for col in RISK_COUNT_COLUMNS) else 0
     rows = []
     for label in RISK_ORDER:
-        nb = int(counts.get(label, 0))
+        column_name = f"Nb {label}"
+        nb = int(pd.to_numeric(client_level.get(column_name, 0), errors="coerce").fillna(0).sum())
         rows.append({"Libellé": label, "Nb": nb, "%": (nb / total if total else 0.0)})
     return pd.DataFrame(rows)
 
@@ -4750,7 +4777,7 @@ def build_risk_alert_distribution(df: pd.DataFrame) -> pd.DataFrame:
 def build_portfolio_dataset() -> pd.DataFrame:
     base, indicators, history = load_source_data()
 
-    ind_status_cols = indicator_risk_breakdown_columns(indicators)
+    status_occurrence_counts = build_indicator_status_occurrence_counts(indicators)
     indicator_cols = [
         SOC_COL,
         "SIREN",
@@ -4758,10 +4785,11 @@ def build_portfolio_dataset() -> pd.DataFrame:
         "Vigilance valeur",
         "Vigilance Date de mise à jour",
         "Cash intensité Statut",
-    ] + ind_status_cols
+    ]
     indicator_cols = list(dict.fromkeys([c for c in indicator_cols if c in indicators.columns]))
 
     portfolio = base.merge(indicators[indicator_cols], how="left", on=KEY_COLUMNS)
+    portfolio = portfolio.merge(status_occurrence_counts, how="left", on=KEY_COLUMNS)
     history_count = history.groupby(KEY_COLUMNS).size().rename("Nb historique").reset_index()
     portfolio = portfolio.merge(history_count, how="left", on=KEY_COLUMNS)
     portfolio["Nb historique"] = portfolio["Nb historique"].fillna(0).astype(int)
@@ -4769,8 +4797,8 @@ def build_portfolio_dataset() -> pd.DataFrame:
     portfolio["Vigilance"] = portfolio.get("Vigilance statut")
     portfolio["Risque"] = portfolio.get(BASE_RISK_SOURCE_COLUMN, pd.Series(index=portfolio.index, dtype="string"))
 
-    for label in ["Risque avéré", "Risque potentiel", "Risque mitigé", "Risque levé", "Non calculable", "Aucun risque détecté"]:
-        portfolio[f"Nb {label}"] = portfolio[ind_status_cols].eq(label).sum(axis=1) if ind_status_cols else 0
+    for column_name in STATUS_COUNT_COLUMNS:
+        portfolio[column_name] = pd.to_numeric(portfolio.get(column_name, 0), errors="coerce").fillna(0).astype(int)
 
     today = pd.Timestamp.today().normalize()
     portfolio["Alerte justificatif incomplet"] = (
@@ -4996,81 +5024,74 @@ def build_concentration_top_table(
         .replace({"": "Non renseigné"})
     )
 
-    if "Vigilance" not in work.columns:
-        work["Vigilance"] = ""
-
-    risk_status_cols = portfolio_risk_alert_status_columns(work)
-    snapshot_columns = [group_col, "Vigilance"] + risk_status_cols
-    if not risk_status_cols:
-        if "Risque" not in work.columns:
-            work["Risque"] = ""
-        snapshot_columns.append("Risque")
+    count_columns = [col for col in STATUS_COUNT_COLUMNS if col in work.columns]
+    snapshot_columns = [group_col] + count_columns
+    if not count_columns:
+        fallback_columns = [c for c in ["Vigilance", "Risque"] if c in work.columns]
+        snapshot_columns += fallback_columns
 
     client_level = build_unique_client_snapshot(work, snapshot_columns)
+    if client_level.empty:
+        return pd.DataFrame(columns=output_columns)
 
+    grouped = client_level.groupby(group_col, dropna=False).agg(**{"Nb clients": ("cm_client_key", "nunique")}).reset_index()
     total_clients = int(client_level["cm_client_key"].nunique())
-    total_vigilance = {
-        status_label: int(client_level["Vigilance"].astype("string").eq(status_label).sum())
-        for status_label, _ in CONCENTRATION_VIGILANCE_PERCENT_COLUMNS
-    }
 
-    agg_spec: dict[str, tuple[str, object]] = {"Nb clients": ("cm_client_key", "nunique")}
     for status_label, column_name in CONCENTRATION_VIGILANCE_PERCENT_COLUMNS:
-        agg_spec[column_name] = (
-            "Vigilance",
-            lambda s, target=status_label: s.astype("string").eq(target).sum(),
-        )
-
-    grouped = client_level.groupby(group_col, dropna=False).agg(**agg_spec).reset_index()
-
-    if risk_status_cols:
-        melted = client_level[[group_col] + risk_status_cols].melt(id_vars=[group_col], value_name="__risk_status")
-        melted["__risk_status"] = (
-            melted["__risk_status"]
-            .astype("string")
-            .map(canonical_risk_label)
-            .replace({"": pd.NA})
-        )
-        melted = melted.dropna(subset=["__risk_status"])
-        if melted.empty:
-            risk_counts = pd.DataFrame(columns=[group_col] + [status_label for status_label, _ in CONCENTRATION_RISK_PERCENT_COLUMNS])
+        source_col = f"Nb {status_label}"
+        if source_col in client_level.columns:
+            grouped[column_name] = (
+                client_level.groupby(group_col, dropna=False)[source_col]
+                .sum()
+                .reindex(grouped[group_col], fill_value=0)
+                .to_numpy()
+            )
         else:
-            risk_counts = pd.crosstab(melted[group_col], melted["__risk_status"]).reset_index()
-        for status_label, _ in CONCENTRATION_RISK_PERCENT_COLUMNS:
-            if status_label not in risk_counts.columns:
-                risk_counts[status_label] = 0
-        total_risk = {
-            status_label: int(pd.to_numeric(risk_counts.get(status_label, 0), errors="coerce").fillna(0).sum())
-            for status_label, _ in CONCENTRATION_RISK_PERCENT_COLUMNS
-        }
-        rename_map = {status_label: column_name for status_label, column_name in CONCENTRATION_RISK_PERCENT_COLUMNS}
-        grouped = grouped.merge(
-            risk_counts[[group_col] + [status_label for status_label, _ in CONCENTRATION_RISK_PERCENT_COLUMNS]].rename(columns=rename_map),
-            on=group_col,
-            how="left",
-        )
-    else:
-        total_risk = {
-            status_label: int(client_level["Risque"].astype("string").eq(status_label).sum())
-            for status_label, _ in CONCENTRATION_RISK_PERCENT_COLUMNS
-        }
-        for status_label, column_name in CONCENTRATION_RISK_PERCENT_COLUMNS:
+            grouped[column_name] = (
+                client_level.groupby(group_col, dropna=False)["Vigilance"]
+                .apply(lambda s, target=status_label: s.astype("string").eq(target).sum(), target=status_label)
+                .reindex(grouped[group_col], fill_value=0)
+                .to_numpy()
+                if "Vigilance" in client_level.columns
+                else 0
+            )
+
+    for status_label, column_name in CONCENTRATION_RISK_PERCENT_COLUMNS:
+        source_col = f"Nb {status_label}"
+        if source_col in client_level.columns:
+            grouped[column_name] = (
+                client_level.groupby(group_col, dropna=False)[source_col]
+                .sum()
+                .reindex(grouped[group_col], fill_value=0)
+                .to_numpy()
+            )
+        else:
             grouped[column_name] = (
                 client_level.groupby(group_col, dropna=False)["Risque"]
                 .apply(lambda s, target=status_label: s.astype("string").eq(target).sum(), target=status_label)
-                .reindex(grouped[group_col])
+                .reindex(grouped[group_col], fill_value=0)
                 .to_numpy()
+                if "Risque" in client_level.columns
+                else 0
             )
 
     grouped["% clients"] = grouped["Nb clients"].div(total_clients if total_clients else np.nan).fillna(0.0)
 
     for status_label, column_name in CONCENTRATION_VIGILANCE_PERCENT_COLUMNS:
-        denominator = total_vigilance.get(status_label, 0)
+        source_col = f"Nb {status_label}"
+        if source_col in client_level.columns:
+            denominator = int(pd.to_numeric(client_level[source_col], errors="coerce").fillna(0).sum())
+        else:
+            denominator = int(client_level["Vigilance"].astype("string").eq(status_label).sum()) if "Vigilance" in client_level.columns else 0
         grouped[column_name] = pd.to_numeric(grouped[column_name], errors="coerce").fillna(0).div(denominator if denominator else np.nan).fillna(0.0)
 
     for status_label, column_name in CONCENTRATION_RISK_PERCENT_COLUMNS:
-        denominator = total_risk.get(status_label, 0)
-        grouped[column_name] = pd.to_numeric(grouped.get(column_name, 0), errors="coerce").fillna(0).div(denominator if denominator else np.nan).fillna(0.0)
+        source_col = f"Nb {status_label}"
+        if source_col in client_level.columns:
+            denominator = int(pd.to_numeric(client_level[source_col], errors="coerce").fillna(0).sum())
+        else:
+            denominator = int(client_level["Risque"].astype("string").eq(status_label).sum()) if "Risque" in client_level.columns else 0
+        grouped[column_name] = pd.to_numeric(grouped[column_name], errors="coerce").fillna(0).div(denominator if denominator else np.nan).fillna(0.0)
 
     grouped = grouped.rename(columns={group_col: group_label})
     grouped = sort_concentration_top_table(grouped, group_label, sort_mode)
@@ -5128,6 +5149,8 @@ def build_portfolio_underlying_table(
         "Pays de résidence",
         "Produit(service) principal",
         "Canal d’opérations principal 12 mois",
+        *VIGILANCE_COUNT_COLUMNS,
+        *RISK_COUNT_COLUMNS,
     ]
     technical = ["__societe_id"] if "__societe_id" in table.columns else []
     excluded = {SOC_COL, *technical}
@@ -5154,7 +5177,7 @@ def infer_portfolio_shared_column_widths(columns: list[str]) -> dict[str, str | 
             widths[col] = "large"
         elif col in {"Vigilance", "Risque", "Statut", SOC_COL, "Société", "Segment", "Pays"}:
             widths[col] = "medium"
-        elif col in {"Nb", "%", "#", "Rang", "Score", "Score priorité"}:
+        elif col in {"Nb", "%", "#", "Rang", "Score", "Score priorité"} or str(col).startswith("Nb "):
             widths[col] = "small"
         else:
             widths[col] = "medium"
