@@ -8134,6 +8134,7 @@ def main() -> None:
         key_prefix="priority_table",
         preserve_order=True,
         auto_size_columns=True,
+        pinned_columns=["SIREN", "Dénomination"],
     )
 
     export_columns = [c for c in DISPLAY_COLUMNS if c in filtered.columns]
