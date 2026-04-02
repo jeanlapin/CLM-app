@@ -8117,13 +8117,10 @@ def main() -> None:
     st.caption("Lecture des concentrations : % clients = poids du groupe dans le portefeuille filtré. Chaque % de statut mesure le poids du groupe dans le total de ce statut ; la cellule se colore uniquement quand ce poids dépasse le % clients. Rouge / orange = statuts sensibles surreprésentés, vert = statuts favorables surreprésentés, ambre / gris = statuts intermédiaires ou non calculables.")
 
     st.divider()
-    priority_title_col, priority_info_col = st.columns([1.4, 4.6])
-    with priority_title_col:
-        st.markdown('<h3 class="cm-section-title">Dossiers prioritaires</h3>', unsafe_allow_html=True)
-    with priority_info_col:
-        st.caption(
-            "Calcul : top 10 trié par score décroissant. Score = +25 si vigilance critique, +15 si vigilance élevée, +20 si risque avéré, +10 si risque potentiel, +12 si justificatif incomplet, +8 si vigilance critique, +6 si revue trop ancienne, +8 si aucune prochaine revue, +5 si cross-border élevé."
-        )
+    st.markdown(
+        '<h3 class="cm-section-title" style="white-space: nowrap;">Dossiers prioritaires</h3>',
+        unsafe_allow_html=True,
+    )
     priority_df = build_priority_table(filtered, top_n=10)
     render_clickable_styled_dataframe(
         style_dataframe(priority_df),
