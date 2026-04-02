@@ -5595,6 +5595,7 @@ def render_clickable_streamlit_table(
     key_prefix: str = "table",
     preserve_order: bool = False,
     auto_size_columns: bool = False,
+    pinned_columns: list[str] | None = None,
 ) -> None:
     if df is None or df.empty:
         st.info("Aucune donnée disponible.")
@@ -5607,6 +5608,7 @@ def render_clickable_streamlit_table(
 
     display_df = format_table_display_dataframe(raw_df, preserve_order=preserve_order)
     society_col = siren_society_column(raw_df)
+    pinned_set = {str(col) for col in (pinned_columns or [])}
 
     if "SIREN" in raw_df.columns and society_col is not None:
         st.markdown(
@@ -5614,20 +5616,41 @@ def render_clickable_streamlit_table(
             unsafe_allow_html=True,
         )
 
+    def _text_column(
+        label: str,
+        *,
+        width: str | None = None,
+        help: str | None = None,
+        pinned: bool = False,
+    ) -> object:
+        kwargs: dict[str, object] = {}
+        if width is not None:
+            kwargs["width"] = width
+        if help is not None:
+            kwargs["help"] = help
+        if pinned:
+            kwargs["pinned"] = True
+        try:
+            return st.column_config.TextColumn(label, **kwargs)
+        except TypeError:
+            kwargs.pop("pinned", None)
+            return st.column_config.TextColumn(label, **kwargs)
+
     column_config: dict[str, object] = {}
     for col in display_df.columns:
+        is_pinned = str(col) in pinned_set
         if auto_size_columns:
-            column_config[col] = st.column_config.TextColumn(col)
+            column_config[col] = _text_column(col, pinned=is_pinned)
         elif col == "SIREN":
-            column_config[col] = st.column_config.TextColumn("SIREN", width="small")
+            column_config[col] = _text_column("SIREN", width="small", pinned=is_pinned)
         elif col in {"Dénomination", "Client"}:
-            column_config[col] = st.column_config.TextColumn(col, width="large")
+            column_config[col] = _text_column(col, width="large", pinned=is_pinned)
         elif col in {"Vigilance", "Risque", "Statut", SOC_COL, "Société"}:
-            column_config[col] = st.column_config.TextColumn(col, width="medium")
+            column_config[col] = _text_column(col, width="medium", pinned=is_pinned)
         elif col in {"Nb", "%", "#", "Rang", "Score", "Score priorité"}:
-            column_config[col] = st.column_config.TextColumn(col, width="small")
+            column_config[col] = _text_column(col, width="small", pinned=is_pinned)
         else:
-            column_config[col] = st.column_config.TextColumn(col, width="medium")
+            column_config[col] = _text_column(col, width="medium", pinned=is_pinned)
 
     event = st.dataframe(
         style_interactive_table(display_df, raw_df),
@@ -5666,6 +5689,7 @@ def render_clickable_dataframe(
     key_prefix: str = "table",
     preserve_order: bool = False,
     auto_size_columns: bool = False,
+    pinned_columns: list[str] | None = None,
 ) -> None:
     render_clickable_streamlit_table(
         df,
@@ -5673,6 +5697,7 @@ def render_clickable_dataframe(
         key_prefix=key_prefix,
         preserve_order=preserve_order,
         auto_size_columns=auto_size_columns,
+        pinned_columns=pinned_columns,
     )
 
 
@@ -5686,6 +5711,7 @@ def render_clickable_styled_dataframe(
     key_prefix: str = "table",
     preserve_order: bool = False,
     auto_size_columns: bool = False,
+    pinned_columns: list[str] | None = None,
 ) -> None:
     render_clickable_streamlit_table(
         source_df,
@@ -5693,6 +5719,7 @@ def render_clickable_styled_dataframe(
         key_prefix=key_prefix,
         preserve_order=preserve_order,
         auto_size_columns=auto_size_columns,
+        pinned_columns=pinned_columns,
     )
 
 
@@ -8129,6 +8156,7 @@ def main() -> None:
             key_prefix="filtered_table",
             preserve_order=True,
             auto_size_columns=True,
+            pinned_columns=["SIREN", "Dénomination"],
         )
 
 
