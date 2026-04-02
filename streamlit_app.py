@@ -88,7 +88,7 @@ RISK_COUNT_COLUMNS = [f"Nb {label}" for label in RISK_ORDER]
 STATUS_COUNT_COLUMNS = VIGILANCE_COUNT_COLUMNS + RISK_COUNT_COLUMNS
 
 BASE_RISK_SOURCE_COLUMN = "Statut de risque (import SaaS source)"
-PORTFOLIO_PIPELINE_VERSION = "v191_portfolio_committee_exports"
+PORTFOLIO_PIPELINE_VERSION = "v192_excel_export_xlsxwriter"
 CRITICAL_VIGILANCE = {"Vigilance Élevée", "Vigilance Critique"}
 PRIORITY_RISK = {"Risque potentiel", "Risque avéré"}
 
@@ -5234,11 +5234,17 @@ def _safe_excel_sheet_name(name: str, fallback: str = "Feuille") -> str:
 
 
 def dataframes_to_excel_bytes(sheets: list[tuple[str, pd.DataFrame]]) -> bytes:
-    from openpyxl.styles import Font, PatternFill
-    from openpyxl.utils import get_column_letter
-
     buffer = BytesIO()
-    with pd.ExcelWriter(buffer, engine="openpyxl") as writer:
+    with pd.ExcelWriter(buffer, engine="xlsxwriter") as writer:
+        workbook = writer.book
+        header_format = workbook.add_format({
+            "bold": True,
+            "bg_color": "#DDEAF8",
+            "border": 0,
+            "valign": "top",
+        })
+        percent_format = workbook.add_format({"num_format": "0.0%"})
+
         used_sheet_names: set[str] = set()
         for index, (sheet_name, df) in enumerate(sheets, start=1):
             base_name = _safe_excel_sheet_name(sheet_name, fallback=f"Feuille {index}")
@@ -5252,32 +5258,32 @@ def dataframes_to_excel_bytes(sheets: list[tuple[str, pd.DataFrame]]) -> bytes:
 
             export_df = dataframe_to_export_copy(df)
             export_df.to_excel(writer, sheet_name=safe_name, index=False)
-            ws = writer.sheets[safe_name]
-            ws.freeze_panes = "A2"
-            ws.auto_filter.ref = ws.dimensions
+            worksheet = writer.sheets[safe_name]
 
-            header_fill = PatternFill(fill_type="solid", fgColor="DDEAF8")
-            for cell in ws[1]:
-                cell.font = Font(bold=True)
-                cell.fill = header_fill
+            num_rows, num_cols = export_df.shape
+            if num_cols > 0:
+                worksheet.freeze_panes(1, 0)
+                worksheet.autofilter(0, 0, max(num_rows, 1), num_cols - 1)
 
-            percent_columns = [
-                idx
-                for idx, column_name in enumerate(export_df.columns, start=1)
+            percent_columns = {
+                col_idx
+                for col_idx, column_name in enumerate(export_df.columns)
                 if str(column_name).strip().startswith("%")
-            ]
-            for col_idx in percent_columns:
-                for row_idx in range(2, ws.max_row + 1):
-                    ws.cell(row=row_idx, column=col_idx).number_format = "0.0%"
+            }
 
-            for col_idx, column_name in enumerate(export_df.columns, start=1):
+            for col_idx, column_name in enumerate(export_df.columns):
+                worksheet.write(0, col_idx, column_name, header_format)
                 values = [str(column_name)]
                 values.extend(
                     "" if value is None or (isinstance(value, float) and pd.isna(value)) else str(value)
-                    for value in export_df.iloc[:, col_idx - 1].tolist()
+                    for value in export_df.iloc[:, col_idx].tolist()
                 )
                 max_length = max((len(value) for value in values), default=0)
-                ws.column_dimensions[get_column_letter(col_idx)].width = min(max(max_length + 2, 10), 42)
+                width = min(max(max_length + 2, 10), 42)
+                if col_idx in percent_columns:
+                    worksheet.set_column(col_idx, col_idx, width, percent_format)
+                else:
+                    worksheet.set_column(col_idx, col_idx, width)
 
     buffer.seek(0)
     return buffer.getvalue()
