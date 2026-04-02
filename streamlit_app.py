@@ -4961,20 +4961,23 @@ def build_priority_table(df: pd.DataFrame, top_n: int = 10) -> pd.DataFrame:
     if "Risque" in priority.columns:
         priority["Risque"] = priority["Risque"].apply(lambda value: strip_leading_status_prefix(value, "Risque"))
 
+    if SOC_COL in priority.columns:
+        priority["__societe_id"] = priority[SOC_COL]
+
     columns = [
-        SOC_COL,
         "SIREN",
+        "Dénomination",
         "Vigilance",
         "Risque",
         "Segment",
         "Pays de résidence",
         "Produit(service) principal",
         "Canal d’opérations principal 12 mois",
+        "__societe_id",
     ]
     columns = [c for c in columns if c in priority.columns]
     return priority[columns].rename(
         columns={
-            SOC_COL: "Société",
             "Pays de résidence": "Pays",
             "Produit(service) principal": "Produit",
             "Canal d’opérations principal 12 mois": "Canaux",
@@ -5433,6 +5436,8 @@ def siren_society_column(df: pd.DataFrame) -> str | None:
         return SOC_COL
     if "Société" in df.columns:
         return "Société"
+    if "__societe_id" in df.columns:
+        return "__societe_id"
     return None
 
 
@@ -5493,6 +5498,8 @@ def status_emoji(value: object, palette: str = "generic") -> str:
 
 def format_table_display_dataframe(df: pd.DataFrame, preserve_order: bool = False) -> pd.DataFrame:
     display_df = df.copy() if preserve_order else reorder_table_columns_for_ui(df.copy())
+    visible_columns = [col for col in display_df.columns if not str(col).startswith("__")]
+    display_df = display_df[visible_columns].copy()
     for col in display_df.columns:
         series = display_df[col]
         if pd.api.types.is_datetime64_any_dtype(series):
