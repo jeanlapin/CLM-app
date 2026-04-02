@@ -5577,6 +5577,7 @@ def render_clickable_streamlit_table(
     height: int | None = None,
     key_prefix: str = "table",
     preserve_order: bool = False,
+    auto_size_columns: bool = False,
 ) -> None:
     if df is None or df.empty:
         st.info("Aucune donnée disponible.")
@@ -5598,7 +5599,9 @@ def render_clickable_streamlit_table(
 
     column_config: dict[str, object] = {}
     for col in display_df.columns:
-        if col == "SIREN":
+        if auto_size_columns:
+            column_config[col] = st.column_config.TextColumn(col)
+        elif col == "SIREN":
             column_config[col] = st.column_config.TextColumn("SIREN", width="small")
         elif col in {"Dénomination", "Client"}:
             column_config[col] = st.column_config.TextColumn(col, width="large")
@@ -5645,8 +5648,15 @@ def render_clickable_dataframe(
     hide_index: bool = True,
     key_prefix: str = "table",
     preserve_order: bool = False,
+    auto_size_columns: bool = False,
 ) -> None:
-    render_clickable_streamlit_table(df, height=height, key_prefix=key_prefix, preserve_order=preserve_order)
+    render_clickable_streamlit_table(
+        df,
+        height=height,
+        key_prefix=key_prefix,
+        preserve_order=preserve_order,
+        auto_size_columns=auto_size_columns,
+    )
 
 
 def render_clickable_styled_dataframe(
@@ -5658,8 +5668,15 @@ def render_clickable_styled_dataframe(
     hide_index: bool = True,
     key_prefix: str = "table",
     preserve_order: bool = False,
+    auto_size_columns: bool = False,
 ) -> None:
-    render_clickable_streamlit_table(source_df, height=height, key_prefix=key_prefix, preserve_order=preserve_order)
+    render_clickable_streamlit_table(
+        source_df,
+        height=height,
+        key_prefix=key_prefix,
+        preserve_order=preserve_order,
+        auto_size_columns=auto_size_columns,
+    )
 
 
 def client_label(row: pd.Series) -> str:
@@ -8064,7 +8081,16 @@ def main() -> None:
             "Calcul : top 10 trié par score décroissant. Score = +25 si vigilance critique, +15 si vigilance élevée, +20 si risque avéré, +10 si risque potentiel, +12 si justificatif incomplet, +8 si vigilance critique, +6 si revue trop ancienne, +8 si aucune prochaine revue, +5 si cross-border élevé."
         )
     priority_df = build_priority_table(filtered, top_n=10)
-    render_clickable_styled_dataframe(style_dataframe(priority_df), priority_df, use_container_width=True, height=420, hide_index=True, key_prefix="priority_table", preserve_order=True)
+    render_clickable_styled_dataframe(
+        style_dataframe(priority_df),
+        priority_df,
+        use_container_width=True,
+        height=420,
+        hide_index=True,
+        key_prefix="priority_table",
+        preserve_order=True,
+        auto_size_columns=True,
+    )
 
     export_columns = [c for c in DISPLAY_COLUMNS if c in filtered.columns]
     st.download_button(
