@@ -4937,34 +4937,46 @@ def build_concentration_top_table(
     return grouped[output_columns].head(top_n).reset_index(drop=True)
 
 
+def strip_leading_status_prefix(value: object, prefix: str) -> object:
+    if value is None or (isinstance(value, float) and np.isnan(value)) or pd.isna(value):
+        return value
+    text = str(value).strip()
+    if not text or text.lower() == "nan":
+        return value
+    cleaned = re.sub(rf"^{re.escape(prefix)}\s+", "", text, flags=re.IGNORECASE).strip()
+    if cleaned != text and cleaned:
+        cleaned = cleaned[0].upper() + cleaned[1:]
+    return cleaned or text
+
+
 def build_priority_table(df: pd.DataFrame, top_n: int = 10) -> pd.DataFrame:
     priority = (
         df.sort_values(["Score priorité", SOC_COL, "SIREN"], ascending=[False, True, False], kind="stable")
         .head(top_n)
         .copy()
     )
-    priority.insert(0, "Rang", range(1, len(priority) + 1))
+
+    if "Vigilance" in priority.columns:
+        priority["Vigilance"] = priority["Vigilance"].apply(lambda value: strip_leading_status_prefix(value, "Vigilance"))
+    if "Risque" in priority.columns:
+        priority["Risque"] = priority["Risque"].apply(lambda value: strip_leading_status_prefix(value, "Risque"))
+
     columns = [
-        "SIREN",
-        "Dénomination",
+        SOC_COL,
         "Vigilance",
         "Risque",
-        SOC_COL,
-        "Pays de résidence",
         "Segment",
-        "Statut EDD",
-        "Analyste",
-        "Score priorité",
-        "Motifs",
-        "Rang",
+        "Pays de résidence",
+        "Produit(service) principal",
+        "Canal d’opérations principal 12 mois",
     ]
     columns = [c for c in columns if c in priority.columns]
     return priority[columns].rename(
         columns={
             SOC_COL: "Société",
             "Pays de résidence": "Pays",
-            "Statut EDD": "EDD",
-            "Score priorité": "Score",
+            "Produit(service) principal": "Produit",
+            "Canal d’opérations principal 12 mois": "Canaux",
         }
     )
 
@@ -5478,8 +5490,8 @@ def status_emoji(value: object, palette: str = "generic") -> str:
     return "🔵"
 
 
-def format_table_display_dataframe(df: pd.DataFrame) -> pd.DataFrame:
-    display_df = reorder_table_columns_for_ui(df.copy())
+def format_table_display_dataframe(df: pd.DataFrame, preserve_order: bool = False) -> pd.DataFrame:
+    display_df = df.copy() if preserve_order else reorder_table_columns_for_ui(df.copy())
     for col in display_df.columns:
         series = display_df[col]
         if pd.api.types.is_datetime64_any_dtype(series):
@@ -5563,17 +5575,18 @@ def render_clickable_streamlit_table(
     *,
     height: int | None = None,
     key_prefix: str = "table",
+    preserve_order: bool = False,
 ) -> None:
     if df is None or df.empty:
         st.info("Aucune donnée disponible.")
         return
 
-    raw_df = reorder_table_columns_for_ui(df.copy()).reset_index(drop=True)
+    raw_df = (df.copy() if preserve_order else reorder_table_columns_for_ui(df.copy())).reset_index(drop=True)
     if len(raw_df) > 300:
         st.caption("Aperçu limité aux 300 premières lignes pour conserver une navigation fluide.")
         raw_df = raw_df.head(300).copy().reset_index(drop=True)
 
-    display_df = format_table_display_dataframe(raw_df)
+    display_df = format_table_display_dataframe(raw_df, preserve_order=preserve_order)
     society_col = siren_society_column(raw_df)
 
     if "SIREN" in raw_df.columns and society_col is not None:
@@ -5630,8 +5643,9 @@ def render_clickable_dataframe(
     height: int | None = None,
     hide_index: bool = True,
     key_prefix: str = "table",
+    preserve_order: bool = False,
 ) -> None:
-    render_clickable_streamlit_table(df, height=height, key_prefix=key_prefix)
+    render_clickable_streamlit_table(df, height=height, key_prefix=key_prefix, preserve_order=preserve_order)
 
 
 def render_clickable_styled_dataframe(
@@ -5642,8 +5656,9 @@ def render_clickable_styled_dataframe(
     height: int | None = None,
     hide_index: bool = True,
     key_prefix: str = "table",
+    preserve_order: bool = False,
 ) -> None:
-    render_clickable_streamlit_table(source_df, height=height, key_prefix=key_prefix)
+    render_clickable_streamlit_table(source_df, height=height, key_prefix=key_prefix, preserve_order=preserve_order)
 
 
 def client_label(row: pd.Series) -> str:
@@ -8048,7 +8063,7 @@ def main() -> None:
             "Calcul : top 10 trié par score décroissant. Score = +25 si vigilance critique, +15 si vigilance élevée, +20 si risque avéré, +10 si risque potentiel, +12 si justificatif incomplet, +8 si vigilance critique, +6 si revue trop ancienne, +8 si aucune prochaine revue, +5 si cross-border élevé."
         )
     priority_df = build_priority_table(filtered, top_n=10)
-    render_clickable_styled_dataframe(style_dataframe(priority_df), priority_df, use_container_width=True, height=420, hide_index=True, key_prefix="priority_table")
+    render_clickable_styled_dataframe(style_dataframe(priority_df), priority_df, use_container_width=True, height=420, hide_index=True, key_prefix="priority_table", preserve_order=True)
 
     export_columns = [c for c in DISPLAY_COLUMNS if c in filtered.columns]
     st.download_button(
