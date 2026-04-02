@@ -88,7 +88,7 @@ RISK_COUNT_COLUMNS = [f"Nb {label}" for label in RISK_ORDER]
 STATUS_COUNT_COLUMNS = VIGILANCE_COUNT_COLUMNS + RISK_COUNT_COLUMNS
 
 BASE_RISK_SOURCE_COLUMN = "Statut de risque (import SaaS source)"
-PORTFOLIO_PIPELINE_VERSION = "v188_portfolio_glossary_help"
+PORTFOLIO_PIPELINE_VERSION = "v189_portfolio_glossary_scroll_and_concentration_cleanup"
 CRITICAL_VIGILANCE = {"Vigilance Élevée", "Vigilance Critique"}
 PRIORITY_RISK = {"Risque potentiel", "Risque avéré"}
 
@@ -5316,6 +5316,47 @@ def render_small_table(
     st.markdown("".join(html), unsafe_allow_html=True)
 
 
+def render_reference_table(
+    df: pd.DataFrame,
+    *,
+    column_min_widths: list[str] | None = None,
+) -> None:
+    if df is None or df.empty:
+        st.info("Aucune donnée à afficher.")
+        return
+
+    html = [
+        "<div style='overflow-x: auto; overflow-y: hidden; background: rgba(255,255,255,0.8); border: 1px solid rgba(22, 58, 89, 0.12); border-radius: 18px; box-shadow: 0 10px 24px rgba(22, 58, 89, 0.06);'>",
+        f"<table style='width: max-content; min-width: 100%; border-collapse: collapse; font-size: 0.94rem; table-layout: auto;'>",
+    ]
+
+    if column_min_widths:
+        html.append("<colgroup>")
+        for width in column_min_widths:
+            html.append(f"<col style='min-width: {escape(str(width))};'>")
+        html.append("</colgroup>")
+
+    html.append("<thead><tr>")
+    for col in df.columns:
+        html.append(
+            f"<th style='background: {PRIMARY_COLOR}; color: white; text-align: left; padding: 0.72rem 0.85rem; font-family: Sora, sans-serif; font-size: 0.8rem; font-weight: 700; letter-spacing: 0.04em; white-space: nowrap;'>{escape(str(col))}</th>"
+        )
+    html.append("</tr></thead><tbody>")
+
+    for _, row in df.iterrows():
+        html.append("<tr>")
+        for value in row:
+            rendered = "" if pd.isna(value) else escape(str(value)).replace("\n", "<br>")
+            html.append(
+                "<td style='padding: 0.72rem 0.85rem; border-top: 1px solid rgba(22, 58, 89, 0.08); vertical-align: top; color: #1F2937; text-align: left; white-space: normal;'>"
+                + rendered
+                + "</td>"
+            )
+        html.append("</tr>")
+    html.append("</tbody></table></div>")
+    st.markdown("".join(html), unsafe_allow_html=True)
+
+
 def dataframe_cell_style(value: object, status_type: str) -> str:
     if pd.isna(value):
         return ""
@@ -5648,12 +5689,12 @@ def render_portfolio_glossary_expander() -> None:
             )
 
         with calculation_tab:
-            st.dataframe(
+            render_reference_table(
                 pd.DataFrame(calc_rows, columns=["Indicateur", "Calcul / règle", "Périmètre", "Note"]),
-                use_container_width=True,
-                hide_index=True,
-                height=520,
+                column_min_widths=["220px", "640px", "180px", "420px"],
             )
+
+
 
 
 
@@ -5752,11 +5793,11 @@ else:
 
 
 def render_top_block(title: str, df: pd.DataFrame, *, dialog_key: str | None = None) -> None:
-    title_col, action_col = st.columns([3.2, 1.2])
+    title_col, action_col = st.columns([6.4, 0.8])
     with title_col:
-        st.markdown(f'<h3 class="cm-section-title">{escape(title)}</h3>', unsafe_allow_html=True)
+        st.markdown(f'<h3 class="cm-section-title" style="white-space: nowrap; margin-bottom: 0;">{escape(title)}</h3>', unsafe_allow_html=True)
     with action_col:
-        st.markdown("<div style='height: 0.20rem;'></div>", unsafe_allow_html=True)
+        st.markdown("<div style='height: 0.10rem;'></div>", unsafe_allow_html=True)
         if dialog_key and st.button(
             " ",
             key=f"cm_expand_{dialog_key}",
@@ -8509,7 +8550,6 @@ def main() -> None:
     with t4:
         render_top_block("Top canaux", top_canaux_df, dialog_key="canaux")
 
-    st.caption("Lecture des concentrations : % clients = poids du groupe dans le portefeuille filtré. Chaque % de statut mesure le poids du groupe dans le total de ce statut ; la cellule se colore uniquement quand ce poids dépasse le % clients. Rouge / orange = statuts sensibles surreprésentés, vert = statuts favorables surreprésentés, ambre / gris = statuts intermédiaires ou non calculables.")
 
     st.divider()
     st.markdown(
