@@ -89,7 +89,7 @@ RISK_COUNT_COLUMNS = [f"Nb {label}" for label in RISK_ORDER]
 STATUS_COUNT_COLUMNS = VIGILANCE_COUNT_COLUMNS + RISK_COUNT_COLUMNS
 
 BASE_RISK_SOURCE_COLUMN = "Statut de risque (import SaaS source)"
-PORTFOLIO_PIPELINE_VERSION = "v193_committee_pdf_report"
+PORTFOLIO_PIPELINE_VERSION = "v195_analysis_indicator_tops"
 CRITICAL_VIGILANCE = {"Vigilance Élevée", "Vigilance Critique"}
 PRIORITY_RISK = {"Risque potentiel", "Risque avéré"}
 
@@ -199,30 +199,45 @@ ANALYSIS_FRESHNESS_ORDER = [
     "> 90 jours",
     "Sans date",
 ]
-ANALYSIS_CONCENTRATION_STATUS_COLUMNS = [
-    ("Risque avéré", "% avéré"),
-    ("Risque potentiel", "% potentiel"),
-    ("Risque mitigé", "% mitigé"),
-    ("Risque levé", "% levé"),
-    ("Non calculable", "% NC"),
-    ("Aucun risque détecté", "% sans risque"),
+ANALYSIS_TOP_STATUS_SPECS = [
+    ("Risque avéré", "Nb avéré", "% avéré"),
+    ("Risque potentiel", "Nb potentiel", "% potentiel"),
+    ("Risque mitigé", "Nb mitigé", "% mitigé"),
+    ("Risque levé", "Nb levé", "% levé"),
+    ("Non calculable", "Nb NC", "% NC"),
+    ("Aucun risque détecté", "Nb sans risque", "% sans risque"),
 ]
-ANALYSIS_CONCENTRATION_SORT_OPTIONS = [
-    "% clients",
-    "% cas",
+ANALYSIS_TOP_SORT_OPTIONS = [
+    "Nb",
+    "%",
+    "Nb avéré",
     "% avéré",
+    "Nb potentiel",
     "% potentiel",
+    "Nb mitigé",
     "% mitigé",
+    "Nb levé",
     "% levé",
+    "Nb NC",
     "% NC",
+    "Nb sans risque",
     "% sans risque",
 ]
-ANALYSIS_CONCENTRATION_AXIS_CONFIG = [
-    ("Top segments", "Segment", "Segment", "Segment / Client"),
-    ("Top pays", "Pays de résidence", "Pays", "Indicateurs Pays"),
-    ("Top produits", "Produit(service) principal", "Produit", "Indicateurs Produits"),
-    ("Top canaux", "Canal d’opérations principal 12 mois", "Canal", "Indicateurs Canal"),
+ANALYSIS_TOP_AXIS_CONFIG = [
+    ("Top segment / client", "Segment / Client", "segment_client"),
+    ("Top pays", "Indicateurs Pays", "pays"),
+    ("Top produits", "Indicateurs Produits", "produits"),
+    ("Top canaux", "Indicateurs Canal", "canaux"),
 ]
+ANALYSIS_TOP_PERCENT_STYLE = {
+    "%": {"base": "#5E8FC7", "text": "#163A59"},
+    "% avéré": {"base": "#D92D20", "text": "#7A271A"},
+    "% potentiel": {"base": "#F79009", "text": "#8A4B00"},
+    "% mitigé": {"base": "#22C55E", "text": "#166534"},
+    "% levé": {"base": "#16A34A", "text": "#14532D"},
+    "% NC": {"base": "#94A3B8", "text": "#475569"},
+    "% sans risque": {"base": "#16A34A", "text": "#14532D"},
+}
 ANALYSIS_INDICATOR_FAMILY_EXACT = {
     "Segment / Client": {
         "ppe",
@@ -240,11 +255,14 @@ ANALYSIS_INDICATOR_FAMILY_EXACT = {
         "eu",
         "fr",
         "france",
+        "bale",
+        "bâle",
+        "basel",
     },
 }
 ANALYSIS_INDICATOR_FAMILY_KEYWORDS = {
     "Indicateurs Pays": [
-        "gafi", "fatf", "ue", "eu", "fr", "france", "pays", "geo", "géograph",
+        "gafi", "fatf", "ue", "eu", "fr", "france", "bale", "bâle", "basel", "pays", "geo", "géograph",
         "geograph", "jurid", "territoire", "sanction", "cross border", "cross-border",
         "residence", "résidence", "nationalite", "nationalité", "offshore",
     ],
@@ -8276,104 +8294,160 @@ def render_analysis_repartition(indicator_df: pd.DataFrame) -> None:
         render_small_table(format_table_for_display(build_analysis_freshness_distribution(indicator_df)))
 
 
-def build_analysis_concentration_table(
+def _format_analysis_top_cell(value: object, column_name: str) -> str:
+    if value is None or (isinstance(value, float) and np.isnan(value)) or pd.isna(value):
+        return ""
+    if isinstance(value, (int, float, np.number)) and str(column_name).startswith("%"):
+        return f"{float(value):.1%}".replace(".", ",")
+    if isinstance(value, (int, np.integer)) or (isinstance(value, float) and float(value).is_integer()):
+        return f"{int(value):,}".replace(",", " ")
+    return escape(str(value))
+
+
+def analysis_top_cell_style(column_name: str, value: object) -> str:
+    if str(column_name) not in ANALYSIS_TOP_PERCENT_STYLE:
+        return ""
+    try:
+        share_value = float(value)
+    except Exception:
+        return ""
+    if not np.isfinite(share_value) or share_value <= 0:
+        return ""
+    style_meta = ANALYSIS_TOP_PERCENT_STYLE[str(column_name)]
+    red, green, blue = _hex_to_rgb(style_meta["base"])
+    intensity = min(max(share_value, 0.0) / 0.40, 1.0)
+    start_alpha = 0.08 + 0.14 * intensity
+    end_alpha = 0.18 + 0.36 * intensity
+    border_alpha = 0.14 + 0.30 * intensity
+    return (
+        f"background: linear-gradient(90deg, rgba({red}, {green}, {blue}, {start_alpha:.3f}), rgba({red}, {green}, {blue}, {end_alpha:.3f}));"
+        f" color:{style_meta['text']}; font-weight:700;"
+        f" box-shadow: inset 0 0 0 1px rgba({red}, {green}, {blue}, {border_alpha:.3f});"
+    )
+
+
+def _build_analysis_top_table_html(df: pd.DataFrame) -> str:
+    html = ["<div class='cm-mini-table-wrap' style='overflow-x: auto; overflow-y: hidden;'><table class='cm-mini-table'><thead><tr>"]
+    for col in df.columns:
+        html.append(f"<th>{escape(str(col))}</th>")
+    html.append("</tr></thead><tbody>")
+
+    for _, row in df.iterrows():
+        html.append("<tr>")
+        for col in df.columns:
+            value = row[col]
+            classes = []
+            if pd.api.types.is_number(value) and not isinstance(value, bool):
+                classes.append("cm-number")
+            class_attr = f" class='{' '.join(classes)}'" if classes else ""
+            style = analysis_top_cell_style(str(col), value)
+            style_attr = f" style='{style}'" if style else ""
+            rendered = _format_analysis_top_cell(value, str(col))
+            html.append(f"<td{class_attr}{style_attr}>{rendered}</td>")
+        html.append("</tr>")
+    html.append("</tbody></table></div>")
+    return "".join(html)
+
+
+if hasattr(st, "dialog"):
+    @st.dialog("Vue agrandie", width="large", icon=":material/open_in_full:")
+    def show_analysis_top_dialog(title: str, df: pd.DataFrame) -> None:
+        st.markdown(f'<div class="cm-subsection-title">{escape(title)}</div>', unsafe_allow_html=True)
+        if df is None or df.empty:
+            st.info("Aucune donnée à afficher.")
+            return
+        st.markdown(_build_analysis_top_table_html(df), unsafe_allow_html=True)
+else:
+    def show_analysis_top_dialog(title: str, df: pd.DataFrame) -> None:
+        st.info("La vue agrandie nécessite une version plus récente de Streamlit prenant en charge st.dialog.")
+
+
+def render_analysis_top_block(title: str, df: pd.DataFrame, *, dialog_key: str | None = None) -> None:
+    title_col, action_col = st.columns([6.4, 0.8])
+    with title_col:
+        st.markdown(f'<h3 class="cm-section-title" style="white-space: nowrap; margin-bottom: 0;">{escape(title)}</h3>', unsafe_allow_html=True)
+    with action_col:
+        st.markdown("<div style='height: 0.10rem;'></div>", unsafe_allow_html=True)
+        if dialog_key and st.button(
+            " ",
+            key=f"analysis_expand_{dialog_key}",
+            type="tertiary",
+            icon=":material/open_in_full:",
+            width="content",
+            help="Ouvrir ce tableau dans une vue agrandie, sans modifier l'écran principal.",
+        ):
+            show_analysis_top_dialog(title, df)
+
+    if df is None or df.empty:
+        st.info("Aucune donnée à afficher.")
+        return
+
+    st.markdown(_build_analysis_top_table_html(df), unsafe_allow_html=True)
+
+
+def build_analysis_indicator_top_table(
     indicator_df: pd.DataFrame,
-    analysis_client_scope: pd.DataFrame,
     *,
-    group_col: str,
-    group_label: str,
     family_label: str,
-    top_n: int = 5,
-    sort_mode: str = "% clients",
+    sort_mode: str = "Nb",
 ) -> pd.DataFrame:
-    output_columns = [
-        group_label,
-        "Clients",
-        "Cas",
-        "% clients",
-        "% cas",
-        "% avéré",
-        "% potentiel",
-        "% mitigé",
-        "% levé",
-        "% NC",
-        "% sans risque",
-        "Indicateurs associés",
-    ]
-    if indicator_df is None or indicator_df.empty or group_col not in indicator_df.columns:
+    output_columns = ["Indicateurs", "Nb", "%"]
+    for _, count_col, pct_col in ANALYSIS_TOP_STATUS_SPECS:
+        output_columns.extend([count_col, pct_col])
+
+    if indicator_df is None or indicator_df.empty:
         return pd.DataFrame(columns=output_columns)
 
     scoped = indicator_df[indicator_df["Famille indicateur"].astype(str) == family_label].copy()
     if scoped.empty:
         return pd.DataFrame(columns=output_columns)
 
-    scoped[group_col] = normalize_analysis_category(scoped[group_col])
-    total_clients = int(build_unique_client_snapshot(analysis_client_scope).shape[0]) if isinstance(analysis_client_scope, pd.DataFrame) else 0
+    scoped["Indicateur"] = scoped["Indicateur"].astype(str).str.strip().replace({"": "Non renseigné"})
+    grouped = scoped.groupby("Indicateur", dropna=False).size().reset_index(name="Nb")
     total_cases = int(len(scoped))
+    grouped["%"] = grouped["Nb"].div(total_cases if total_cases else np.nan).fillna(0.0)
 
-    grouped = scoped.groupby(group_col, dropna=False).agg(Clients=("cm_client_key", "nunique"), Cas=("Indicateur", "size")).reset_index()
-    grouped["% clients"] = grouped["Clients"].div(total_clients if total_clients else np.nan).fillna(0.0)
-    grouped["% cas"] = grouped["Cas"].div(total_cases if total_cases else np.nan).fillna(0.0)
-
-    for status, column_name in ANALYSIS_CONCENTRATION_STATUS_COLUMNS:
-        status_counts = scoped.loc[scoped["Statut"].astype(str) == status].groupby(group_col, dropna=False).size()
+    for status, count_col, pct_col in ANALYSIS_TOP_STATUS_SPECS:
+        status_counts = scoped.loc[scoped["Statut"].astype(str) == status].groupby("Indicateur", dropna=False).size()
         denominator = int(status_counts.sum())
-        grouped[column_name] = grouped[group_col].map(status_counts).fillna(0).astype(float)
-        grouped[column_name] = grouped[column_name].div(denominator if denominator else np.nan).fillna(0.0)
+        grouped[count_col] = grouped["Indicateur"].map(status_counts).fillna(0).astype(int)
+        grouped[pct_col] = grouped["Indicateur"].map(status_counts).fillna(0).astype(float)
+        grouped[pct_col] = grouped[pct_col].div(denominator if denominator else np.nan).fillna(0.0)
 
-    indicator_counts = (
-        scoped.groupby([group_col, "Indicateur"], dropna=False)
-        .size()
-        .reset_index(name="Cas")
-        .sort_values([group_col, "Cas", "Indicateur"], ascending=[True, False, True], kind="stable")
-    )
-    indicator_map: dict[str, str] = {}
-    for group_value, local in indicator_counts.groupby(group_col, sort=False):
-        labels = [str(value) for value in local["Indicateur"].head(3).tolist() if str(value).strip()]
-        indicator_map[str(group_value)] = " · ".join(labels)
+    grouped = grouped.rename(columns={"Indicateur": "Indicateurs"})
 
-    grouped["Indicateurs associés"] = grouped[group_col].astype(str).map(indicator_map).fillna("")
-    grouped = grouped.rename(columns={group_col: group_label})
-
-    sort_column = str(sort_mode or "% clients")
+    sort_column = str(sort_mode or "Nb")
     if sort_column not in grouped.columns:
-        sort_column = "% clients"
-    grouped = grouped.sort_values([sort_column, "Cas", group_label], ascending=[False, False, True], kind="stable")
-    return grouped[output_columns].head(top_n).reset_index(drop=True)
+        sort_column = "Nb"
+    grouped = grouped.sort_values([sort_column, "Nb", "Indicateurs"], ascending=[False, False, True], kind="stable")
+    return grouped[output_columns].reset_index(drop=True)
 
 
-def render_analysis_concentrations(indicator_df: pd.DataFrame, analysis_client_scope: pd.DataFrame) -> None:
+def render_analysis_concentrations(indicator_df: pd.DataFrame, analysis_client_scope: pd.DataFrame | None = None) -> None:
     render_analysis_panel_header(
         "Concentrations",
-        "Chaque top utilise uniquement la famille d’indicateurs rattachée à son axe : Segment / Client, Pays, Produits, Canal.",
+        "Chaque tableau top regroupe l’ensemble des indicateurs de la famille concernée. Les pourcentages sont calculés au sein de la famille et, pour chaque statut, au sein du total de ce statut.",
     )
     sort_mode = st.selectbox(
-        "Trier les concentrations par",
-        options=ANALYSIS_CONCENTRATION_SORT_OPTIONS,
-        index=ANALYSIS_CONCENTRATION_SORT_OPTIONS.index(st.session_state.get("analysis_concentration_sort_mode", "% clients")) if st.session_state.get("analysis_concentration_sort_mode", "% clients") in ANALYSIS_CONCENTRATION_SORT_OPTIONS else 0,
-        key="analysis_concentration_sort_mode",
+        "Trier les tableaux top par",
+        options=ANALYSIS_TOP_SORT_OPTIONS,
+        index=ANALYSIS_TOP_SORT_OPTIONS.index(st.session_state.get("analysis_top_sort_mode", "Nb")) if st.session_state.get("analysis_top_sort_mode", "Nb") in ANALYSIS_TOP_SORT_OPTIONS else 0,
+        key="analysis_top_sort_mode",
     )
 
     row_one_left, row_one_right = st.columns(2)
     row_two_left, row_two_right = st.columns(2)
     containers = [row_one_left, row_one_right, row_two_left, row_two_right]
-    for container, config in zip(containers, ANALYSIS_CONCENTRATION_AXIS_CONFIG):
-        title, group_col, group_label, family_label = config
+    for container, config in zip(containers, ANALYSIS_TOP_AXIS_CONFIG):
+        title, family_label, dialog_key = config
         with container:
-            st.markdown(f"<div class='cm-table-panel-title'>{escape(title)}</div>", unsafe_allow_html=True)
-            st.caption(f"Famille mobilisée : {family_label}.")
-            table = build_analysis_concentration_table(
+            table = build_analysis_indicator_top_table(
                 indicator_df,
-                analysis_client_scope,
-                group_col=group_col,
-                group_label=group_label,
                 family_label=family_label,
                 sort_mode=sort_mode,
             )
-            if table.empty:
-                st.info("Aucune concentration exploitable sur ce périmètre.")
-            else:
-                render_small_table(format_table_for_display(table), scroll_x=True)
+            render_analysis_top_block(title, table, dialog_key=dialog_key)
+
 
 def build_indicator_analysis_table(indicator_scope: pd.DataFrame) -> pd.DataFrame:
     columns = ["Indicateur"] + ANALYSIS_STATUS_ORDER + ["Total cas"]
@@ -9034,7 +9108,7 @@ def render_analysis_screen(portfolio: pd.DataFrame, indicators: pd.DataFrame) ->
                 "analysis_filter_indicator_status",
                 "analysis_filter_indicator_family",
                 "analysis_filter_indicator_freshness",
-                "analysis_concentration_sort_mode",
+                "analysis_top_sort_mode",
             ]:
                 st.session_state.pop(key, None)
             clear_analysis_focus()
@@ -9140,9 +9214,6 @@ def render_analysis_screen(portfolio: pd.DataFrame, indicators: pd.DataFrame) ->
             st.info("Aucune dimension détaillée à afficher sur le périmètre sélectionné.")
         elif display_analysis_table.empty:
             st.info("Aucune ligne ne correspond aux contrôles intégrés du tableau d’analyse.")
-
-    st.divider()
-    render_analysis_review_dates_from_base(analysis_client_scope)
 
     st.divider()
     st.markdown("<div id='clients-sous-jacents'></div>", unsafe_allow_html=True)
