@@ -4963,6 +4963,7 @@ def build_priority_table(df: pd.DataFrame, top_n: int = 10) -> pd.DataFrame:
 
     columns = [
         SOC_COL,
+        "SIREN",
         "Vigilance",
         "Risque",
         "Segment",
