@@ -4955,16 +4955,23 @@ def build_priority_table(df: pd.DataFrame, top_n: int = 10) -> pd.DataFrame:
         .head(top_n)
         .copy()
     )
+    return build_portfolio_underlying_table(priority, include_hidden_societe=True)
 
-    if "Vigilance" in priority.columns:
-        priority["Vigilance"] = priority["Vigilance"].apply(lambda value: strip_leading_status_prefix(value, "Vigilance"))
-    if "Risque" in priority.columns:
-        priority["Risque"] = priority["Risque"].apply(lambda value: strip_leading_status_prefix(value, "Risque"))
 
-    if SOC_COL in priority.columns:
-        priority["__societe_id"] = priority[SOC_COL]
+def build_portfolio_underlying_table(df: pd.DataFrame, *, include_hidden_societe: bool = True) -> pd.DataFrame:
+    table = df.copy()
+    if table is None or table.empty:
+        return table
 
-    columns = [
+    if "Vigilance" in table.columns:
+        table["Vigilance"] = table["Vigilance"].apply(lambda value: strip_leading_status_prefix(value, "Vigilance"))
+    if "Risque" in table.columns:
+        table["Risque"] = table["Risque"].apply(lambda value: strip_leading_status_prefix(value, "Risque"))
+
+    if include_hidden_societe and SOC_COL in table.columns:
+        table["__societe_id"] = table[SOC_COL]
+
+    preferred = [
         "SIREN",
         "Dénomination",
         "Vigilance",
@@ -4973,10 +4980,13 @@ def build_priority_table(df: pd.DataFrame, top_n: int = 10) -> pd.DataFrame:
         "Pays de résidence",
         "Produit(service) principal",
         "Canal d’opérations principal 12 mois",
-        "__societe_id",
     ]
-    columns = [c for c in columns if c in priority.columns]
-    return priority[columns].rename(
+    technical = ["__societe_id"] if "__societe_id" in table.columns else []
+    excluded = {SOC_COL, *technical}
+    remaining = [c for c in table.columns if c not in preferred and c not in excluded]
+    columns = [c for c in preferred if c in table.columns] + remaining + technical
+
+    return table[columns].rename(
         columns={
             "Pays de résidence": "Pays",
             "Produit(service) principal": "Produit",
@@ -8109,7 +8119,17 @@ def main() -> None:
     )
 
     with st.expander("Aperçu des données sous-jacentes filtrées"):
-        render_clickable_styled_dataframe(style_dataframe(filtered[export_columns]), filtered[export_columns], use_container_width=True, height=420, hide_index=True, key_prefix="filtered_table")
+        filtered_display_df = build_portfolio_underlying_table(filtered[export_columns], include_hidden_societe=True)
+        render_clickable_styled_dataframe(
+            style_dataframe(filtered_display_df),
+            filtered_display_df,
+            use_container_width=True,
+            height=420,
+            hide_index=True,
+            key_prefix="filtered_table",
+            preserve_order=True,
+            auto_size_columns=True,
+        )
 
 
 
