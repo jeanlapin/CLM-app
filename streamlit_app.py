@@ -5307,12 +5307,7 @@ def concentration_cell_style(column_name: str, value: object, client_share: floa
     )
 
 
-def render_top_block(title: str, df: pd.DataFrame) -> None:
-    st.markdown(f'<h3 class="cm-section-title">{escape(title)}</h3>', unsafe_allow_html=True)
-    if df is None or df.empty:
-        st.info("Aucune donnée à afficher.")
-        return
-
+def _build_concentration_table_html(df: pd.DataFrame) -> str:
     html = ["<div class='cm-mini-table-wrap' style='overflow-x: auto; overflow-y: hidden;'><table class='cm-mini-table'><thead><tr>"]
     for col in df.columns:
         html.append(f"<th>{escape(str(col))}</th>")
@@ -5333,7 +5328,44 @@ def render_top_block(title: str, df: pd.DataFrame) -> None:
             html.append(f"<td{class_attr}{style_attr}>{rendered}</td>")
         html.append("</tr>")
     html.append("</tbody></table></div>")
-    st.markdown("".join(html), unsafe_allow_html=True)
+    return "".join(html)
+
+
+if hasattr(st, "dialog"):
+    @st.dialog("Vue agrandie", width="large", icon=":material/open_in_full:")
+    def show_concentration_top_dialog(title: str, df: pd.DataFrame) -> None:
+        st.caption("Même tableau qu'à l'écran, affiché dans une modale large pour faciliter la lecture horizontale.")
+        st.markdown(f'<div class="cm-subsection-title">{escape(title)}</div>', unsafe_allow_html=True)
+        if df is None or df.empty:
+            st.info("Aucune donnée à afficher.")
+            return
+        st.markdown(_build_concentration_table_html(df), unsafe_allow_html=True)
+else:
+    def show_concentration_top_dialog(title: str, df: pd.DataFrame) -> None:
+        st.info("La vue agrandie nécessite une version plus récente de Streamlit prenant en charge st.dialog.")
+
+
+def render_top_block(title: str, df: pd.DataFrame, *, dialog_key: str | None = None) -> None:
+    title_col, action_col = st.columns([3.2, 1.2])
+    with title_col:
+        st.markdown(f'<h3 class="cm-section-title">{escape(title)}</h3>', unsafe_allow_html=True)
+    with action_col:
+        st.markdown("<div style='height: 0.20rem;'></div>", unsafe_allow_html=True)
+        if dialog_key and st.button(
+            "Agrandir",
+            key=f"cm_expand_{dialog_key}",
+            type="tertiary",
+            icon=":material/open_in_full:",
+            width="content",
+            help="Ouvrir ce tableau dans une vue agrandie, sans modifier l'écran principal.",
+        ):
+            show_concentration_top_dialog(title, df)
+
+    if df is None or df.empty:
+        st.info("Aucune donnée à afficher.")
+        return
+
+    st.markdown(_build_concentration_table_html(df), unsafe_allow_html=True)
 
 
 def render_alert_block(title: str, df: pd.DataFrame) -> None:
@@ -7991,15 +8023,20 @@ def main() -> None:
     else:
         st.caption("Tri actif : lecture métier des risques, de la plus sensible à la plus favorable (Avéré → Potentiel → Non calculable → Mitigé → Levé → Aucun).")
 
+    top_segments_df = build_concentration_top_table(filtered, "Segment", "Segment", sort_mode=concentration_sort)
+    top_pays_df = build_concentration_top_table(filtered, "Pays de résidence", "Pays", sort_mode=concentration_sort)
+    top_produits_df = build_concentration_top_table(filtered, "Produit(service) principal", "Produit", sort_mode=concentration_sort)
+    top_canaux_df = build_concentration_top_table(filtered, "Canal d’opérations principal 12 mois", "Canal", sort_mode=concentration_sort)
+
     t1, t2, t3, t4 = st.columns(4)
     with t1:
-        render_top_block("Top segments", build_concentration_top_table(filtered, "Segment", "Segment", sort_mode=concentration_sort))
+        render_top_block("Top segments", top_segments_df, dialog_key="segments")
     with t2:
-        render_top_block("Top pays", build_concentration_top_table(filtered, "Pays de résidence", "Pays", sort_mode=concentration_sort))
+        render_top_block("Top pays", top_pays_df, dialog_key="pays")
     with t3:
-        render_top_block("Top produits", build_concentration_top_table(filtered, "Produit(service) principal", "Produit", sort_mode=concentration_sort))
+        render_top_block("Top produits", top_produits_df, dialog_key="produits")
     with t4:
-        render_top_block("Top canaux", build_concentration_top_table(filtered, "Canal d’opérations principal 12 mois", "Canal", sort_mode=concentration_sort))
+        render_top_block("Top canaux", top_canaux_df, dialog_key="canaux")
 
     st.caption("Lecture des concentrations : % clients = poids du groupe dans le portefeuille filtré. Chaque % de statut mesure le poids du groupe dans le total de ce statut ; la cellule se colore uniquement quand ce poids dépasse le % clients. Rouge / orange = statuts sensibles surreprésentés, vert = statuts favorables surreprésentés, ambre / gris = statuts intermédiaires ou non calculables.")
 
