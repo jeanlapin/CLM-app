@@ -83,6 +83,7 @@ RISK_ORDER = [
     "Aucun risque détecté",
 ]
 
+BASE_RISK_SOURCE_COLUMN = "Statut de risque (import SaaS source)"
 CRITICAL_VIGILANCE = {"Vigilance Élevée", "Vigilance Critique"}
 PRIORITY_RISK = {"Risque potentiel", "Risque avéré"}
 
@@ -4664,7 +4665,7 @@ def load_source_data() -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
                 "Flag justificatif complet",
                 "Analyste",
                 "Valideur",
-                "Statut de risque (import SaaS source)",
+                BASE_RISK_SOURCE_COLUMN,
             ],
         ),
         (indicators, ["Vigilance statut", "Cash intensité Statut"]),
@@ -4673,9 +4674,9 @@ def load_source_data() -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
             if col in frame.columns:
                 frame[col] = clean_text_column(frame[col])
 
-    if "Statut de risque (import SaaS source)" in base.columns:
-        base["Statut de risque (import SaaS source)"] = (
-            base["Statut de risque (import SaaS source)"]
+    if BASE_RISK_SOURCE_COLUMN in base.columns:
+        base[BASE_RISK_SOURCE_COLUMN] = (
+            base[BASE_RISK_SOURCE_COLUMN]
             .apply(canonical_risk_label)
             .replace({"": pd.NA})
             .astype("string")
@@ -4689,7 +4690,7 @@ def load_source_data() -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
             .astype("string")
         )
 
-    for col in status_columns(indicators):
+    for col in indicator_status_columns(indicators):
         if col in indicators.columns:
             indicators[col] = (
                 indicators[col]
@@ -4701,15 +4702,20 @@ def load_source_data() -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     return base, indicators, history
 
 
-def status_columns(indicators_df: pd.DataFrame) -> list[str]:
-    cols = [c for c in indicators_df.columns if re.search(r"(?i)\\bstatut\\b", c)]
+def indicator_status_columns(indicators_df: pd.DataFrame) -> list[str]:
+    cols = [c for c in indicators_df.columns if re.search(r"(?i)\bstatut\b", c)]
     return [c for c in cols if c != "Vigilance statut"]
+
+
+def indicator_risk_breakdown_columns(indicators_df: pd.DataFrame) -> list[str]:
+    excluded = {"Cash intensité Statut", BASE_RISK_SOURCE_COLUMN}
+    return [c for c in indicator_status_columns(indicators_df) if c not in excluded]
 
 
 def build_portfolio_dataset() -> pd.DataFrame:
     base, indicators, history = load_source_data()
 
-    ind_status_cols = status_columns(indicators)
+    ind_status_cols = indicator_risk_breakdown_columns(indicators)
     indicator_cols = [
         SOC_COL,
         "SIREN",
@@ -4726,7 +4732,7 @@ def build_portfolio_dataset() -> pd.DataFrame:
     portfolio["Nb historique"] = portfolio["Nb historique"].fillna(0).astype(int)
 
     portfolio["Vigilance"] = portfolio.get("Vigilance statut")
-    portfolio["Risque"] = portfolio.get("Statut de risque (import SaaS source)")
+    portfolio["Risque"] = portfolio.get(BASE_RISK_SOURCE_COLUMN, pd.Series(index=portfolio.index, dtype="string"))
 
     for label in ["Risque avéré", "Risque potentiel", "Risque mitigé", "Risque levé", "Non calculable"]:
         portfolio[f"Nb {label}"] = portfolio[ind_status_cols].eq(label).sum(axis=1) if ind_status_cols else 0
