@@ -175,6 +175,91 @@ FILTER_MAPPING = {
     "Valideur": "Valideur",
 }
 
+ANALYSIS_STATUS_ORDER = list(RISK_ORDER)
+ANALYSIS_STATUS_DISPLAY = {
+    "Aucun risque détecté": "Sans risque",
+}
+ANALYSIS_STATUS_SHORT_LABELS = {
+    "Risque avéré": "Avéré",
+    "Risque potentiel": "Potentiel",
+    "Risque mitigé": "Mitigé",
+    "Risque levé": "Levé",
+    "Non calculable": "Non calc.",
+    "Aucun risque détecté": "Sans risque",
+}
+ANALYSIS_FAMILY_ORDER = [
+    "Segment / Client",
+    "Indicateurs Pays",
+    "Indicateurs Produits",
+    "Indicateurs Canal",
+]
+ANALYSIS_FRESHNESS_ORDER = [
+    "< 30 jours",
+    "30 à 90 jours",
+    "> 90 jours",
+    "Sans date",
+]
+ANALYSIS_CONCENTRATION_STATUS_COLUMNS = [
+    ("Risque avéré", "% avéré"),
+    ("Risque potentiel", "% potentiel"),
+    ("Risque mitigé", "% mitigé"),
+    ("Risque levé", "% levé"),
+    ("Non calculable", "% NC"),
+    ("Aucun risque détecté", "% sans risque"),
+]
+ANALYSIS_CONCENTRATION_SORT_OPTIONS = [
+    "% clients",
+    "% cas",
+    "% avéré",
+    "% potentiel",
+    "% mitigé",
+    "% levé",
+    "% NC",
+    "% sans risque",
+]
+ANALYSIS_CONCENTRATION_AXIS_CONFIG = [
+    ("Top segments", "Segment", "Segment", "Segment / Client"),
+    ("Top pays", "Pays de résidence", "Pays", "Indicateurs Pays"),
+    ("Top produits", "Produit(service) principal", "Produit", "Indicateurs Produits"),
+    ("Top canaux", "Canal d’opérations principal 12 mois", "Canal", "Indicateurs Canal"),
+]
+ANALYSIS_INDICATOR_FAMILY_EXACT = {
+    "Segment / Client": {
+        "ppe",
+        "pep",
+        "gel des avoirs",
+        "media negatifs",
+        "médias négatifs",
+        "media negatif",
+        "média négatif",
+    },
+    "Indicateurs Pays": {
+        "gafi",
+        "fatf",
+        "ue",
+        "eu",
+        "fr",
+        "france",
+    },
+}
+ANALYSIS_INDICATOR_FAMILY_KEYWORDS = {
+    "Indicateurs Pays": [
+        "gafi", "fatf", "ue", "eu", "fr", "france", "pays", "geo", "géograph",
+        "geograph", "jurid", "territoire", "sanction", "cross border", "cross-border",
+        "residence", "résidence", "nationalite", "nationalité", "offshore",
+    ],
+    "Indicateurs Produits": [
+        "produit", "service", "cash", "especes", "espèces", "virement", "transfert", "carte",
+        "compte", "wallet", "crypto", "instrument", "cheque", "chèque", "prelevement",
+        "prélèvement", "depot", "dépôt", "mandat",
+    ],
+    "Indicateurs Canal": [
+        "canal", "distance", "digital", "intermedia", "intermédia", "apporteur", "correspondance",
+        "correspondant", "online", "web", "mobile", "agence", "face a face", "face-à-face",
+        "onboarding", "on boarding", "souscription",
+    ],
+}
+
 DISPLAY_COLUMNS = [
     "SIREN",
     "Dénomination",
@@ -2277,6 +2362,56 @@ def canonical_risk_label(value: object) -> str:
     return ""
 
 
+
+
+def analysis_status_ui_label(value: object) -> str:
+    status = canonical_risk_label(value) or ("" if value is None or pd.isna(value) else str(value).strip())
+    return ANALYSIS_STATUS_DISPLAY.get(status, status)
+
+
+def analysis_status_short_label(value: object) -> str:
+    status = canonical_risk_label(value) or ("" if value is None or pd.isna(value) else str(value).strip())
+    return ANALYSIS_STATUS_SHORT_LABELS.get(status, status)
+
+
+def analysis_indicator_matches_keyword(normalized_text: str, keyword: str) -> bool:
+    keyword_norm = normalize_text_for_matching(keyword)
+    if not keyword_norm:
+        return False
+    if re.fullmatch(r"[a-z0-9]{1,4}", keyword_norm):
+        tokens = [token for token in re.split(r"[^a-z0-9]+", normalized_text) if token]
+        return keyword_norm in tokens
+    return keyword_norm in normalized_text
+
+
+def classify_analysis_indicator_family(indicator_name: object) -> str:
+    normalized = normalize_text_for_matching(indicator_name)
+    if not normalized:
+        return "Segment / Client"
+
+    for family, exact_values in ANALYSIS_INDICATOR_FAMILY_EXACT.items():
+        normalized_exact = {normalize_text_for_matching(item) for item in exact_values}
+        if normalized in normalized_exact:
+            return family
+
+    for family, keywords in ANALYSIS_INDICATOR_FAMILY_KEYWORDS.items():
+        if any(analysis_indicator_matches_keyword(normalized, keyword) for keyword in keywords):
+            return family
+
+    return "Segment / Client"
+
+
+def analysis_freshness_bucket(value: object) -> str:
+    date_value = pd.to_datetime(value, errors="coerce")
+    if pd.isna(date_value):
+        return "Sans date"
+    today = pd.Timestamp.utcnow().tz_localize(None).normalize()
+    age_days = max(int((today - date_value.normalize()).days), 0)
+    if age_days < 30:
+        return "< 30 jours"
+    if age_days <= 90:
+        return "30 à 90 jours"
+    return "> 90 jours"
 def gemini_review_response_schema() -> dict[str, object]:
     return {
         "type": "object",
@@ -7934,31 +8069,334 @@ def normalize_indicators_current(indicators_df: pd.DataFrame) -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
-def build_indicator_analysis_table(filtered_portfolio: pd.DataFrame, indicators_df: pd.DataFrame) -> pd.DataFrame:
+def build_analysis_indicator_dataset(filtered_portfolio: pd.DataFrame, indicators_df: pd.DataFrame) -> pd.DataFrame:
+    base_columns = [
+        SOC_COL,
+        "SIREN",
+        "Dénomination",
+        "Indicateur",
+        "Statut",
+        "Valeur",
+        "Date de mise à jour",
+        "Commentaire",
+        "Vigilance",
+        "Risque",
+        "Statut EDD",
+        "Segment",
+        "Pays de résidence",
+        "Produit(service) principal",
+        "Canal d’opérations principal 12 mois",
+        "Analyste",
+        "Valideur",
+        "Date dernière revue",
+        "Date prochaine revue",
+        "Vigilance Date de mise à jour",
+        "Famille indicateur",
+        "Fraîcheur indicateur",
+        "cm_client_key",
+    ]
+    if filtered_portfolio is None or filtered_portfolio.empty:
+        return pd.DataFrame(columns=base_columns)
+
     normalized = normalize_indicators_current(indicators_df)
-    columns = ["Indicateur", "Risque avéré", "Risque potentiel", "Risque mitigé", "Non calculable", "Total cas"]
     if normalized.empty:
+        return pd.DataFrame(columns=base_columns)
+
+    portfolio_join_columns = [
+        SOC_COL,
+        "SIREN",
+        "Vigilance",
+        "Risque",
+        "Statut EDD",
+        "Segment",
+        "Pays de résidence",
+        "Produit(service) principal",
+        "Canal d’opérations principal 12 mois",
+        "Analyste",
+        "Valideur",
+        "Date dernière revue",
+        "Date prochaine revue",
+        "Vigilance Date de mise à jour",
+    ]
+    portfolio_join_columns = [col for col in portfolio_join_columns if col in filtered_portfolio.columns]
+    client_scope = build_unique_client_snapshot(filtered_portfolio, portfolio_join_columns)
+    merged = normalized.merge(
+        client_scope.drop(columns=["cm_client_key"], errors="ignore"),
+        how="inner",
+        on=[col for col in [SOC_COL, "SIREN"] if col in client_scope.columns],
+    )
+    if merged.empty:
+        return pd.DataFrame(columns=base_columns)
+
+    merged["Statut"] = merged["Statut"].apply(lambda value: canonical_risk_label(value) or ("" if value is None or pd.isna(value) else str(value).strip()))
+    merged["Date de mise à jour"] = pd.to_datetime(merged.get("Date de mise à jour"), errors="coerce")
+    merged["Famille indicateur"] = merged["Indicateur"].apply(classify_analysis_indicator_family)
+    merged["Fraîcheur indicateur"] = merged["Date de mise à jour"].apply(analysis_freshness_bucket)
+    merged["cm_client_key"] = merged[SOC_COL].astype(str).str.strip() + "|" + merged["SIREN"].astype(str).str.strip()
+
+    for column_name in base_columns:
+        if column_name not in merged.columns:
+            merged[column_name] = pd.NA
+    return merged[base_columns].copy()
+
+
+def apply_analysis_indicator_filters(indicator_df: pd.DataFrame, filters: dict[str, object]) -> pd.DataFrame:
+    if indicator_df is None or indicator_df.empty:
+        return indicator_df
+
+    work = indicator_df.copy()
+    indicator_value = str(filters.get("Indicateur", "Tous") or "Tous")
+    if indicator_value != "Tous":
+        work = work[work["Indicateur"].astype(str) == indicator_value]
+
+    status_value = str(filters.get("Statut", "Tous") or "Tous")
+    if status_value != "Tous":
+        canonical_status = canonical_risk_label(status_value) or status_value
+        work = work[work["Statut"].astype(str) == canonical_status]
+
+    family_value = str(filters.get("Famille", "Tous") or "Tous")
+    if family_value != "Tous":
+        work = work[work["Famille indicateur"].astype(str) == family_value]
+
+    freshness_value = str(filters.get("Fraîcheur", "Tous") or "Tous")
+    if freshness_value != "Tous":
+        work = work[work["Fraîcheur indicateur"].astype(str) == freshness_value]
+
+    return work.reset_index(drop=True)
+
+
+def build_analysis_client_scope(filtered_portfolio: pd.DataFrame, indicator_df: pd.DataFrame) -> pd.DataFrame:
+    if filtered_portfolio is None or filtered_portfolio.empty or indicator_df is None or indicator_df.empty:
+        return filtered_portfolio.iloc[0:0].copy() if isinstance(filtered_portfolio, pd.DataFrame) else pd.DataFrame()
+    keys = indicator_df[[SOC_COL, "SIREN"]].drop_duplicates()
+    return filtered_portfolio.merge(keys, how="inner", on=[SOC_COL, "SIREN"]).reset_index(drop=True)
+
+
+def build_analysis_status_distribution(indicator_df: pd.DataFrame) -> pd.DataFrame:
+    rows = []
+    total_cases = int(len(indicator_df)) if indicator_df is not None else 0
+    series = indicator_df.get("Statut", pd.Series(dtype="object")) if indicator_df is not None else pd.Series(dtype="object")
+    for status in ANALYSIS_STATUS_ORDER:
+        count_value = int(series.astype(str).eq(status).sum()) if not series.empty else 0
+        rows.append({"Statut": analysis_status_ui_label(status), "Cas": count_value, "%": (count_value / total_cases if total_cases else 0.0)})
+    return pd.DataFrame(rows)
+
+
+def build_analysis_family_distribution(indicator_df: pd.DataFrame) -> pd.DataFrame:
+    rows = []
+    total_cases = int(len(indicator_df)) if indicator_df is not None else 0
+    for family in ANALYSIS_FAMILY_ORDER:
+        if indicator_df is None or indicator_df.empty:
+            client_count = 0
+            case_count = 0
+        else:
+            scoped = indicator_df[indicator_df["Famille indicateur"].astype(str) == family]
+            client_count = int(scoped.get("cm_client_key", pd.Series(dtype="object")).nunique())
+            case_count = int(len(scoped))
+        rows.append({"Famille": family, "Clients": client_count, "Cas": case_count, "% cas": (case_count / total_cases if total_cases else 0.0)})
+    return pd.DataFrame(rows)
+
+
+def build_analysis_freshness_distribution(indicator_df: pd.DataFrame) -> pd.DataFrame:
+    rows = []
+    total_cases = int(len(indicator_df)) if indicator_df is not None else 0
+    series = indicator_df.get("Fraîcheur indicateur", pd.Series(dtype="object")) if indicator_df is not None else pd.Series(dtype="object")
+    for bucket in ANALYSIS_FRESHNESS_ORDER:
+        count_value = int(series.astype(str).eq(bucket).sum()) if not series.empty else 0
+        rows.append({"Fraîcheur": bucket, "Cas": count_value, "%": (count_value / total_cases if total_cases else 0.0)})
+    return pd.DataFrame(rows)
+
+
+def render_analysis_alert_kpis(filtered_portfolio: pd.DataFrame, analysis_client_scope: pd.DataFrame, indicator_df: pd.DataFrame) -> None:
+    total_clients_filtered = int(build_unique_client_snapshot(filtered_portfolio).shape[0]) if isinstance(filtered_portfolio, pd.DataFrame) else 0
+    concerned_clients = int(build_unique_client_snapshot(analysis_client_scope).shape[0]) if isinstance(analysis_client_scope, pd.DataFrame) else 0
+    total_cases = int(len(indicator_df)) if indicator_df is not None else 0
+    distinct_indicators = int(indicator_df.get("Indicateur", pd.Series(dtype="object")).nunique()) if indicator_df is not None else 0
+    part_of_scope = (concerned_clients / total_clients_filtered) if total_clients_filtered else 0.0
+
+    line_one_cards = [
+        ("Clients concernés", f"{concerned_clients:,}".replace(",", " "), "Au moins 1 indicateur d’alerte", " is-alert" if concerned_clients else ""),
+        ("Cas indicateurs", f"{total_cases:,}".replace(",", " "), "Occurrences visibles", ""),
+        ("Indicateurs distincts", f"{distinct_indicators:,}".replace(",", " "), "Indicateurs présents", ""),
+        ("Part du portefeuille filtré", f"{part_of_scope:.1%}".replace(".", ","), "Clients concernés / portefeuille filtré", ""),
+    ]
+
+    line_two_cards = []
+    status_series = indicator_df.get("Statut", pd.Series(dtype="object")) if indicator_df is not None else pd.Series(dtype="object")
+    for status in ANALYSIS_STATUS_ORDER:
+        count_value = int(status_series.astype(str).eq(status).sum()) if not status_series.empty else 0
+        extra_class = " is-alert" if status in {"Risque avéré", "Risque potentiel", "Non calculable"} and count_value > 0 else ""
+        line_two_cards.append((analysis_status_ui_label(status), f"{count_value:,}".replace(",", " "), "Cas d’indicateurs", extra_class))
+
+    st.markdown('<h3 class="cm-section-title">Bandeau de synthèse</h3>', unsafe_allow_html=True)
+    for cards in [line_one_cards, line_two_cards]:
+        st.markdown(
+            "<div class='cm-kpi-band'>"
+            + "".join(
+                f"<div class='cm-kpi-card{extra_class}'><div class='cm-kpi-label'>{escape(label)}</div><div class='cm-kpi-value'>{escape(value)}</div><div class='cm-kpi-sub'>{escape(sub)}</div></div>"
+                for label, value, sub, extra_class in cards
+            )
+            + "</div>",
+            unsafe_allow_html=True,
+        )
+
+    if indicator_df is not None and not indicator_df.empty:
+        last_update = pd.to_datetime(indicator_df.get("Date de mise à jour"), errors="coerce").max()
+        if pd.notna(last_update):
+            st.markdown(
+                f"<div class='cm-kpi-note'>Dernière mise à jour indicateur visible : <strong>{last_update.strftime('%d/%m/%Y')}</strong>. Ces calculs sont propres à l’écran Analyse et n’impactent pas l’écran Portefeuille.</div>",
+                unsafe_allow_html=True,
+            )
+        else:
+            st.markdown(
+                "<div class='cm-kpi-note'>Ces calculs sont propres à l’écran Analyse et n’impactent pas l’écran Portefeuille.</div>",
+                unsafe_allow_html=True,
+            )
+    else:
+        st.markdown(
+            "<div class='cm-kpi-note'>Ces calculs sont propres à l’écran Analyse et n’impactent pas l’écran Portefeuille.</div>",
+            unsafe_allow_html=True,
+        )
+
+
+def render_analysis_repartition(indicator_df: pd.DataFrame) -> None:
+    render_analysis_panel_header(
+        "Répartition",
+        "Lecture des alertes par statut, par famille d’indicateurs et par fraîcheur de mise à jour. Les familles sont strictement cloisonnées : Segment / Client, Pays, Produits, Canal.",
+    )
+    col_status, col_family, col_freshness = st.columns(3)
+    with col_status:
+        st.markdown("<div class='cm-table-panel-title' style='font-size:16px;'>Statuts des indicateurs</div>", unsafe_allow_html=True)
+        render_small_table(format_table_for_display(build_analysis_status_distribution(indicator_df)))
+    with col_family:
+        st.markdown("<div class='cm-table-panel-title' style='font-size:16px;'>Familles d’indicateurs</div>", unsafe_allow_html=True)
+        render_small_table(format_table_for_display(build_analysis_family_distribution(indicator_df)))
+    with col_freshness:
+        st.markdown("<div class='cm-table-panel-title' style='font-size:16px;'>Fraîcheur</div>", unsafe_allow_html=True)
+        render_small_table(format_table_for_display(build_analysis_freshness_distribution(indicator_df)))
+
+
+def build_analysis_concentration_table(
+    indicator_df: pd.DataFrame,
+    analysis_client_scope: pd.DataFrame,
+    *,
+    group_col: str,
+    group_label: str,
+    family_label: str,
+    top_n: int = 5,
+    sort_mode: str = "% clients",
+) -> pd.DataFrame:
+    output_columns = [
+        group_label,
+        "Clients",
+        "Cas",
+        "% clients",
+        "% cas",
+        "% avéré",
+        "% potentiel",
+        "% mitigé",
+        "% levé",
+        "% NC",
+        "% sans risque",
+        "Indicateurs associés",
+    ]
+    if indicator_df is None or indicator_df.empty or group_col not in indicator_df.columns:
+        return pd.DataFrame(columns=output_columns)
+
+    scoped = indicator_df[indicator_df["Famille indicateur"].astype(str) == family_label].copy()
+    if scoped.empty:
+        return pd.DataFrame(columns=output_columns)
+
+    scoped[group_col] = normalize_analysis_category(scoped[group_col])
+    total_clients = int(build_unique_client_snapshot(analysis_client_scope).shape[0]) if isinstance(analysis_client_scope, pd.DataFrame) else 0
+    total_cases = int(len(scoped))
+
+    grouped = scoped.groupby(group_col, dropna=False).agg(Clients=("cm_client_key", "nunique"), Cas=("Indicateur", "size")).reset_index()
+    grouped["% clients"] = grouped["Clients"].div(total_clients if total_clients else np.nan).fillna(0.0)
+    grouped["% cas"] = grouped["Cas"].div(total_cases if total_cases else np.nan).fillna(0.0)
+
+    for status, column_name in ANALYSIS_CONCENTRATION_STATUS_COLUMNS:
+        status_counts = scoped.loc[scoped["Statut"].astype(str) == status].groupby(group_col, dropna=False).size()
+        denominator = int(status_counts.sum())
+        grouped[column_name] = grouped[group_col].map(status_counts).fillna(0).astype(float)
+        grouped[column_name] = grouped[column_name].div(denominator if denominator else np.nan).fillna(0.0)
+
+    indicator_counts = (
+        scoped.groupby([group_col, "Indicateur"], dropna=False)
+        .size()
+        .reset_index(name="Cas")
+        .sort_values([group_col, "Cas", "Indicateur"], ascending=[True, False, True], kind="stable")
+    )
+    indicator_map: dict[str, str] = {}
+    for group_value, local in indicator_counts.groupby(group_col, sort=False):
+        labels = [str(value) for value in local["Indicateur"].head(3).tolist() if str(value).strip()]
+        indicator_map[str(group_value)] = " · ".join(labels)
+
+    grouped["Indicateurs associés"] = grouped[group_col].astype(str).map(indicator_map).fillna("")
+    grouped = grouped.rename(columns={group_col: group_label})
+
+    sort_column = str(sort_mode or "% clients")
+    if sort_column not in grouped.columns:
+        sort_column = "% clients"
+    grouped = grouped.sort_values([sort_column, "Cas", group_label], ascending=[False, False, True], kind="stable")
+    return grouped[output_columns].head(top_n).reset_index(drop=True)
+
+
+def render_analysis_concentrations(indicator_df: pd.DataFrame, analysis_client_scope: pd.DataFrame) -> None:
+    render_analysis_panel_header(
+        "Concentrations",
+        "Chaque top utilise uniquement la famille d’indicateurs rattachée à son axe : Segment / Client, Pays, Produits, Canal.",
+    )
+    sort_mode = st.selectbox(
+        "Trier les concentrations par",
+        options=ANALYSIS_CONCENTRATION_SORT_OPTIONS,
+        index=ANALYSIS_CONCENTRATION_SORT_OPTIONS.index(st.session_state.get("analysis_concentration_sort_mode", "% clients")) if st.session_state.get("analysis_concentration_sort_mode", "% clients") in ANALYSIS_CONCENTRATION_SORT_OPTIONS else 0,
+        key="analysis_concentration_sort_mode",
+    )
+
+    row_one_left, row_one_right = st.columns(2)
+    row_two_left, row_two_right = st.columns(2)
+    containers = [row_one_left, row_one_right, row_two_left, row_two_right]
+    for container, config in zip(containers, ANALYSIS_CONCENTRATION_AXIS_CONFIG):
+        title, group_col, group_label, family_label = config
+        with container:
+            st.markdown(f"<div class='cm-table-panel-title'>{escape(title)}</div>", unsafe_allow_html=True)
+            st.caption(f"Famille mobilisée : {family_label}.")
+            table = build_analysis_concentration_table(
+                indicator_df,
+                analysis_client_scope,
+                group_col=group_col,
+                group_label=group_label,
+                family_label=family_label,
+                sort_mode=sort_mode,
+            )
+            if table.empty:
+                st.info("Aucune concentration exploitable sur ce périmètre.")
+            else:
+                render_small_table(format_table_for_display(table), scroll_x=True)
+
+def build_indicator_analysis_table(indicator_scope: pd.DataFrame) -> pd.DataFrame:
+    columns = ["Indicateur"] + ANALYSIS_STATUS_ORDER + ["Total cas"]
+    if indicator_scope is None or indicator_scope.empty:
         return pd.DataFrame(columns=columns)
-    keys = filtered_portfolio[[SOC_COL, "SIREN"]].drop_duplicates()
-    normalized = normalized.merge(keys, how="inner", on=[SOC_COL, "SIREN"])
-    if normalized.empty:
-        return pd.DataFrame(columns=columns)
-    crosstab = pd.crosstab(normalized["Indicateur"], normalized["Statut"])
-    for status in ["Risque avéré", "Risque potentiel", "Risque mitigé", "Non calculable"]:
+
+    work = indicator_scope.copy()
+    crosstab = pd.crosstab(work["Indicateur"], work["Statut"])
+    for status in ANALYSIS_STATUS_ORDER:
         if status not in crosstab.columns:
             crosstab[status] = 0
-    crosstab["Total cas"] = crosstab[["Risque avéré", "Risque potentiel", "Risque mitigé", "Non calculable"]].sum(axis=1)
+    crosstab["Total cas"] = crosstab[ANALYSIS_STATUS_ORDER].sum(axis=1)
     result = crosstab.reset_index().sort_values(["Total cas", "Indicateur"], ascending=[False, True], kind="stable")
     return result[columns].head(10).reset_index(drop=True)
 
 
 def render_indicator_contribution_chart(indicator_table: pd.DataFrame) -> None:
     if indicator_table is None or indicator_table.empty:
-        st.info("Aucun indicateur exploitable n'est disponible sur le périmètre filtré.")
+        st.info("Aucun indicateur exploitable n’est disponible sur le périmètre filtré.")
         return
 
     df = indicator_table.copy().head(10).reset_index(drop=True)
-    numeric_cols = ["Risque avéré", "Risque potentiel", "Risque mitigé", "Non calculable", "Total cas"]
+    numeric_cols = ANALYSIS_STATUS_ORDER + ["Total cas"]
     for col in numeric_cols:
         if col in df.columns:
             df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0).astype(int)
@@ -7967,6 +8405,15 @@ def render_indicator_contribution_chart(indicator_table: pd.DataFrame) -> None:
     if max_total <= 0:
         max_total = 1
 
+    chip_colors = {
+        "Risque avéré": "#B42318",
+        "Risque potentiel": "#175CD3",
+        "Risque mitigé": "#027A48",
+        "Risque levé": "#166534",
+        "Non calculable": "#667085",
+        "Aucun risque détecté": "#0F4C81",
+    }
+
     rows: list[str] = []
     for rank, row in enumerate(df.to_dict("records"), start=1):
         total = int(row.get("Total cas", 0))
@@ -7974,14 +8421,11 @@ def render_indicator_contribution_chart(indicator_table: pd.DataFrame) -> None:
         rank_bg = PRIMARY_COLOR if rank == 1 else (SECONDARY_COLOR if rank <= 3 else "#E9F1FA")
         rank_fg = "#FFFFFF" if rank <= 3 else PRIMARY_COLOR
         label = escape(str(row.get("Indicateur", "")))
-        breakdown = [
-            ("Avéré", int(row.get("Risque avéré", 0)), "#B42318"),
-            ("Potentiel", int(row.get("Risque potentiel", 0)), "#175CD3"),
-            ("Mitigé", int(row.get("Risque mitigé", 0)), "#027A48"),
-            ("Non calc.", int(row.get("Non calculable", 0)), "#667085"),
-        ]
         chips = []
-        for chip_label, chip_value, chip_color in breakdown:
+        for status in ANALYSIS_STATUS_ORDER:
+            chip_value = int(row.get(status, 0))
+            chip_color = chip_colors.get(status, "#667085")
+            chip_label = analysis_status_short_label(status)
             chips.append(
                 f"<span style='display:inline-flex;align-items:center;gap:6px;padding:4px 8px;border-radius:999px;background:#F5F8FC;border:1px solid rgba(22,58,89,0.08);font-size:11px;color:#445469;'>"
                 f"<span style='width:8px;height:8px;border-radius:999px;background:{chip_color};display:inline-block;'></span>"
@@ -8575,8 +9019,8 @@ def render_analysis_screen(portfolio: pd.DataFrame, indicators: pd.DataFrame) ->
 
     top_left, top_right = st.columns([5.4, 1.2])
     with top_left:
-        st.markdown('<h3 class="cm-section-title">Pilotage de l’analyse</h3>', unsafe_allow_html=True)
-        st.caption("Un seul tableau d’analyse : les filtres cadrent le portefeuille, le clic sur une ligne alimente les clients sous-jacents.")
+        st.markdown('<h3 class="cm-section-title">Analyse des indicateurs d’alerte</h3>', unsafe_allow_html=True)
+        st.caption("Le haut de l’écran est consacré aux indicateurs d’alerte : filtres, synthèse, répartitions et concentrations. Le bloc ‘Indicateurs les plus contributifs’ est conservé dans sa présentation de lecture actuelle.")
     with top_right:
         if st.button("Réinitialiser", type="secondary", key="analysis_reset_all"):
             reset_filters()
@@ -8586,15 +9030,23 @@ def render_analysis_screen(portfolio: pd.DataFrame, indicators: pd.DataFrame) ->
                 "analysis_table_sort_by",
                 "analysis_table_sort_order",
                 "analysis_table_top_n",
+                "analysis_filter_indicator_name",
+                "analysis_filter_indicator_status",
+                "analysis_filter_indicator_family",
+                "analysis_filter_indicator_freshness",
+                "analysis_concentration_sort_mode",
             ]:
                 st.session_state.pop(key, None)
             clear_analysis_focus()
             st.rerun()
 
-    filter_labels = ["Vigilance", "Risque", "EDD", "Segment", "Pays", "Produit", "Canal", "Analyste", "Valideur"]
+    st.markdown('<h3 class="cm-section-title">Filtres</h3>', unsafe_allow_html=True)
+    st.caption("La première ligne cadre le portefeuille ; la seconde affine les cas indicateurs. Ces calculs sont propres à l’écran Analyse et n’impactent pas l’écran Portefeuille.")
+
+    portfolio_filter_labels = ["Vigilance", "Risque", "EDD", "Segment", "Pays", "Produit", "Canal", "Analyste", "Valideur"]
     selections: dict[str, str] = {}
     filter_cols = st.columns(5)
-    for idx, label in enumerate(filter_labels):
+    for idx, label in enumerate(portfolio_filter_labels):
         column = FILTER_MAPPING[label]
         options = ["Tous"] + non_empty_sorted(portfolio[column].unique()) if column in portfolio.columns else ["Tous"]
         state_key = "filter_" + label
@@ -8602,59 +9054,102 @@ def render_analysis_screen(portfolio: pd.DataFrame, indicators: pd.DataFrame) ->
             st.session_state[state_key] = "Tous"
         with filter_cols[idx % 5]:
             selections[label] = st.selectbox(label, options=options, key=state_key)
-        if idx % 5 == 4 and idx < len(filter_labels) - 1:
+        if idx % 5 == 4 and idx < len(portfolio_filter_labels) - 1:
             filter_cols = st.columns(5)
 
-    st.markdown(
-        """
-        <div class="cm-analysis-mode-shell">
-            <div class="cm-analysis-mode-kicker">Lecture de l’analyse</div>
-            <div class="cm-analysis-mode-title">Le tableau présente uniquement les dimensions de lecture</div>
-            <div class="cm-analysis-mode-note">Les indicateurs Clients, Part du portefeuille, Justificatifs incomplets, Sans prochaine revue, Revue trop ancienne, Cross-border élevé et Cash intensité élevée sont affichés dans le bandeau de synthèse.</div>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
-
-
-    filtered = apply_filters(portfolio, selections)
-    if filtered.empty:
+    filtered_portfolio = apply_filters(portfolio, selections)
+    if filtered_portfolio.empty:
         st.warning("Aucun client ne correspond au périmètre société + filtres sélectionnés.")
         return
 
-    render_analysis_kpis(filtered, portfolio)
+    analysis_base = build_analysis_indicator_dataset(filtered_portfolio, indicators)
 
-    analysis_table, analysis_caption = build_unified_analysis_table(filtered)
-    render_analysis_panel_header("Tableau d’analyse", analysis_caption)
-    display_analysis_table = apply_unified_analysis_table_controls(analysis_table)
-    main_action, selected_main = render_selectable_analysis_table(display_analysis_table, key_prefix="analysis_main", height=520)
+    indicator_cols = st.columns(4)
+    indicator_options = ["Tous"] + non_empty_sorted(analysis_base["Indicateur"].astype(str).unique()) if not analysis_base.empty else ["Tous"]
+    if st.session_state.get("analysis_filter_indicator_name") not in indicator_options:
+        st.session_state["analysis_filter_indicator_name"] = "Tous"
+    with indicator_cols[0]:
+        indicator_value = st.selectbox("Indicateur", options=indicator_options, key="analysis_filter_indicator_name")
 
-    if main_action == "selected" and selected_main:
-        st.session_state["analysis_focus_selection"] = selected_main
-    elif main_action == "cleared":
-        if "analysis_focus_selection" in st.session_state:
-            st.session_state.pop("analysis_focus_selection", None)
-            st.rerun()
+    available_statuses = [status for status in ANALYSIS_STATUS_ORDER if not analysis_base.empty and analysis_base["Statut"].astype(str).eq(status).any()]
+    status_options = ["Tous"] + available_statuses if available_statuses else ["Tous"]
+    if st.session_state.get("analysis_filter_indicator_status") not in status_options:
+        st.session_state["analysis_filter_indicator_status"] = "Tous"
+    with indicator_cols[1]:
+        status_value = st.selectbox(
+            "Statut indicateur",
+            options=status_options,
+            key="analysis_filter_indicator_status",
+            format_func=lambda value: "Tous" if value == "Tous" else analysis_status_ui_label(value),
+        )
 
-    if analysis_table.empty:
-        st.info("Aucun résultat à afficher pour les paramètres sélectionnés.")
-        return
-    if display_analysis_table.empty:
-        st.info("Aucune ligne ne correspond aux contrôles intégrés du tableau d’analyse.")
+    family_options = ["Tous"] + [family for family in ANALYSIS_FAMILY_ORDER if not analysis_base.empty and analysis_base["Famille indicateur"].astype(str).eq(family).any()]
+    if st.session_state.get("analysis_filter_indicator_family") not in family_options:
+        st.session_state["analysis_filter_indicator_family"] = "Tous"
+    with indicator_cols[2]:
+        family_value = st.selectbox("Famille indicateur", options=family_options, key="analysis_filter_indicator_family")
+
+    freshness_options = ["Tous"] + [bucket for bucket in ANALYSIS_FRESHNESS_ORDER if not analysis_base.empty and analysis_base["Fraîcheur indicateur"].astype(str).eq(bucket).any()]
+    if st.session_state.get("analysis_filter_indicator_freshness") not in freshness_options:
+        st.session_state["analysis_filter_indicator_freshness"] = "Tous"
+    with indicator_cols[3]:
+        freshness_value = st.selectbox("Fraîcheur", options=freshness_options, key="analysis_filter_indicator_freshness")
+
+    indicator_filters = {
+        "Indicateur": indicator_value,
+        "Statut": status_value,
+        "Famille": family_value,
+        "Fraîcheur": freshness_value,
+    }
+    filtered_indicators = apply_analysis_indicator_filters(analysis_base, indicator_filters)
+    analysis_client_scope = build_analysis_client_scope(filtered_portfolio, filtered_indicators)
+
+    if filtered_indicators.empty:
+        st.warning("Aucun cas indicateur ne correspond aux filtres d’analyse sélectionnés. Le bandeau, les répartitions et les concentrations reflètent donc un périmètre vide.")
+
+    render_analysis_alert_kpis(filtered_portfolio, analysis_client_scope, filtered_indicators)
 
     st.divider()
-    indicator_table = build_indicator_analysis_table(filtered, indicators)
+    render_analysis_repartition(filtered_indicators)
+
+    st.divider()
+    render_analysis_concentrations(filtered_indicators, analysis_client_scope)
+
+    st.divider()
+    indicator_table = build_indicator_analysis_table(filtered_indicators)
     render_indicator_contribution_chart(indicator_table)
 
     st.divider()
-    render_analysis_review_dates_from_base(filtered)
+    with st.expander("Lecture détaillée des dimensions", expanded=False):
+        render_analysis_panel_header(
+            "Tableau d’analyse",
+            "Cette table conserve la lecture détaillée par dimensions et permet, par clic, d’alimenter les clients sous-jacents sans modifier les calculs de l’écran Portefeuille.",
+        )
+        analysis_table, _ = build_unified_analysis_table(analysis_client_scope)
+        display_analysis_table = apply_unified_analysis_table_controls(analysis_table)
+        main_action, selected_main = render_selectable_analysis_table(display_analysis_table, key_prefix="analysis_main", height=520)
+
+        if main_action == "selected" and selected_main:
+            st.session_state["analysis_focus_selection"] = selected_main
+        elif main_action == "cleared":
+            if "analysis_focus_selection" in st.session_state:
+                st.session_state.pop("analysis_focus_selection", None)
+                st.rerun()
+
+        if analysis_table.empty:
+            st.info("Aucune dimension détaillée à afficher sur le périmètre sélectionné.")
+        elif display_analysis_table.empty:
+            st.info("Aucune ligne ne correspond aux contrôles intégrés du tableau d’analyse.")
+
+    st.divider()
+    render_analysis_review_dates_from_base(analysis_client_scope)
 
     st.divider()
     st.markdown("<div id='clients-sous-jacents'></div>", unsafe_allow_html=True)
     st.markdown('<h3 class="cm-section-title">Clients sous-jacents</h3>', unsafe_allow_html=True)
 
     focus_selection = st.session_state.get("analysis_focus_selection")
-    detail_df, focus_parts = build_analysis_focus_dataset_from_selection(filtered, focus_selection)
+    detail_df, focus_parts = build_analysis_focus_dataset_from_selection(analysis_client_scope, focus_selection)
 
     focus_bar_left, focus_bar_right = st.columns([6.0, 1.2])
     with focus_bar_left:
@@ -8667,7 +9162,7 @@ def render_analysis_screen(portfolio: pd.DataFrame, indicators: pd.DataFrame) ->
                     preview += f" ; +{len(focus_parts) - 2} autre(s) ligne(s)"
                 st.caption(f"Focus actif : {len(focus_parts)} lignes sélectionnées — " + preview)
         else:
-            st.caption("Cliquez sur une ou plusieurs lignes du tableau d’analyse pour afficher automatiquement les clients sous-jacents correspondants.")
+            st.caption("Ouvrez ‘Lecture détaillée des dimensions’, cliquez sur une ou plusieurs lignes, puis retrouvez ici les clients sous-jacents correspondants.")
     with focus_bar_right:
         if focus_parts and st.button("Effacer le focus", type="secondary", key="analysis_clear_focus"):
             clear_analysis_focus()
