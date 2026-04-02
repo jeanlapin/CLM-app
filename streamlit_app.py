@@ -30,7 +30,7 @@ try:
     from reportlab.lib.units import mm
     from reportlab.pdfbase import pdfmetrics
     from reportlab.pdfbase.ttfonts import TTFont
-    from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+    from reportlab.platypus import PageBreak, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 except Exception as exc:
     REPORTLAB_AVAILABLE = False
     REPORTLAB_IMPORT_ERROR = str(exc)
@@ -41,6 +41,7 @@ except Exception as exc:
     mm = None
     pdfmetrics = None
     TTFont = None
+    PageBreak = None
     Paragraph = None
     SimpleDocTemplate = None
     Spacer = None
@@ -88,7 +89,7 @@ RISK_COUNT_COLUMNS = [f"Nb {label}" for label in RISK_ORDER]
 STATUS_COUNT_COLUMNS = VIGILANCE_COUNT_COLUMNS + RISK_COUNT_COLUMNS
 
 BASE_RISK_SOURCE_COLUMN = "Statut de risque (import SaaS source)"
-PORTFOLIO_PIPELINE_VERSION = "v192_excel_export_xlsxwriter"
+PORTFOLIO_PIPELINE_VERSION = "v193_committee_pdf_report"
 CRITICAL_VIGILANCE = {"Vigilance Élevée", "Vigilance Critique"}
 PRIORITY_RISK = {"Risque potentiel", "Risque avéré"}
 
@@ -5289,6 +5290,767 @@ def dataframes_to_excel_bytes(sheets: list[tuple[str, pd.DataFrame]]) -> bytes:
     return buffer.getvalue()
 
 
+
+def committee_report_slug(value: object) -> str:
+    normalized = unicodedata.normalize("NFKD", str(value or "")).encode("ascii", "ignore").decode("ascii")
+    slug = re.sub(r"[^A-Za-z0-9]+", "_", normalized).strip("_").lower()
+    return slug or "portefeuille"
+
+
+def committee_report_download_name(selected_societies: list[str]) -> str:
+    cleaned = [committee_report_slug(item)[:18] for item in selected_societies if str(item or "").strip()]
+    if len(cleaned) > 2:
+        scope_key = "_".join(cleaned[:2]) + f"_plus_{len(cleaned) - 2}"
+    else:
+        scope_key = "_".join(cleaned) or "portefeuille"
+    return f"rapport_comite_risques_portefeuille_{scope_key}_{datetime.now().strftime('%Y%m%d')}.pdf"
+
+
+def committee_report_scope_label(selected_societies: list[str]) -> str:
+    cleaned = [str(item).strip() for item in selected_societies if str(item or "").strip()]
+    if not cleaned:
+        return "Périmètre non renseigné"
+    if len(cleaned) <= 4:
+        return ", ".join(cleaned)
+    return ", ".join(cleaned[:4]) + f" (+{len(cleaned) - 4} autres)"
+
+
+def committee_report_filters_label(filters: dict[str, object]) -> str:
+    active = [f"{label} : {value}" for label, value in filters.items() if str(value) != "Tous"]
+    return "Aucun filtre additionnel" if not active else " ; ".join(active)
+
+
+def committee_report_format_scalar(value: object, column_name: object = "") -> str:
+    try:
+        if value is None or pd.isna(value):
+            return "—"
+    except Exception:
+        pass
+
+    if isinstance(value, (pd.Timestamp, datetime)):
+        dt_value = pd.to_datetime(value, errors="coerce")
+        if pd.isna(dt_value):
+            return "—"
+        return pd.Timestamp(dt_value).strftime("%d/%m/%Y")
+
+    if isinstance(value, (np.integer, int)) and not isinstance(value, bool):
+        return f"{int(value):,}".replace(",", " ")
+
+    if isinstance(value, (np.floating, float)) and not isinstance(value, bool):
+        number = float(value)
+        column_text = str(column_name or "").strip()
+        if column_text.startswith("%") and 0.0 <= number <= 1.0:
+            return f"{number * 100:.1f} %".replace(".", ",")
+        if abs(number - round(number)) < 1e-9:
+            return f"{int(round(number)):,}".replace(",", " ")
+        return f"{number:,.1f}".replace(",", " ").replace(".", ",")
+
+    text_value = str(value).strip()
+    if re.fullmatch(r"\d{4}-\d{2}-\d{2}", text_value):
+        dt_value = pd.to_datetime(text_value, errors="coerce")
+        if not pd.isna(dt_value):
+            return pd.Timestamp(dt_value).strftime("%d/%m/%Y")
+    return text_value or "—"
+
+
+def committee_report_numeric(value: object) -> float:
+    try:
+        if value is None or pd.isna(value):
+            return 0.0
+    except Exception:
+        pass
+    try:
+        return float(value)
+    except Exception:
+        return 0.0
+
+
+def committee_report_paragraph(text: object, style: ParagraphStyle) -> Paragraph:
+    rendered = str(text or "").strip() or "—"
+    return Paragraph(escape(rendered).replace("\n", "<br/>"), style)
+
+
+def committee_report_pdf_styles() -> dict[str, ParagraphStyle]:
+    if not REPORTLAB_AVAILABLE or colors is None or getSampleStyleSheet is None or ParagraphStyle is None:
+        raise ModuleNotFoundError(PDF_DEPENDENCY_ERROR_MESSAGE)
+
+    regular_font, bold_font = ensure_review_simulation_pdf_fonts()
+    base_styles = getSampleStyleSheet()
+    primary_color = colors.HexColor(PRIMARY_COLOR)
+    secondary_color = colors.HexColor(SECONDARY_COLOR)
+    muted_color = colors.HexColor("#5B6B7F")
+    body_color = colors.HexColor("#12263A")
+
+    return {
+        "cover_kicker": ParagraphStyle(
+            "CommitteeCoverKicker",
+            parent=base_styles["BodyText"],
+            fontName=bold_font,
+            fontSize=10,
+            leading=12,
+            textColor=secondary_color,
+            spaceAfter=6,
+        ),
+        "cover_title": ParagraphStyle(
+            "CommitteeCoverTitle",
+            parent=base_styles["Title"],
+            fontName=bold_font,
+            fontSize=23,
+            leading=28,
+            textColor=primary_color,
+            spaceAfter=8,
+        ),
+        "cover_subtitle": ParagraphStyle(
+            "CommitteeCoverSubtitle",
+            parent=base_styles["BodyText"],
+            fontName=regular_font,
+            fontSize=10.5,
+            leading=14,
+            textColor=muted_color,
+            spaceAfter=14,
+        ),
+        "section": ParagraphStyle(
+            "CommitteeSection",
+            parent=base_styles["Heading2"],
+            fontName=bold_font,
+            fontSize=13,
+            leading=16,
+            textColor=primary_color,
+            spaceBefore=4,
+            spaceAfter=7,
+        ),
+        "subsection": ParagraphStyle(
+            "CommitteeSubsection",
+            parent=base_styles["Heading3"],
+            fontName=bold_font,
+            fontSize=10.2,
+            leading=12.5,
+            textColor=primary_color,
+            spaceBefore=2,
+            spaceAfter=5,
+        ),
+        "body": ParagraphStyle(
+            "CommitteeBody",
+            parent=base_styles["BodyText"],
+            fontName=regular_font,
+            fontSize=9.2,
+            leading=12.2,
+            textColor=body_color,
+        ),
+        "body_muted": ParagraphStyle(
+            "CommitteeBodyMuted",
+            parent=base_styles["BodyText"],
+            fontName=regular_font,
+            fontSize=8.5,
+            leading=11,
+            textColor=muted_color,
+        ),
+        "table_header": ParagraphStyle(
+            "CommitteeTableHeader",
+            parent=base_styles["BodyText"],
+            fontName=bold_font,
+            fontSize=8.2,
+            leading=10,
+            textColor=colors.white,
+        ),
+        "table_cell": ParagraphStyle(
+            "CommitteeTableCell",
+            parent=base_styles["BodyText"],
+            fontName=regular_font,
+            fontSize=8.4,
+            leading=10.4,
+            textColor=body_color,
+        ),
+        "table_cell_small": ParagraphStyle(
+            "CommitteeTableCellSmall",
+            parent=base_styles["BodyText"],
+            fontName=regular_font,
+            fontSize=7.8,
+            leading=9.6,
+            textColor=body_color,
+        ),
+        "metric_card": ParagraphStyle(
+            "CommitteeMetricCard",
+            parent=base_styles["BodyText"],
+            fontName=regular_font,
+            fontSize=8.8,
+            leading=11.2,
+            textColor=body_color,
+        ),
+        "box_title": ParagraphStyle(
+            "CommitteeBoxTitle",
+            parent=base_styles["BodyText"],
+            fontName=bold_font,
+            fontSize=9.2,
+            leading=11.8,
+            textColor=primary_color,
+        ),
+    }
+
+
+def committee_report_message_box(title: str, lines: list[str], styles: dict[str, ParagraphStyle], width: float = 174 * mm) -> Table:
+    rows = [[committee_report_paragraph(title, styles["box_title"])]]
+    for line in lines:
+        rows.append([committee_report_paragraph(f"• {line}", styles["body"])])
+
+    table = Table(rows, colWidths=[width], hAlign="LEFT", splitByRow=1)
+    table.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#F4F8FD")),
+        ("BOX", (0, 0), (-1, -1), 0.65, colors.HexColor("#C9D9EA")),
+        ("LEFTPADDING", (0, 0), (-1, -1), 9),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 9),
+        ("TOPPADDING", (0, 0), (-1, -1), 8),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 8),
+        ("LINEBELOW", (0, 0), (-1, -2), 0.35, colors.HexColor("#D9E6F2")),
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+    ]))
+    return table
+
+
+def committee_report_metric_grid(metrics: list[tuple[str, object, str]], styles: dict[str, ParagraphStyle]) -> Table:
+    cells: list[Paragraph] = []
+    for label, value, note in metrics:
+        value_text = committee_report_format_scalar(value, label)
+        html = (
+            f"<font color='{SECONDARY_COLOR}' size='8.2'><b>{escape(label)}</b></font><br/>"
+            f"<font color='{PRIMARY_COLOR}' size='17'><b>{escape(value_text)}</b></font><br/>"
+            f"<font color='#5B6B7F' size='7.6'>{escape(note)}</font>"
+        )
+        cells.append(Paragraph(html, styles["metric_card"]))
+
+    rows: list[list[Paragraph]] = []
+    for start in range(0, len(cells), 3):
+        row = cells[start:start + 3]
+        while len(row) < 3:
+            row.append(Paragraph("", styles["metric_card"]))
+        rows.append(row)
+
+    table = Table(rows, colWidths=[58 * mm, 58 * mm, 58 * mm], hAlign="LEFT")
+    table.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#F7FAFE")),
+        ("BOX", (0, 0), (-1, -1), 0.6, colors.HexColor("#D6E1EE")),
+        ("INNERGRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#D6E1EE")),
+        ("LEFTPADDING", (0, 0), (-1, -1), 10),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 10),
+        ("TOPPADDING", (0, 0), (-1, -1), 10),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 10),
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+    ]))
+    return table
+
+
+def committee_report_auto_col_widths(df: pd.DataFrame, total_width: float = 174 * mm) -> list[float]:
+    columns = [str(col) for col in df.columns]
+    weights: list[float] = []
+    for column_name in columns:
+        if column_name in {"Dénomination", "Motifs", "Segment", "Pays", "Produit", "Canal", "Canaux", "Alerte"}:
+            weights.append(2.8)
+        elif column_name in {"Vigilance", "Risque", "Statut", "Indicateur", "Calcul / règle"}:
+            weights.append(1.9)
+        elif column_name.startswith("%") or column_name in {"Nb", "Nb clients", "Score priorité", "SIREN"}:
+            weights.append(1.1)
+        else:
+            weights.append(1.5)
+    total_weight = sum(weights) or 1.0
+    return [total_width * weight / total_weight for weight in weights]
+
+
+def committee_report_dataframe_table(
+    df: pd.DataFrame,
+    styles: dict[str, ParagraphStyle],
+    *,
+    column_widths: list[float] | None = None,
+    max_rows: int | None = None,
+) -> Table:
+    if df is None or df.empty:
+        return committee_report_message_box(
+            "Aucune donnée disponible",
+            ["Le périmètre filtré ne retourne aucune ligne exploitable pour cette section."],
+            styles,
+        )
+
+    export = dataframe_to_export_copy(df.copy())
+    export = export[[col for col in export.columns if not str(col).startswith("__")]]
+    if max_rows is not None:
+        export = export.head(max_rows)
+
+    rows: list[list[Paragraph]] = [
+        [committee_report_paragraph(column_name, styles["table_header"]) for column_name in export.columns]
+    ]
+
+    for _, record in export.iterrows():
+        row_cells: list[Paragraph] = []
+        for column_name in export.columns:
+            rendered = committee_report_format_scalar(record[column_name], column_name)
+            cell_style = styles["table_cell_small"] if column_name == "Motifs" or len(rendered) > 60 else styles["table_cell"]
+            row_cells.append(committee_report_paragraph(rendered, cell_style))
+        rows.append(row_cells)
+
+    widths = column_widths or committee_report_auto_col_widths(export)
+    table = Table(rows, colWidths=widths, repeatRows=1, hAlign="LEFT", splitByRow=1)
+    table.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor(PRIMARY_COLOR)),
+        ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+        ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#F7FAFE")]),
+        ("GRID", (0, 0), (-1, -1), 0.35, colors.HexColor("#D6E1EE")),
+        ("LEFTPADDING", (0, 0), (-1, -1), 6),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 6),
+        ("TOPPADDING", (0, 0), (-1, -1), 5.5),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 5.5),
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+    ]))
+    return table
+
+
+def committee_report_trim_text(value: object, max_length: int = 120) -> str:
+    rendered = str(value or "").strip()
+    if len(rendered) <= max_length:
+        return rendered or "—"
+    shortened = rendered[: max_length - 1].rsplit(" ", 1)[0].strip()
+    return (shortened or rendered[: max_length - 1].strip()) + "…"
+
+
+def committee_report_prepare_priority_table(priority_df: pd.DataFrame) -> pd.DataFrame:
+    if priority_df is None or priority_df.empty:
+        return pd.DataFrame(columns=["SIREN", "Dénomination", "Vigilance", "Risque", "Score priorité", "Motifs"])
+    wanted = [column for column in ["SIREN", "Dénomination", "Vigilance", "Risque", "Score priorité", "Motifs"] if column in priority_df.columns]
+    output = priority_df[wanted].copy()
+    if "Motifs" in output.columns:
+        output["Motifs"] = output["Motifs"].apply(lambda value: committee_report_trim_text(value, max_length=120))
+    return output
+
+
+def committee_report_prepare_filtered_excerpt(filtered_export_df: pd.DataFrame) -> pd.DataFrame:
+    if filtered_export_df is None or filtered_export_df.empty:
+        return pd.DataFrame(columns=["SIREN", "Dénomination", "Vigilance", "Risque", "Segment", "Pays"])
+    wanted = [column for column in ["SIREN", "Dénomination", "Vigilance", "Risque", "Segment", "Pays"] if column in filtered_export_df.columns]
+    return filtered_export_df[wanted].head(12).copy()
+
+
+def committee_report_prepare_concentration_table(df: pd.DataFrame, label_column: str) -> pd.DataFrame:
+    if df is None or df.empty:
+        return pd.DataFrame(columns=[label_column, "Nb clients", "% clients", "% Vig. crit.", "% Vig. élev.", "% Risq. av.", "% Risq. pot."])
+    wanted = [
+        column
+        for column in [label_column, "Nb clients", "% clients", "% Vig. crit.", "% Vig. élev.", "% Risq. av.", "% Risq. pot."]
+        if column in df.columns
+    ]
+    return df[wanted].head(5).copy()
+
+
+def committee_report_concentration_status_label(column_name: str) -> str:
+    return {
+        "% Vig. crit.": "vigilance critique",
+        "% Vig. élev.": "vigilance élevée",
+        "% Risq. av.": "risque avéré",
+        "% Risq. pot.": "risque potentiel",
+        "% Risq. NC": "risque non calculable",
+    }.get(column_name, str(column_name or "").replace("% ", "").lower())
+
+
+def committee_report_find_primary_concentration(top_risks_export_sheets: list[tuple[str, pd.DataFrame]]) -> str:
+    best_item: tuple[float, str] | None = None
+    sensitive_columns = ["% Vig. crit.", "% Vig. élev.", "% Risq. av.", "% Risq. pot.", "% Risq. NC"]
+
+    for title, df in top_risks_export_sheets:
+        if df is None or df.empty:
+            continue
+        label_column = str(df.columns[0])
+        for _, row in df.iterrows():
+            base_weight = committee_report_numeric(row.get("% clients"))
+            group_name = committee_report_format_scalar(row.get(label_column), label_column)
+            for column_name in sensitive_columns:
+                if column_name not in df.columns:
+                    continue
+                status_weight = committee_report_numeric(row.get(column_name))
+                delta = status_weight - base_weight
+                if delta <= 0:
+                    continue
+                message = (
+                    f"La concentration la plus marquante concerne {title.lower()} « {group_name} » : "
+                    f"{committee_report_format_scalar(base_weight, '% clients')} du portefeuille, mais "
+                    f"{committee_report_format_scalar(status_weight, column_name)} du statut "
+                    f"{committee_report_concentration_status_label(column_name)}."
+                )
+                if best_item is None or delta > best_item[0]:
+                    best_item = (delta, message)
+
+    if best_item is not None and best_item[0] > 0.04:
+        return best_item[1]
+
+    for title, df in top_risks_export_sheets:
+        if df is None or df.empty:
+            continue
+        label_column = str(df.columns[0])
+        first_row = df.iloc[0]
+        group_name = committee_report_format_scalar(first_row.get(label_column), label_column)
+        base_weight = committee_report_format_scalar(first_row.get("% clients"), "% clients")
+        return f"La première poche de concentration se situe sur {title.lower()} « {group_name} », qui représente {base_weight} du portefeuille filtré."
+
+    return "Aucune concentration particulière n’a pu être mise en évidence sur le périmètre filtré."
+
+
+def committee_report_top_commentary(title: str, df: pd.DataFrame) -> str:
+    if df is None or df.empty:
+        return f"Aucun signal exploitable n’est disponible sur {title.lower()}."
+    label_column = str(df.columns[0])
+    first_row = df.iloc[0]
+    group_name = committee_report_format_scalar(first_row.get(label_column), label_column)
+    base_weight = committee_report_numeric(first_row.get("% clients"))
+    sensitive_columns = [column for column in ["% Vig. crit.", "% Vig. élev.", "% Risq. av.", "% Risq. pot."] if column in df.columns]
+    best_column = None
+    best_delta = 0.0
+    best_value = 0.0
+    for column_name in sensitive_columns:
+        current_value = committee_report_numeric(first_row.get(column_name))
+        current_delta = current_value - base_weight
+        if current_delta > best_delta:
+            best_delta = current_delta
+            best_column = column_name
+            best_value = current_value
+    if best_column and best_delta > 0.04:
+        return (
+            f"{group_name} concentre {committee_report_format_scalar(base_weight, '% clients')} du portefeuille, "
+            f"mais {committee_report_format_scalar(best_value, best_column)} du statut "
+            f"{committee_report_concentration_status_label(best_column)}. Cette poche mérite une surveillance ciblée."
+        )
+    return (
+        f"{group_name} constitue la première concentration sur {title.lower()} avec "
+        f"{committee_report_format_scalar(base_weight, '% clients')} des clients visibles, sans surreprésentation sensible majeure."
+    )
+
+
+def committee_report_key_messages(
+    metrics: dict[str, object],
+    top_risks_export_sheets: list[tuple[str, pd.DataFrame]],
+    priority_df: pd.DataFrame,
+) -> list[str]:
+    total = int(metrics.get("total_clients", 0) or 0)
+    vigilance_renforcee = int(metrics.get("vigilance_renforcee", 0) or 0)
+    risque_avere = int(metrics.get("risque_avere", 0) or 0)
+    justificatifs = int(metrics.get("justificatifs_incomplets", 0) or 0)
+    sans_revue = int(metrics.get("sans_prochaine_revue", 0) or 0)
+    historique = int(metrics.get("historique_disponible", 0) or 0)
+
+    messages: list[str] = []
+    if total:
+        part_vigilance = vigilance_renforcee / total
+        tension_label = "forte" if part_vigilance >= 0.35 else "modérée" if part_vigilance >= 0.18 else "contenue"
+        messages.append(
+            f"Le portefeuille analysé couvre {total} clients uniques ; l’exposition en vigilance renforcée est {tension_label} "
+            f"avec {vigilance_renforcee} clients concernés ({committee_report_format_scalar(part_vigilance, '%')})."
+        )
+
+    if risque_avere > 0:
+        messages.append(
+            f"{risque_avere} clients sont classés en risque avéré ; ces cas appellent un arbitrage explicite du comité sur la trajectoire de remédiation."
+        )
+
+    if justificatifs > 0 or sans_revue > 0:
+        fragments: list[str] = []
+        if justificatifs > 0:
+            fragments.append(f"{justificatifs} justificatifs incomplets")
+        if sans_revue > 0:
+            fragments.append(f"{sans_revue} dossiers sans prochaine revue")
+        messages.append(
+            "La gouvernance portefeuille appelle une remise à niveau ciblée : " + " et ".join(fragments) + "."
+        )
+
+    if historique < total and total > 0:
+        messages.append(
+            f"L’historique disponible couvre {historique} clients ; la profondeur de traçabilité reste donc partielle sur une partie du portefeuille."
+        )
+
+    messages.append(committee_report_find_primary_concentration(top_risks_export_sheets))
+
+    if priority_df is not None and not priority_df.empty and "Dénomination" in priority_df.columns:
+        head_names = [str(name).strip() for name in priority_df["Dénomination"].head(3).tolist() if str(name or "").strip()]
+        if head_names:
+            if len(head_names) == 1:
+                names_text = head_names[0]
+            elif len(head_names) == 2:
+                names_text = f"{head_names[0]} et {head_names[1]}"
+            else:
+                names_text = ", ".join(head_names[:-1]) + f" et {head_names[-1]}"
+            messages.append(f"Les premiers dossiers à arbitrer en séance sont : {names_text}.")
+
+    return messages[:5]
+
+
+def committee_report_decision_points(
+    metrics: dict[str, object],
+    top_risks_export_sheets: list[tuple[str, pd.DataFrame]],
+    priority_df: pd.DataFrame,
+) -> list[str]:
+    decisions: list[str] = []
+    if priority_df is not None and not priority_df.empty:
+        decisions.append("Valider l’ordre de traitement des dossiers prioritaires et confirmer les revues immédiates pour les cas les plus sensibles.")
+
+    if int(metrics.get("justificatifs_incomplets", 0) or 0) > 0:
+        decisions.append("Mandater un plan de complétude documentaire sur les dossiers renforcés présentant des justificatifs incomplets.")
+
+    if int(metrics.get("sans_prochaine_revue", 0) or 0) > 0:
+        decisions.append("Fiabiliser le calendrier des revues en imposant une date de prochaine revue sur chaque dossier non planifié.")
+
+    concentration_message = committee_report_find_primary_concentration(top_risks_export_sheets)
+    if concentration_message:
+        decisions.append("Mettre sous surveillance renforcée la poche de concentration la plus exposée et suivre son évolution au prochain comité.")
+
+    if int(metrics.get("risque_avere", 0) or 0) > 0:
+        decisions.append("Arbitrer les mesures de remédiation ou de restriction sur les clients classés en risque avéré.")
+
+    default_items = [
+        "Conserver une lecture régulière de la répartition des vigilances et risques maximum sur le portefeuille filtré.",
+        "S’appuyer sur les exports détaillés pour documenter le suivi opérationnel après séance.",
+    ]
+    for item in default_items:
+        if len(decisions) >= 5:
+            break
+        decisions.append(item)
+    return decisions[:5]
+
+
+def committee_report_cover_table(metadata: dict[str, object], styles: dict[str, ParagraphStyle]) -> Table:
+    rows = [
+        [committee_report_paragraph("Repère", styles["table_header"]), committee_report_paragraph("Valeur", styles["table_header"])]
+    ]
+    for label, value in metadata.items():
+        rows.append([
+            committee_report_paragraph(label, styles["table_cell"]),
+            committee_report_paragraph(committee_report_format_scalar(value, label), styles["table_cell"]),
+        ])
+    table = Table(rows, colWidths=[46 * mm, 128 * mm], repeatRows=1, hAlign="LEFT")
+    table.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor(PRIMARY_COLOR)),
+        ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+        ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#F7FAFE")]),
+        ("GRID", (0, 0), (-1, -1), 0.35, colors.HexColor("#D6E1EE")),
+        ("LEFTPADDING", (0, 0), (-1, -1), 7),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 7),
+        ("TOPPADDING", (0, 0), (-1, -1), 6),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+    ]))
+    return table
+
+
+def build_committee_risk_report_pdf_bytes(
+    filtered: pd.DataFrame,
+    selected_societies: list[str],
+    filters: dict[str, object],
+    vigilance_df: pd.DataFrame,
+    risk_df: pd.DataFrame,
+    alert_df: pd.DataFrame,
+    top_risks_export_sheets: list[tuple[str, pd.DataFrame]],
+    priority_df: pd.DataFrame,
+    filtered_export_df: pd.DataFrame,
+) -> bytes:
+    if not REPORTLAB_AVAILABLE or SimpleDocTemplate is None or colors is None or mm is None or PageBreak is None:
+        raise ModuleNotFoundError(PDF_DEPENDENCY_ERROR_MESSAGE)
+
+    styles = committee_report_pdf_styles()
+    generated_at = datetime.now()
+
+    client_level = build_unique_client_snapshot(
+        filtered,
+        [
+            "Vigilance",
+            "Risque",
+            "Alerte justificatif incomplet",
+            "Alerte sans prochaine revue",
+            "Nb historique",
+            "Vigilance Date de mise à jour",
+        ],
+    )
+
+    total_clients = len(client_level)
+    vigilance_renforcee = int(client_level.get("Vigilance", pd.Series(dtype="object")).isin(CRITICAL_VIGILANCE).sum()) if total_clients else 0
+    risque_avere = int(client_level.get("Risque", pd.Series(dtype="object")).eq("Risque avéré").sum()) if total_clients else 0
+    justificatifs_incomplets = int(pd.to_numeric(client_level.get("Alerte justificatif incomplet", pd.Series(0, index=client_level.index)), errors="coerce").fillna(0).sum()) if total_clients else 0
+    sans_prochaine_revue = int(pd.to_numeric(client_level.get("Alerte sans prochaine revue", pd.Series(0, index=client_level.index)), errors="coerce").fillna(0).sum()) if total_clients else 0
+    historique_disponible = int(pd.to_numeric(client_level.get("Nb historique", pd.Series(0, index=client_level.index)), errors="coerce").fillna(0).gt(0).sum()) if total_clients else 0
+    freshness_date = None
+    if total_clients and "Vigilance Date de mise à jour" in client_level.columns:
+        freshness_date = pd.to_datetime(client_level["Vigilance Date de mise à jour"], errors="coerce").max()
+
+    metrics = {
+        "total_clients": total_clients,
+        "vigilance_renforcee": vigilance_renforcee,
+        "risque_avere": risque_avere,
+        "justificatifs_incomplets": justificatifs_incomplets,
+        "sans_prochaine_revue": sans_prochaine_revue,
+        "historique_disponible": historique_disponible,
+        "fraicheur_visible": freshness_date,
+    }
+
+    scope_label = committee_report_scope_label(selected_societies)
+    filters_label = committee_report_filters_label(filters)
+    key_messages = committee_report_key_messages(metrics, top_risks_export_sheets, priority_df)
+    decision_points = committee_report_decision_points(metrics, top_risks_export_sheets, priority_df)
+
+    priority_pdf_df = committee_report_prepare_priority_table(priority_df)
+    filtered_excerpt_df = committee_report_prepare_filtered_excerpt(filtered_export_df)
+
+    top_sections = [
+        (title, committee_report_prepare_concentration_table(df, str(df.columns[0]) if df is not None and not df.empty else title.replace("Top ", "")))
+        for title, df in top_risks_export_sheets
+    ]
+
+    metric_cards = [
+        ("Clients visibles", total_clients, "clients uniques du périmètre"),
+        ("Vigilance renforcée", vigilance_renforcee, "vigilance élevée ou critique"),
+        ("Risque avéré", risque_avere, "clients classés en risque avéré"),
+        ("Justificatifs incomplets", justificatifs_incomplets, "alertes documentaires actives"),
+        ("Sans prochaine revue", sans_prochaine_revue, "dossiers non planifiés"),
+        ("Historique disponible", historique_disponible, "clients avec historique exploitable"),
+    ]
+
+    cover_metadata = {
+        "Périmètre société": scope_label,
+        "Filtres actifs": filters_label,
+        "Date de génération": generated_at.strftime("%d/%m/%Y %H:%M"),
+        "Clients visibles": total_clients,
+        "Fraîcheur visible": committee_report_format_scalar(freshness_date, "Fraîcheur visible") if freshness_date is not None and not pd.isna(freshness_date) else "Non renseignée",
+        "Version portefeuille": PORTFOLIO_PIPELINE_VERSION,
+    }
+
+    buffer = BytesIO()
+    doc = SimpleDocTemplate(
+        buffer,
+        pagesize=A4,
+        leftMargin=18 * mm,
+        rightMargin=18 * mm,
+        topMargin=18 * mm,
+        bottomMargin=16 * mm,
+        title=f"Rapport Comité des Risques - {scope_label}",
+        author=PAGE_TITLE,
+        subject="Synthèse portefeuille pour comité des risques",
+    )
+
+    regular_font, _ = ensure_review_simulation_pdf_fonts()
+    primary_color = colors.HexColor(PRIMARY_COLOR)
+    muted_color = colors.HexColor("#5B6B7F")
+
+    def _draw_page(canvas, doc_obj):
+        canvas.saveState()
+        canvas.setStrokeColor(primary_color)
+        canvas.setLineWidth(0.9)
+        canvas.line(doc_obj.leftMargin, A4[1] - 12 * mm, A4[0] - doc_obj.rightMargin, A4[1] - 12 * mm)
+        canvas.setFont(regular_font, 8)
+        canvas.setFillColor(muted_color)
+        canvas.drawString(doc_obj.leftMargin, 10 * mm, f"{PAGE_TITLE} - Rapport Comité des Risques")
+        canvas.drawRightString(A4[0] - doc_obj.rightMargin, 10 * mm, f"Page {canvas.getPageNumber()}")
+        canvas.restoreState()
+
+    story: list[object] = [
+        committee_report_paragraph("Document préparatoire", styles["cover_kicker"]),
+        committee_report_paragraph("Rapport Comité des Risques", styles["cover_title"]),
+        committee_report_paragraph(
+            f"Portefeuille filtré - {scope_label}\nGénéré le {generated_at.strftime('%d/%m/%Y à %H:%M')}",
+            styles["cover_subtitle"],
+        ),
+        committee_report_message_box(
+            "Finalité du document",
+            [
+                "Fournir une lecture exécutive du portefeuille filtré à la date de génération.",
+                "Mettre en évidence les expositions, concentrations, alertes de gouvernance et dossiers prioritaires.",
+                "Appuyer les arbitrages du Comité des Risques sans se substituer aux exports détaillés disponibles dans l’écran.",
+            ],
+            styles,
+        ),
+        Spacer(1, 7 * mm),
+        committee_report_cover_table(cover_metadata, styles),
+        PageBreak(),
+        committee_report_paragraph("1. Synthèse exécutive", styles["section"]),
+        committee_report_metric_grid(metric_cards, styles),
+        Spacer(1, 6 * mm),
+        committee_report_message_box("Messages clés", key_messages, styles),
+        Spacer(1, 6 * mm),
+        committee_report_message_box(
+            "Lecture du rapport",
+            [
+                "Le document est calculé uniquement sur le portefeuille filtré visible au moment de la génération.",
+                "Les sections Répartition, Concentrations et Dossiers prioritaires reprennent les mêmes bases de calcul que les exports de l’écran.",
+            ],
+            styles,
+        ),
+        PageBreak(),
+        committee_report_paragraph("2. Structure du portefeuille", styles["section"]),
+        committee_report_paragraph("Répartition des vigilances", styles["subsection"]),
+        committee_report_dataframe_table(vigilance_df, styles, column_widths=[90 * mm, 30 * mm, 34 * mm]),
+        Spacer(1, 4 * mm),
+        committee_report_paragraph("Répartition des risques maximum", styles["subsection"]),
+        committee_report_dataframe_table(risk_df, styles, column_widths=[90 * mm, 30 * mm, 34 * mm]),
+        Spacer(1, 4 * mm),
+        committee_report_paragraph("Alertes de gouvernance", styles["subsection"]),
+        committee_report_dataframe_table(alert_df, styles, column_widths=[120 * mm, 34 * mm]),
+        Spacer(1, 4 * mm),
+        committee_report_message_box(
+            "Lecture managériale",
+            [
+                f"La vigilance renforcée concerne {vigilance_renforcee} clients sur {total_clients} ; elle matérialise le cœur de l’exposition portefeuille.",
+                f"Les alertes de gouvernance restent concentrées sur {justificatifs_incomplets} justificatifs incomplets et {sans_prochaine_revue} dossiers sans prochaine revue.",
+                "Les exports détaillés permettent ensuite de qualifier les écarts client par client si une action opérationnelle est décidée en séance.",
+            ],
+            styles,
+        ),
+        PageBreak(),
+        committee_report_paragraph("3. Concentrations et poches de risque", styles["section"]),
+    ]
+
+    for idx, (title, table_df) in enumerate(top_sections):
+        if idx > 0:
+            story.append(Spacer(1, 4 * mm))
+        story.extend([
+            committee_report_paragraph(title, styles["subsection"]),
+            committee_report_dataframe_table(
+                table_df,
+                styles,
+                column_widths=committee_report_auto_col_widths(table_df) if not table_df.empty else None,
+            ),
+            Spacer(1, 2.5 * mm),
+            committee_report_message_box("Lecture", [committee_report_top_commentary(title, table_df)], styles),
+        ])
+
+    story.extend([
+        PageBreak(),
+        committee_report_paragraph("4. Dossiers prioritaires", styles["section"]),
+        committee_report_message_box(
+            "Principe de lecture",
+            [
+                "Le classement ci-dessous reprend le top des dossiers priorisés sur le portefeuille filtré.",
+                "Le score priorité agrège vigilance, risque et alertes actives afin d’ordonner les cas à traiter en premier.",
+            ],
+            styles,
+        ),
+        Spacer(1, 5 * mm),
+        committee_report_dataframe_table(
+            priority_pdf_df,
+            styles,
+            column_widths=[18 * mm, 48 * mm, 24 * mm, 26 * mm, 18 * mm, 40 * mm],
+        ),
+        Spacer(1, 5 * mm),
+        committee_report_paragraph("5. Décisions proposées au Comité", styles["section"]),
+        committee_report_message_box("Décisions attendues", decision_points, styles),
+        PageBreak(),
+        committee_report_paragraph("Annexe - Extrait de la vue filtrée", styles["section"]),
+        committee_report_paragraph(
+            "Cet extrait rappelle la physionomie du portefeuille filtré. Les exports CSV et Excel disponibles dans l’écran restent la référence détaillée pour l’analyse opérationnelle.",
+            styles["body_muted"],
+        ),
+        Spacer(1, 3 * mm),
+        committee_report_dataframe_table(
+            filtered_excerpt_df,
+            styles,
+            column_widths=[18 * mm, 50 * mm, 24 * mm, 24 * mm, 28 * mm, 30 * mm],
+        ),
+    ])
+
+    doc.build(story, onFirstPage=_draw_page, onLaterPages=_draw_page)
+    buffer.seek(0)
+    return buffer.getvalue()
+
+
 def reset_filters() -> None:
     for key in list(st.session_state.keys()):
         if key.startswith("filter_"):
@@ -8578,9 +9340,11 @@ def main() -> None:
         risk_df = build_distribution(filtered, "Risque", RISK_ORDER).rename(columns={"Libellé": "Statut"})
         render_small_table(format_percent_column(risk_df), color_columns={"Statut": "risk"})
 
+    alert_df = build_alert_table(filtered)
+
     with col_right:
         st.markdown('<div class="cm-subsection-title">Gouvernance</div>', unsafe_allow_html=True)
-        render_small_table(build_alert_table(filtered))
+        render_small_table(alert_df)
 
     st.divider()
     st.markdown('<h3 class="cm-section-title">Concentrations</h3>', unsafe_allow_html=True)
@@ -8671,8 +9435,28 @@ def main() -> None:
     repartition_export_sheets = [
         ("Vigilance", vigilance_df),
         ("Risques maximum", risk_df),
-        ("Gouvernance", build_alert_table(filtered)),
+        ("Gouvernance", alert_df),
     ]
+
+    committee_report_pdf_bytes = None
+    committee_report_pdf_error = ""
+    if REPORTLAB_AVAILABLE:
+        try:
+            committee_report_pdf_bytes = build_committee_risk_report_pdf_bytes(
+                filtered=filtered,
+                selected_societies=selected_societies,
+                filters=filters,
+                vigilance_df=vigilance_df,
+                risk_df=risk_df,
+                alert_df=alert_df,
+                top_risks_export_sheets=top_risks_export_sheets,
+                priority_df=priority_df,
+                filtered_export_df=filtered_export_df,
+            )
+        except Exception as exc:
+            committee_report_pdf_error = str(exc)
+    else:
+        committee_report_pdf_error = PDF_DEPENDENCY_ERROR_MESSAGE
 
     with st.expander("Préparer votre Comité des Risques", expanded=False):
         committee_row_1_col_1, committee_row_1_col_2 = st.columns(2)
@@ -8711,6 +9495,18 @@ def main() -> None:
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                 use_container_width=True,
             )
+
+        st.caption("Synthèse PDF exécutive bâtie sur la vue filtrée, la répartition, les concentrations et les dossiers prioritaires.")
+        if committee_report_pdf_bytes:
+            st.download_button(
+                label="Rapport Comité des Risques (.pdf)",
+                data=committee_report_pdf_bytes,
+                file_name=committee_report_download_name(selected_societies),
+                mime="application/pdf",
+                use_container_width=True,
+            )
+        elif committee_report_pdf_error:
+            st.info(committee_report_pdf_error)
 
     with st.expander("Aperçu des données sous-jacentes filtrées"):
         render_clickable_styled_dataframe(
