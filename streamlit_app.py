@@ -5596,6 +5596,7 @@ def render_clickable_streamlit_table(
     preserve_order: bool = False,
     auto_size_columns: bool = False,
     pinned_columns: list[str] | None = None,
+    table_width: str = "stretch",
 ) -> None:
     if df is None or df.empty:
         st.info("Aucune donnée disponible.")
@@ -5654,7 +5655,7 @@ def render_clickable_streamlit_table(
 
     event = st.dataframe(
         style_interactive_table(display_df, raw_df),
-        width="stretch",
+        width=table_width,
         height=height if height is not None else "auto",
         hide_index=True,
         column_order=list(display_df.columns),
@@ -5690,6 +5691,7 @@ def render_clickable_dataframe(
     preserve_order: bool = False,
     auto_size_columns: bool = False,
     pinned_columns: list[str] | None = None,
+    table_width: str = "stretch",
 ) -> None:
     render_clickable_streamlit_table(
         df,
@@ -5698,6 +5700,7 @@ def render_clickable_dataframe(
         preserve_order=preserve_order,
         auto_size_columns=auto_size_columns,
         pinned_columns=pinned_columns,
+        table_width=table_width,
     )
 
 
@@ -5712,6 +5715,7 @@ def render_clickable_styled_dataframe(
     preserve_order: bool = False,
     auto_size_columns: bool = False,
     pinned_columns: list[str] | None = None,
+    table_width: str = "stretch",
 ) -> None:
     render_clickable_streamlit_table(
         source_df,
@@ -5720,6 +5724,7 @@ def render_clickable_styled_dataframe(
         preserve_order=preserve_order,
         auto_size_columns=auto_size_columns,
         pinned_columns=pinned_columns,
+        table_width=table_width,
     )
 
 
@@ -8132,6 +8137,7 @@ def main() -> None:
         preserve_order=True,
         auto_size_columns=True,
         pinned_columns=["SIREN", "Dénomination"],
+        table_width="content",
     )
 
     priority_reference_columns = list(priority_df.columns)
@@ -8160,6 +8166,7 @@ def main() -> None:
             preserve_order=True,
             auto_size_columns=True,
             pinned_columns=["SIREN", "Dénomination"],
+            table_width="content",
         )
 
 
