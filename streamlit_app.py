@@ -4760,9 +4760,36 @@ def apply_filters(df: pd.DataFrame, filters: dict) -> pd.DataFrame:
     return result
 
 
+def build_unique_client_snapshot(df: pd.DataFrame, columns: list[str] | None = None) -> pd.DataFrame:
+    if df is None or df.empty:
+        if columns:
+            return pd.DataFrame(columns=columns)
+        return df.iloc[0:0].copy() if isinstance(df, pd.DataFrame) else pd.DataFrame()
+
+    work = df.copy()
+    if SOC_COL in work.columns and "SIREN" in work.columns:
+        work["cm_client_key"] = work[SOC_COL].astype(str).str.strip() + "|" + work["SIREN"].astype(str).str.strip()
+    elif "SIREN" in work.columns:
+        work["cm_client_key"] = work["SIREN"].astype(str).str.strip()
+    else:
+        work["cm_client_key"] = pd.Series(range(len(work)), index=work.index).astype(str)
+
+    if columns:
+        keep_columns = [col for col in columns if col in work.columns]
+        if "cm_client_key" not in keep_columns:
+            keep_columns.insert(0, "cm_client_key")
+        work = work[keep_columns]
+
+    return work.drop_duplicates(subset=["cm_client_key"], keep="first").reset_index(drop=True)
+
+
 def build_distribution(df: pd.DataFrame, column: str, order: list[str]) -> pd.DataFrame:
-    counts = df[column].value_counts(dropna=False)
-    total = len(df)
+    client_level = build_unique_client_snapshot(df, [column])
+    if column not in client_level.columns:
+        return pd.DataFrame([{"Libellé": item, "Nb": 0, "%": 0.0} for item in order])
+
+    counts = client_level[column].value_counts(dropna=False)
+    total = len(client_level)
     rows = []
     for item in order:
         nb = int(counts.get(item, 0))
@@ -4771,13 +4798,22 @@ def build_distribution(df: pd.DataFrame, column: str, order: list[str]) -> pd.Da
 
 
 def build_alert_table(df: pd.DataFrame) -> pd.DataFrame:
+    alert_columns = [
+        "Alerte justificatif incomplet",
+        "Alerte vigilance critique",
+        "Alerte revue trop ancienne",
+        "Alerte sans prochaine revue",
+        "Alerte cross-border élevé",
+        "Alerte cash intensité élevée",
+    ]
+    client_level = build_unique_client_snapshot(df, alert_columns)
     rows = [
-        ("Justificatif incomplet", int(df["Alerte justificatif incomplet"].sum())),
-        ("Vigilance critique", int(df["Alerte vigilance critique"].sum())),
-        ("Revue trop ancienne", int(df["Alerte revue trop ancienne"].sum())),
-        ("Sans prochaine revue", int(df["Alerte sans prochaine revue"].sum())),
-        ("Cross-border élevé", int(df["Alerte cross-border élevé"].sum())),
-        ("Cash intensité élevée", int(df["Alerte cash intensité élevée"].sum())),
+        ("Justificatif incomplet", int(client_level.get("Alerte justificatif incomplet", pd.Series(0, index=client_level.index)).fillna(0).sum())),
+        ("Vigilance critique", int(client_level.get("Alerte vigilance critique", pd.Series(0, index=client_level.index)).fillna(0).sum())),
+        ("Revue trop ancienne", int(client_level.get("Alerte revue trop ancienne", pd.Series(0, index=client_level.index)).fillna(0).sum())),
+        ("Sans prochaine revue", int(client_level.get("Alerte sans prochaine revue", pd.Series(0, index=client_level.index)).fillna(0).sum())),
+        ("Cross-border élevé", int(client_level.get("Alerte cross-border élevé", pd.Series(0, index=client_level.index)).fillna(0).sum())),
+        ("Cash intensité élevée", int(client_level.get("Alerte cash intensité élevée", pd.Series(0, index=client_level.index)).fillna(0).sum())),
     ]
     return pd.DataFrame(rows, columns=["Alerte", "Nb"])
 
@@ -4881,18 +4917,7 @@ def build_concentration_top_table(
     if "Risque" not in work.columns:
         work["Risque"] = ""
 
-    if SOC_COL in work.columns and "SIREN" in work.columns:
-        work["cm_client_key"] = work[SOC_COL].astype(str).str.strip() + "|" + work["SIREN"].astype(str).str.strip()
-    elif "SIREN" in work.columns:
-        work["cm_client_key"] = work["SIREN"].astype(str).str.strip()
-    else:
-        work["cm_client_key"] = pd.Series(range(len(work)), index=work.index).astype(str)
-
-    client_level = (
-        work[["cm_client_key", group_col, "Vigilance", "Risque"]]
-        .drop_duplicates(subset=["cm_client_key"], keep="first")
-        .reset_index(drop=True)
-    )
+    client_level = build_unique_client_snapshot(work, [group_col, "Vigilance", "Risque"])
 
     total_clients = int(client_level["cm_client_key"].nunique())
     total_vigilance = {
@@ -4950,11 +4975,13 @@ def strip_leading_status_prefix(value: object, prefix: str) -> object:
 
 
 def build_priority_table(df: pd.DataFrame, top_n: int = 10) -> pd.DataFrame:
-    priority = (
-        df.sort_values(["Score priorité", SOC_COL, "SIREN"], ascending=[False, True, False], kind="stable")
-        .head(top_n)
-        .copy()
-    )
+    priority = df.copy()
+    if priority.empty:
+        return build_portfolio_underlying_table(priority, include_hidden_societe=True)
+
+    priority = priority.sort_values(["Score priorité", SOC_COL, "SIREN"], ascending=[False, True, False], kind="stable")
+    priority = build_unique_client_snapshot(priority)
+    priority = priority.drop(columns=["cm_client_key"], errors="ignore").head(top_n).copy()
     return build_portfolio_underlying_table(priority, include_hidden_societe=True)
 
 
@@ -5272,12 +5299,23 @@ def render_filters(df: pd.DataFrame) -> dict:
 
 def render_kpis(df: pd.DataFrame) -> None:
     st.subheader("Bandeau de synthèse")
-    total = len(df)
-    vigilance_renforcee = int(df["Vigilance"].isin(CRITICAL_VIGILANCE).sum()) if "Vigilance" in df.columns else 0
-    risque_avere = int((df["Risque"] == "Risque avéré").sum()) if "Risque" in df.columns else 0
-    justificatifs_incomplets = int(df["Alerte justificatif incomplet"].sum())
-    sans_revue = int(df["Alerte sans prochaine revue"].sum())
-    historique_disponible = int((df["Nb historique"] > 0).sum())
+    client_level = build_unique_client_snapshot(
+        df,
+        [
+            "Vigilance",
+            "Risque",
+            "Alerte justificatif incomplet",
+            "Alerte sans prochaine revue",
+            "Nb historique",
+            "Vigilance Date de mise à jour",
+        ],
+    )
+    total = len(client_level)
+    vigilance_renforcee = int(client_level["Vigilance"].isin(CRITICAL_VIGILANCE).sum()) if "Vigilance" in client_level.columns else 0
+    risque_avere = int((client_level["Risque"] == "Risque avéré").sum()) if "Risque" in client_level.columns else 0
+    justificatifs_incomplets = int(client_level.get("Alerte justificatif incomplet", pd.Series(0, index=client_level.index)).fillna(0).sum())
+    sans_revue = int(client_level.get("Alerte sans prochaine revue", pd.Series(0, index=client_level.index)).fillna(0).sum())
+    historique_disponible = int(client_level.get("Nb historique", pd.Series(0, index=client_level.index)).fillna(0).gt(0).sum())
 
     c1, c2, c3, c4, c5, c6 = st.columns(6)
     c1.metric("Clients visibles", total)
@@ -5287,8 +5325,8 @@ def render_kpis(df: pd.DataFrame) -> None:
     c5.metric("Sans prochaine revue", sans_revue)
     c6.metric("Historique disponible", historique_disponible)
 
-    if total and "Vigilance Date de mise à jour" in df.columns:
-        last_update = df["Vigilance Date de mise à jour"].max()
+    if total and "Vigilance Date de mise à jour" in client_level.columns:
+        last_update = client_level["Vigilance Date de mise à jour"].max()
         if pd.notna(last_update):
             st.caption("Fraîcheur visible : dernière mise à jour vigilance = {}.".format(last_update.strftime("%d/%m/%Y")))
 
