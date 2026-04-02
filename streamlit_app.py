@@ -88,6 +88,7 @@ RISK_COUNT_COLUMNS = [f"Nb {label}" for label in RISK_ORDER]
 STATUS_COUNT_COLUMNS = VIGILANCE_COUNT_COLUMNS + RISK_COUNT_COLUMNS
 
 BASE_RISK_SOURCE_COLUMN = "Statut de risque (import SaaS source)"
+PORTFOLIO_PIPELINE_VERSION = "v186_status_counts_fix"
 CRITICAL_VIGILANCE = {"Vigilance Élevée", "Vigilance Critique"}
 PRIORITY_RISK = {"Risque potentiel", "Risque avéré"}
 
@@ -4588,7 +4589,7 @@ Tu dois répondre exclusivement en JSON valide, sans texte avant ni après, avec
 def build_dataset_cache_signature() -> str:
     manifest = load_manifest() or {}
     current_dir = active_dataset_path()
-    parts = [str(manifest.get("published_at_utc", ""))]
+    parts = [PORTFOLIO_PIPELINE_VERSION, str(manifest.get("published_at_utc", ""))]
     for filename in DATA_FILES.values():
         path = current_dir / filename
         if path.exists():
@@ -4700,12 +4701,7 @@ def load_source_data() -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
 
     for col in indicator_status_columns(indicators):
         if col in indicators.columns:
-            indicators[col] = (
-                indicators[col]
-                .apply(canonical_risk_label)
-                .replace({"": pd.NA})
-                .astype("string")
-            )
+            indicators[col] = clean_text_column(indicators[col])
 
     return base, indicators, history
 
