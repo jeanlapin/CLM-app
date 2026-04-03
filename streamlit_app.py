@@ -239,7 +239,7 @@ ANALYSIS_TOP_PERCENT_STYLE = {
     "% NC": {"base": "#94A3B8", "text": "#475569"},
     "% sans risque": {"base": "#16A34A", "text": "#14532D"},
 }
-ANALYSIS_SCREEN_CACHE_VERSION = "v205_analysis_focus_motif_fix"
+ANALYSIS_SCREEN_CACHE_VERSION = "v206_analysis_committee_pack"
 ANALYSIS_PORTFOLIO_FILTER_LABELS = ["Vigilance", "Risque", "EDD", "Segment", "Pays", "Produit", "Canal", "Analyste", "Valideur"]
 ANALYSIS_INDICATOR_FILTER_KEYS = ["Indicateur", "Statut", "Famille", "Fraîcheur"]
 ANALYSIS_INDICATOR_FAMILY_EXACT = {
@@ -5500,6 +5500,119 @@ def build_committee_pack_excel_bytes(
 
 
 
+def analysis_committee_pack_download_name(selected_societies: list[str]) -> str:
+    cleaned = [committee_report_slug(item)[:18] for item in selected_societies if str(item or "").strip()]
+    if len(cleaned) > 2:
+        scope_key = "_".join(cleaned[:2]) + f"_plus_{len(cleaned) - 2}"
+    else:
+        scope_key = "_".join(cleaned) or "analyse"
+    return f"pack_comite_risques_analyse_{scope_key}_{datetime.now().strftime('%Y%m%d')}.xlsx"
+
+
+@st.cache_data(show_spinner=False)
+def build_analysis_committee_pack_excel_bytes(
+    *,
+    selected_societies: list[str],
+    portfolio_filters: dict[str, object],
+    indicator_filters: dict[str, object],
+    sort_mode: str,
+    filtered_portfolio: pd.DataFrame,
+    filtered_indicators: pd.DataFrame,
+    analysis_client_scope: pd.DataFrame,
+    status_distribution: pd.DataFrame,
+    family_distribution: pd.DataFrame,
+    freshness_distribution: pd.DataFrame,
+    top_segment_df: pd.DataFrame,
+    top_pays_df: pd.DataFrame,
+    top_produits_df: pd.DataFrame,
+    top_canaux_df: pd.DataFrame,
+    indicator_table: pd.DataFrame,
+    analysis_table: pd.DataFrame,
+) -> bytes:
+    portfolio_active_filters = committee_report_filters_label(portfolio_filters)
+    indicator_active_filters = committee_report_filters_label(indicator_filters)
+    total_clients_portfolio = int(build_unique_client_snapshot(filtered_portfolio, [SOC_COL, "SIREN"]).shape[0])
+    total_clients_scope = int(build_unique_client_snapshot(analysis_client_scope, [SOC_COL, "SIREN"]).shape[0])
+    total_cases = int(len(filtered_indicators)) if filtered_indicators is not None else 0
+    total_indicators = int(filtered_indicators.get("Indicateur", pd.Series(dtype="object")).astype(str).replace({"": pd.NA}).dropna().nunique()) if filtered_indicators is not None else 0
+    last_update = pd.to_datetime(filtered_indicators.get("Date de mise à jour"), errors="coerce").max() if filtered_indicators is not None and "Date de mise à jour" in filtered_indicators.columns else pd.NaT
+    last_update_label = pd.Timestamp(last_update).strftime('%d/%m/%Y') if pd.notna(last_update) else "Non disponible"
+
+    summary_rows = [
+        ("Écran source", "Analyse des indicateurs d’alerte"),
+        ("Périmètre", committee_report_scope_label(selected_societies)),
+        ("Généré le", datetime.now().strftime('%d/%m/%Y %H:%M')),
+        ("Filtres portefeuille", portfolio_active_filters),
+        ("Filtres indicateurs", indicator_active_filters),
+        ("Tri des tops", sort_mode or "Nb"),
+        ("Clients portefeuille filtré", total_clients_portfolio),
+        ("Clients avec indicateurs", total_clients_scope),
+        ("Cas indicateurs", total_cases),
+        ("Indicateurs distincts", total_indicators),
+        ("Dernière mise à jour visible", last_update_label),
+        (
+            "Onglets inclus",
+            "Répartitions, tops par famille, indicateurs contributifs, tableau d’analyse, clients scope et cas indicateurs",
+        ),
+    ]
+
+    client_columns = [
+        SOC_COL,
+        "SIREN",
+        "Dénomination",
+        "Vigilance",
+        "Risque",
+        "Segment",
+        "Pays de résidence",
+        "Produit(service) principal",
+        "Canal d’opérations principal 12 mois",
+        "Statut EDD",
+        "Analyste",
+        "Valideur",
+        "Date dernière revue",
+        "Date prochaine revue",
+        "Vigilance Date de mise à jour",
+    ]
+    analysis_clients_export = build_unique_client_snapshot(analysis_client_scope, client_columns).drop(columns=["cm_client_key"], errors="ignore")
+
+    indicator_case_columns = [
+        SOC_COL,
+        "SIREN",
+        "Dénomination",
+        "Indicateur",
+        "Famille indicateur",
+        "Statut",
+        "Valeur",
+        "Date de mise à jour",
+        "Fraîcheur indicateur",
+        "Commentaire",
+        "Segment",
+        "Pays de résidence",
+        "Produit(service) principal",
+        "Canal d’opérations principal 12 mois",
+        "Analyste",
+        "Valideur",
+    ]
+    indicator_cases_export = filtered_indicators[[col for col in indicator_case_columns if col in filtered_indicators.columns]].copy() if filtered_indicators is not None else pd.DataFrame(columns=indicator_case_columns)
+
+    sheets = [
+        ("Synthèse", pd.DataFrame(summary_rows, columns=["Rubrique", "Valeur"])),
+        ("Répartition statuts", status_distribution.copy()),
+        ("Répartition familles", family_distribution.copy()),
+        ("Répartition fraîcheur", freshness_distribution.copy()),
+        ("Top segment client", top_segment_df.copy()),
+        ("Top pays", top_pays_df.copy()),
+        ("Top produits", top_produits_df.copy()),
+        ("Top canaux", top_canaux_df.copy()),
+        ("Indicateurs contributifs", indicator_table.copy()),
+        ("Tableau analyse", analysis_table.copy()),
+        ("Clients scope", analysis_clients_export),
+        ("Cas indicateurs", indicator_cases_export),
+    ]
+    return dataframes_to_excel_bytes(sheets)
+
+
+
 def committee_report_slug(value: object) -> str:
     normalized = unicodedata.normalize("NFKD", str(value or "")).encode("ascii", "ignore").decode("ascii")
     slug = re.sub(r"[^A-Za-z0-9]+", "_", normalized).strip("_").lower()
@@ -9837,13 +9950,52 @@ def render_analysis_screen(portfolio: pd.DataFrame, indicators: pd.DataFrame) ->
     st.divider()
     render_indicator_contribution_chart(indicator_table)
 
+    analysis_table, _ = build_unified_analysis_table(analysis_client_scope)
+    portfolio_filters_export = {label: selections.get(label, "Tous") for label in ANALYSIS_PORTFOLIO_FILTER_LABELS}
+    indicator_filters_export = {
+        "Indicateur": indicator_value,
+        "Statut indicateur": "Tous" if status_value == "Tous" else analysis_status_ui_label(status_value),
+        "Famille indicateur": family_value,
+        "Fraîcheur": freshness_value,
+    }
+    active_analysis_top_sort = st.session_state.get("analysis_top_sort_mode", current_sort_mode)
+    analysis_committee_excel = build_analysis_committee_pack_excel_bytes(
+        selected_societies=list(analysis_societies_key),
+        portfolio_filters=portfolio_filters_export,
+        indicator_filters=indicator_filters_export,
+        sort_mode=active_analysis_top_sort,
+        filtered_portfolio=filtered_portfolio,
+        filtered_indicators=filtered_indicators,
+        analysis_client_scope=analysis_client_scope,
+        status_distribution=status_distribution,
+        family_distribution=family_distribution,
+        freshness_distribution=freshness_distribution,
+        top_segment_df=analysis_top_tables.get("Segment / Client", pd.DataFrame()),
+        top_pays_df=analysis_top_tables.get("Indicateurs Pays", pd.DataFrame()),
+        top_produits_df=analysis_top_tables.get("Indicateurs Produits", pd.DataFrame()),
+        top_canaux_df=analysis_top_tables.get("Indicateurs Canal", pd.DataFrame()),
+        indicator_table=indicator_table,
+        analysis_table=analysis_table,
+    )
+
+    st.divider()
+    with st.expander("Préparer votre Comité des Risques", expanded=False):
+        st.caption("Pack Excel multi-onglets adapté à l’écran Analyse : répartitions, tops, indicateurs contributifs, tableau d’analyse, clients scope et cas indicateurs, avec une présentation soignée.")
+        st.download_button(
+            label="Pack Comité des Risques (.xlsx)",
+            data=analysis_committee_excel,
+            file_name=analysis_committee_pack_download_name(list(analysis_societies_key)),
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            type="primary",
+            use_container_width=True,
+        )
+
     st.divider()
     with st.expander("Lecture détaillée des dimensions", expanded=False):
         render_analysis_panel_header(
             "Tableau d’analyse",
             "Cette table conserve la lecture détaillée par dimensions et permet, par clic, d’alimenter les clients sous-jacents sans modifier les calculs de l’écran Portefeuille.",
         )
-        analysis_table, _ = build_unified_analysis_table(analysis_client_scope)
         display_analysis_table = apply_unified_analysis_table_controls(analysis_table)
         main_action, selected_main = render_selectable_analysis_table(display_analysis_table, key_prefix="analysis_main", height=520)
 
