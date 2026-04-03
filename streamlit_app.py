@@ -3401,10 +3401,21 @@ def review_simulation_classification_status_colors(status: object) -> tuple[str,
 
 
 def review_simulation_classification_vigilance_colors(vigilance: object) -> tuple[str, str]:
+    value = str(vigilance or "").strip()
+    if value == "NA":
+        return ("#EEF2F7", "#334155")
     try:
         return status_palette(vigilance, "vigilance")
     except Exception:
         return ("#EEF2F7", "#334155")
+
+
+def review_simulation_classification_vigilance_value(status: object, default_vigilance: object) -> str:
+    normalized = canonical_risk_label(status) or str(status or "").strip()
+    if normalized in {"Aucun risque détecté", "Non calculable"}:
+        return "NA"
+    rendered = canonical_vigilance_label(default_vigilance) or str(default_vigilance or "").strip()
+    return rendered or "Non renseigné"
 
 
 def review_simulation_classification_axis(indicator_name: object) -> str:
@@ -3511,7 +3522,7 @@ def review_simulation_classification_rows(
     available_names = [str(item.get("nom_indicateur", "") or "").strip() for item in grouped_items if str(item.get("nom_indicateur", "") or "").strip()]
     structured_payload = review_simulation_parse_structured_ai_payload(row.get(REVIEW_SIM_AI_STRUCTURED_LABEL, ""))
     structured_map = review_simulation_classification_structured_indicator_map(structured_payload, available_names)
-    vigilance_value = canonical_vigilance_label(row.get(REVIEW_SIM_EST_LABEL, "")) or canonical_vigilance_label(structured_payload.get("statut_estime", "")) or str(row.get(REVIEW_SIM_EST_LABEL, "") or structured_payload.get("statut_estime", "") or "Non renseigné").strip() or "Non renseigné"
+    default_vigilance_value = canonical_vigilance_label(row.get(REVIEW_SIM_EST_LABEL, "")) or canonical_vigilance_label(structured_payload.get("statut_estime", "")) or str(row.get(REVIEW_SIM_EST_LABEL, "") or structured_payload.get("statut_estime", "") or "Non renseigné").strip() or "Non renseigné"
 
     by_axis: dict[str, list[dict[str, object]]] = {axis: [] for axis in CLASSIFICATION_AXIS_ORDER}
     for item in grouped_items:
@@ -3529,7 +3540,7 @@ def review_simulation_classification_rows(
             "dispositif_html": review_simulation_classification_dispositif_html(status, data.get("Commentaire"), structured_map.get(indicator_name)),
             "new_cotation": review_simulation_classification_new_cotation(status),
             "real_risk": review_simulation_classification_real_risk(status),
-            "vigilance": vigilance_value,
+            "vigilance": review_simulation_classification_vigilance_value(status, default_vigilance_value),
         })
 
     def _sort_key(entry: dict[str, object]) -> tuple[int, str]:
@@ -3676,7 +3687,7 @@ def build_review_simulation_classification_pdf_story(
     methodology_text = (
         "Le document reprend la logique de la classification LCB-FT et regroupe les indicateurs BeCLM par axes Client, Pays, Produit et Canal.\n\n"
         "La colonne ‘Risque BeCLM’ reprend le statut source de l’indicateur. La ‘Cotation’, la ‘Nouvelle cotation’ et le ‘Risque réel’ sont dérivés directement de ce statut selon les règles métier validées.\n\n"
-        "Le ‘Niveau de vigilance applicable’ reprend la valeur estimée par l’IA dans le premier PDF de Revue & Simulation."
+        "Le ‘Niveau de vigilance applicable’ reprend la valeur estimée par l’IA dans le premier PDF de Revue & Simulation, sauf pour les statuts Sans risque et Non calculable où la valeur affichée est ‘NA’."
     )
 
     story: list[object] = [
