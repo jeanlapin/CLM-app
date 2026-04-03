@@ -6784,7 +6784,82 @@ else:
         st.info("La vue agrandie nécessite une version plus récente de Streamlit prenant en charge st.dialog.")
 
 
-def render_top_block(title: str, df: pd.DataFrame, *, dialog_key: str | None = None) -> None:
+def _build_concentration_top_preview_html(df: pd.DataFrame, sort_mode: str) -> str:
+    if df is None or df.empty:
+        return (
+            "<div style='background:#FFFFFF;border:1px solid rgba(22,58,89,0.08);border-radius:18px;padding:14px 16px;box-shadow:0 12px 28px rgba(15,23,42,0.05);'>"
+            "<div style='font-size:13px;color:#526273;'>Aucune donnée à afficher.</div>"
+            "</div>"
+        )
+
+    label_column = str(df.columns[0]) if len(df.columns) else "Libellé"
+    top_rows = df.head(3).copy()
+
+    def metric_payload(row: dict[str, object]) -> tuple[str, object, str, str]:
+        client_share = float(row.get("% clients", 0.0) or 0.0)
+        normalized_sort = str(sort_mode or "% clients").strip().lower()
+        if normalized_sort == "% vigilance":
+            metric_columns = [col for col in CONCENTRATION_VIGILANCE_SORT_PRIORITY if col in top_rows.columns]
+        elif normalized_sort == "% risque":
+            metric_columns = [col for col in CONCENTRATION_RISK_SORT_PRIORITY if col in top_rows.columns]
+        else:
+            metric_columns = ["% clients"] if "% clients" in top_rows.columns else []
+
+        if not metric_columns:
+            return "", "", "", ""
+
+        metric_col = metric_columns[0]
+        if normalized_sort in {"% vigilance", "% risque"}:
+            for candidate in metric_columns:
+                value = row.get(candidate, 0.0)
+                try:
+                    value_float = float(value or 0.0)
+                except Exception:
+                    value_float = 0.0
+                if value_float > 0:
+                    metric_col = candidate
+                    break
+
+        metric_value = row.get(metric_col, "")
+        metric_style = concentration_cell_style(metric_col, metric_value, client_share)
+        metric_display = _format_concentration_cell(metric_value, metric_col)
+        return metric_col, metric_value, metric_style, metric_display
+
+    rows_html: list[str] = []
+    for rank, row in enumerate(top_rows.to_dict('records'), start=1):
+        label = escape(str(row.get(label_column, '')))
+        metric_col, metric_raw, metric_style, metric_display = metric_payload(row)
+        if metric_display:
+            badge_label = escape(str(metric_col))
+            badge_style = (metric_style or "") + " padding:4px 8px; border-radius:999px; white-space:nowrap; font-size:12px; font-weight:700;"
+            metric_html = (
+                f"<div style='display:flex;align-items:center;gap:6px;flex-wrap:wrap;justify-content:flex-end;'>"
+                f"<div style='font-size:11px;color:#526273;white-space:nowrap;'>{badge_label}</div>"
+                f"<div style='{badge_style}'>{metric_display}</div>"
+                f"</div>"
+            )
+        else:
+            metric_html = ""
+        border_style = "border-bottom:1px solid rgba(22,58,89,0.08);" if rank < len(top_rows) else ""
+        rows_html.append(
+            f"<div style='display:flex;align-items:flex-start;justify-content:space-between;gap:12px;padding:9px 0;{border_style}'>"
+            f"<div style='display:flex;align-items:flex-start;gap:10px;min-width:0;'>"
+            f"<div style='min-width:22px;font-family:Sora,sans-serif;font-weight:800;font-size:13px;color:#163A59;'>{rank}.</div>"
+            f"<div style='font-family:Sora,sans-serif;font-weight:700;font-size:14px;line-height:1.35;color:#163A59;word-break:break-word;'>{label}</div>"
+            f"</div>"
+            f"{metric_html}"
+            f"</div>"
+        )
+
+    return (
+        "<div style='background:#FFFFFF;border:1px solid rgba(22,58,89,0.08);border-radius:18px;padding:14px 16px;box-shadow:0 12px 28px rgba(15,23,42,0.05);'>"
+        f"<div style='font-size:12px;color:#526273;margin-bottom:2px;'>Top 3 selon le tri <strong style='color:#163A59;'>{escape(str(sort_mode))}</strong>.</div>"
+        + ''.join(rows_html)
+        + "</div>"
+    )
+
+
+def render_top_block(title: str, df: pd.DataFrame, *, dialog_key: str | None = None, sort_mode: str = "% clients") -> None:
     title_col, action_col = st.columns([6.4, 0.8])
     with title_col:
         st.markdown(f'<h3 class="cm-section-title" style="white-space: nowrap; margin-bottom: 0;">{escape(title)}</h3>', unsafe_allow_html=True)
@@ -6804,7 +6879,7 @@ def render_top_block(title: str, df: pd.DataFrame, *, dialog_key: str | None = N
         st.info("Aucune donnée à afficher.")
         return
 
-    st.markdown(_build_concentration_table_html(df), unsafe_allow_html=True)
+    st.markdown(_build_concentration_top_preview_html(df, sort_mode), unsafe_allow_html=True)
 
 
 def render_alert_block(title: str, df: pd.DataFrame) -> None:
@@ -10303,13 +10378,13 @@ def main() -> None:
 
     t1, t2, t3, t4 = st.columns(4)
     with t1:
-        render_top_block("Top segments", top_segments_df, dialog_key="segments")
+        render_top_block("Top segments", top_segments_df, dialog_key="segments", sort_mode=concentration_sort)
     with t2:
-        render_top_block("Top pays", top_pays_df, dialog_key="pays")
+        render_top_block("Top pays", top_pays_df, dialog_key="pays", sort_mode=concentration_sort)
     with t3:
-        render_top_block("Top produits", top_produits_df, dialog_key="produits")
+        render_top_block("Top produits", top_produits_df, dialog_key="produits", sort_mode=concentration_sort)
     with t4:
-        render_top_block("Top canaux", top_canaux_df, dialog_key="canaux")
+        render_top_block("Top canaux", top_canaux_df, dialog_key="canaux", sort_mode=concentration_sort)
 
 
     st.divider()
