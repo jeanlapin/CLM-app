@@ -11,6 +11,7 @@ import re
 import hmac
 import shutil
 import unicodedata
+import time
 from urllib.error import HTTPError, URLError
 from urllib.parse import quote_plus
 from urllib.request import Request, urlopen
@@ -9604,15 +9605,17 @@ def render_analysis_screen(portfolio: pd.DataFrame, indicators: pd.DataFrame) ->
 
     payload: dict[str, object]
     if should_show_compute_status:
-        status_anchor = st.empty()
+        status_anchor = st.container()
         if hasattr(st, "status"):
-            with status_anchor.container():
+            with status_anchor:
                 with st.status("Les indicateurs sont en cours de calcul…", expanded=True) as status_box:
                     counter_placeholder = st.empty()
-                    progress_bar = st.progress(0)
+                    progress_bar = st.progress(1)
+                    counter_placeholder.info("Calcul 0/9 — Initialisation de l’écran Analyse")
+                    time.sleep(0.12)
 
                     def progress_callback(step_number: int, total_steps: int, label: str) -> None:
-                        progress_bar.progress(int((step_number / total_steps) * 100))
+                        progress_bar.progress(max(5, int((step_number / total_steps) * 100)))
                         counter_placeholder.info(f"Calcul {step_number}/{total_steps} — {label}")
                         status_box.update(label=f"Les indicateurs sont en cours de calcul… {label}", state="running", expanded=True)
 
@@ -9628,15 +9631,16 @@ def render_analysis_screen(portfolio: pd.DataFrame, indicators: pd.DataFrame) ->
                     progress_bar.progress(100)
                     counter_placeholder.success("Calcul terminé. Les compteurs et classements de l’écran Analyse sont prêts.")
                     status_box.update(label="Calcul des indicateurs terminé", state="complete", expanded=False)
-            status_anchor.empty()
         else:
-            with status_anchor.container():
-                info_box = st.info("Les indicateurs sont en cours de calcul…")
-                progress_bar = st.progress(0)
+            with status_anchor:
+                st.info("Les indicateurs sont en cours de calcul…")
+                progress_bar = st.progress(1)
                 counter_placeholder = st.empty()
+                counter_placeholder.info("Calcul 0/9 — Initialisation de l’écran Analyse")
+                time.sleep(0.12)
 
                 def progress_callback(step_number: int, total_steps: int, label: str) -> None:
-                    progress_bar.progress(int((step_number / total_steps) * 100))
+                    progress_bar.progress(max(5, int((step_number / total_steps) * 100)))
                     counter_placeholder.info(f"Calcul {step_number}/{total_steps} — {label}")
 
                 payload = build_analysis_screen_payload(
@@ -9650,7 +9654,6 @@ def render_analysis_screen(portfolio: pd.DataFrame, indicators: pd.DataFrame) ->
                 )
                 progress_bar.progress(100)
                 counter_placeholder.success("Calcul terminé. Les compteurs et classements de l’écran Analyse sont prêts.")
-            status_anchor.empty()
         seen_compute_keys.add(compute_key)
         st.session_state["analysis_screen_compute_seen_keys"] = seen_compute_keys
     else:
