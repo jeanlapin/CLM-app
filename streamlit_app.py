@@ -239,7 +239,7 @@ ANALYSIS_TOP_PERCENT_STYLE = {
     "% NC": {"base": "#94A3B8", "text": "#475569"},
     "% sans risque": {"base": "#16A34A", "text": "#14532D"},
 }
-ANALYSIS_SCREEN_CACHE_VERSION = "v198_analysis_family_overrides"
+ANALYSIS_SCREEN_CACHE_VERSION = "v203_analysis_glossary_expander"
 ANALYSIS_PORTFOLIO_FILTER_LABELS = ["Vigilance", "Risque", "EDD", "Segment", "Pays", "Produit", "Canal", "Analyste", "Valideur"]
 ANALYSIS_INDICATOR_FILTER_KEYS = ["Indicateur", "Statut", "Famille", "Fraîcheur"]
 ANALYSIS_INDICATOR_FAMILY_EXACT = {
@@ -6763,6 +6763,139 @@ def render_portfolio_glossary_expander() -> None:
 
 
 
+def render_analysis_glossary_expander() -> None:
+    glossary_rows = [
+        ["Indicateur", "Nom d’un indicateur d’alerte reconstruit à partir du fichier 02 et affiché ligne à ligne dans l’écran Analyse."],
+        ["Statut indicateur", "Statut de risque porté par un indicateur : Risque avéré, Risque potentiel, Risque mitigé, Risque levé, Non calculable ou Sans risque."],
+        ["Famille indicateur", "Famille de rattachement utilisée dans l’écran Analyse : Segment / Client, Indicateurs Pays, Indicateurs Produits, Indicateurs Canal."],
+        ["Segment / Client", "Famille par défaut de l’écran Analyse. Elle regroupe tous les indicateurs qui ne relèvent pas des familles Pays, Produits ou Canal."],
+        ["Indicateurs Pays", "Indicateurs classés comme géographiques ou juridictionnels, par exemple GAFI, UE, FR ou Bâle."],
+        ["Indicateurs Produits", "Indicateurs rattachés à la nature du produit ou du service utilisé."],
+        ["Indicateurs Canal", "Indicateurs rattachés au canal d’entrée en relation ou au mode d’opération."],
+        ["Fraîcheur", "Ancienneté de la date de mise à jour d’un indicateur : < 30 jours, 30 à 90 jours, > 90 jours ou Sans date."],
+        ["Clients concernés", "Nombre de clients uniques du portefeuille filtré ayant au moins un cas indicateur après application des filtres d’analyse."],
+        ["Cas indicateurs", "Nombre total d’occurrences d’indicateurs visibles dans le périmètre filtré de l’écran Analyse."],
+        ["Indicateurs distincts", "Nombre de libellés d’indicateurs différents présents dans le périmètre analysé."],
+        ["Part du portefeuille filtré", "Part des clients concernés dans le portefeuille filtré courant."],
+        ["Répartition", "Lecture des cas indicateurs par statut, par famille et par fraîcheur."],
+        ["Top segment / client", "Bloc de concentration des indicateurs rattachés à la famille Segment / Client."],
+        ["Top pays", "Bloc de concentration des indicateurs rattachés à la famille Indicateurs Pays."],
+        ["Top produits", "Bloc de concentration des indicateurs rattachés à la famille Indicateurs Produits."],
+        ["Top canaux", "Bloc de concentration des indicateurs rattachés à la famille Indicateurs Canal."],
+        ["Indicateurs les plus contributifs", "Classement des indicateurs présentant le plus grand nombre total de cas sur le périmètre filtré."],
+        ["Lecture détaillée des dimensions", "Table de drill-down permettant de partir d’une dimension et d’ouvrir les clients sous-jacents, sans modifier les calculs de Portefeuille."],
+        ["Clients sous-jacents", "Liste opérationnelle des clients correspondant au focus sélectionné dans l’écran Analyse."],
+    ]
+
+    calc_rows = [
+        [
+            "Base de l’écran Analyse",
+            "Normalisation du fichier 02 indicateurs en lignes [client × indicateur], puis jointure sur le portefeuille filtré pour récupérer Segment, Pays, Produit, Canal, Analyste, Valideur et les dates de revue.",
+            "Cas indicateurs",
+            "Les calculs Analyse sont isolés et n’impactent pas l’écran Portefeuille.",
+        ],
+        [
+            "Cas indicateurs",
+            "1 ligne par client × indicateur non vide issue du fichier 02 après normalisation",
+            "Cas",
+            "La vigilance est exclue de cette normalisation dédiée aux indicateurs d’alerte.",
+        ],
+        [
+            "Clients concernés",
+            "Nombre de clients uniques du scope Analyse filtré",
+            "Clients uniques",
+            "Construit à partir des clients ayant au moins un cas indicateur visible après filtres.",
+        ],
+        [
+            "Cas indicateurs",
+            "count(lignes de la base Analyse filtrée)",
+            "Cas",
+            "Chaque ligne correspond à une occurrence d’indicateur pour un client.",
+        ],
+        [
+            "Indicateurs distincts",
+            "nunique('Indicateur')",
+            "Cas indicateurs",
+            "Compte les libellés distincts visibles après filtres.",
+        ],
+        [
+            "Part du portefeuille filtré",
+            "Clients concernés / clients uniques du portefeuille filtré",
+            "Portefeuille filtré",
+            "Permet de mesurer le poids du scope Analyse dans le portefeuille courant.",
+        ],
+        [
+            "Statuts du bandeau et de la répartition",
+            "count(Statut == valeur) pour chacun des 6 statuts, puis % = cas du statut / total des cas visibles",
+            "Cas",
+            "L’étiquette UI 'Sans risque' correspond au statut source 'Aucun risque détecté'.",
+        ],
+        [
+            "Famille indicateur",
+            "Classification par correspondance exacte puis par mots-clés ; à défaut l’indicateur est rattaché à 'Segment / Client'",
+            "Indicateur",
+            "'SIREN / Catégorie juridique' et 'BODACC / Dépôt des comptes' sont forcés dans 'Segment / Client'.",
+        ],
+        [
+            "Fraîcheur",
+            "< 30 jours ; 30 à 90 jours ; > 90 jours ; Sans date, selon l’ancienneté de 'Date de mise à jour'",
+            "Indicateur",
+            "Calculée sur la date de mise à jour de chaque cas indicateur.",
+        ],
+        [
+            "Top par famille",
+            "Pour une famille donnée : regroupement par 'Indicateur', Nb = nombre de cas de la famille, % = Nb / total cas de la famille",
+            "Famille × indicateur",
+            "Les colonnes '% statut' mesurent le poids de l’indicateur dans le total du statut au sein de la famille.",
+        ],
+        [
+            "Aperçu Top 3",
+            "Affiche les 3 premiers indicateurs selon le tri actif dans la vue normale ; la vue agrandie expose le tableau complet",
+            "Famille × indicateur",
+            "Même logique de présentation que les tops de l’écran Portefeuille, adaptée à l’écran Analyse.",
+        ],
+        [
+            "Indicateurs les plus contributifs",
+            "Table croisée Indicateur × Statut, puis Total cas = somme des 6 statuts ; tri décroissant sur Total cas",
+            "Indicateur",
+            "Conserve la présentation actuelle du bloc de contribution.",
+        ],
+        [
+            "Filtres Analyse",
+            "Ligne 1 = filtres portefeuille ; ligne 2 = filtres indicateurs (Indicateur, Statut, Famille, Fraîcheur)",
+            "Écran Analyse",
+            "Les filtres Analyse ne modifient pas les résultats de l’écran Portefeuille.",
+        ],
+        [
+            "Sources Segment / Pays / Produit / Canal",
+            "Ces dimensions sont récupérées depuis le portefeuille joint à l’écran Analyse ; elles proviennent du fichier 01 / base via les champs Segment, Pays de résidence, Produit(service) principal et Canal d’opérations principal 12 mois.",
+            "Client",
+            "Les familles d’indicateurs, elles, sont déduites des libellés d’indicateurs du fichier 02.",
+        ],
+    ]
+
+    with st.expander("Glossaire & calculs de l’écran Analyse", expanded=False):
+        st.caption("Aide documentaire de lecture. Ce bloc n’a aucun impact sur les calculs de l’écran Portefeuille.")
+
+        glossary_tab, calculation_tab = st.tabs(["Glossaire", "Calculs"])
+
+        with glossary_tab:
+            st.dataframe(
+                pd.DataFrame(glossary_rows, columns=["Terme", "Définition"]),
+                use_container_width=True,
+                hide_index=True,
+                height=520,
+            )
+
+        with calculation_tab:
+            render_reference_table(
+                pd.DataFrame(calc_rows, columns=["Indicateur", "Calcul / règle", "Périmètre", "Note"]),
+                column_min_widths=["240px", "700px", "190px", "480px"],
+            )
+
+
+
+
 def render_distribution_block(title: str, dist_df: pd.DataFrame, index_col: str) -> None:
     st.markdown(f'<h3 class="cm-section-title">{escape(title)}</h3>', unsafe_allow_html=True)
     color_columns = {index_col: "vigilance"} if index_col == "Vigilance" else ({index_col: "risk"} if index_col == "Statut" else {})
@@ -9725,6 +9858,9 @@ def render_analysis_screen(portfolio: pd.DataFrame, indicators: pd.DataFrame) ->
             st.info("Aucune dimension détaillée à afficher sur le périmètre sélectionné.")
         elif display_analysis_table.empty:
             st.info("Aucune ligne ne correspond aux contrôles intégrés du tableau d’analyse.")
+
+    st.divider()
+    render_analysis_glossary_expander()
 
     st.divider()
     st.markdown("<div id='clients-sous-jacents'></div>", unsafe_allow_html=True)
