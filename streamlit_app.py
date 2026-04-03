@@ -4754,6 +4754,149 @@ def render_review_simulation_table(df: pd.DataFrame, key: str) -> list[int]:
     return selected_rows
 
 
+def render_review_simulation_glossary_expander() -> None:
+    glossary_rows = [
+        ["Clé Agent IA", "Clé Gemini saisie localement pour lancer les analyses IA de l’écran. Elle n’est pas sauvegardée."],
+        ["Prompt Agent IA", "Prompt standard modifiable utilisé pour construire l’analyse IA et les PDF structurés générés depuis l’écran."],
+        ["Recherche SIREN / dénomination", "Sélecteur permettant de restreindre l’écran à un SIREN unique à partir du SIREN ou de la dénomination."],
+        ["Statuts réels", "Première rangée de jauges : répartition des sociétés par statut de vigilance réel sur le périmètre recherché."],
+        ["Statuts estimés", "Deuxième rangée de jauges : répartition des sociétés par statut de vigilance estimé après remédiation sur le périmètre recherché."],
+        ["Statut de vigilance réel", "Régime de vigilance normalisé à partir de la colonne Vigilance du portefeuille."],
+        ["Statut réel", "Libellé court affiché dans le tableau pour le statut de vigilance réel."],
+        ["Statut de vigilance estimé après remédiation", "Statut cible retenu pour la revue. Il peut provenir d’une valeur déjà sauvegardée, d’une simulation par défaut, d’une mise à jour manuelle ou de l’Agent IA."],
+        ["Statut estimé", "Libellé court affiché dans le tableau pour le statut de vigilance estimé après remédiation."],
+        ["Indicateur de tendance", "Comparaison entre le statut réel et le statut estimé : S’aggrave, Stable ou S’améliore."],
+        ["Tendance", "Icône courte de l’indicateur de tendance dans le tableau : 🔴 ▲, 🟠 • ou 🟢 ▼."],
+        ["Type de revue", "Libellé opérationnel dérivé du statut réel : revue critique immédiate, revue renforcée, revue ciblée, revue allégée de mise à jour ou revue standard."],
+        ["Prochaine revue", "Date de prochaine revue actuellement portée par le dossier et affichée dans le tableau."],
+        ["Alertes actives", "Liste textuelle des alertes calculées du dossier, concaténées dans un ordre fixe."],
+        ["Explique moi", "Restitution textuelle de l’analyse opérationnelle de revue. Le tableau affiche ‘a lire’ quand un contenu existe."],
+        ["Analyse IA structurée", "JSON structuré renvoyé par l’Agent IA et réutilisé pour les PDF de revue et de classification."],
+        ["PDF(s)", "Téléchargement du PDF du SIREN sélectionné, ou d’un ZIP quand plusieurs PDF existent déjà pour ce dossier."],
+        ["ZIP PDF", "Téléchargement de tous les PDF structurés déjà générés sur le périmètre courant."],
+        ["CSV", "Export du tableau visible de l’écran Revues & Simulations après application des filtres."],
+    ]
+
+    calc_rows = [
+        [
+            "Base de l’écran Revues & Simulations",
+            "Table de travail construite à partir du portefeuille filtré, enrichie avec le magasin persistant des revues (‘Explique moi’, statut estimé, analyse IA structurée), puis triée par Date prochaine revue, Statut de vigilance réel et Dénomination.",
+            "SIREN du périmètre courant",
+            "La table est reconstruite à chaque rendu de l’écran à partir du portefeuille déjà filtré en amont.",
+        ],
+        [
+            "Recherche SIREN / dénomination",
+            "Sélecteur alimenté par la liste unique [SIREN, Dénomination]. Une fois un choix fait, le filtre appliqué est un match exact sur le SIREN retenu.",
+            "Périmètre recherché",
+            "Les jauges et le tableau aval se recalculent uniquement sur ce périmètre recherché.",
+        ],
+        [
+            "Jauges Statuts réels",
+            "Pour chaque statut de vigilance (Critique, Élevée, Modérée, Allégée) : count(SIREN uniques dont le statut réel == valeur) ; % = count / total SIREN uniques du périmètre recherché.",
+            "Périmètre recherché",
+            "Calculé avant le multiselect ‘Filtrer sur le statut de vigilance réel’.",
+        ],
+        [
+            "Jauges Statuts estimés",
+            "Pour chaque statut de vigilance (Critique, Élevée, Modérée, Allégée) : count(SIREN uniques dont le statut estimé == valeur) ; % = count / total SIREN uniques du périmètre recherché.",
+            "Périmètre recherché",
+            "Même assiette que les jauges de statuts réels.",
+        ],
+        [
+            "Statut de vigilance réel",
+            "Normalisation de la colonne ‘Vigilance’ du portefeuille : texte contenant critique → Vigilance Critique ; élevée → Vigilance Élevée ; modérée → Vigilance Modérée ; allégée → Vigilance Allégée ; aucune → Vigilance Aucune ; à défaut → Vigilance Aucune.",
+            "Société",
+            "Cette valeur alimente aussi le Type de revue et la comparaison de tendance.",
+        ],
+        [
+            "Type de revue",
+            "Mapping direct sur le statut réel : Critique → Revue critique immédiate ; Élevée → Revue renforcée ; Modérée → Revue ciblée ; Allégée → Revue allégée de mise à jour ; Aucune → Revue standard.",
+            "Société",
+            "Aucun autre critère n’entre dans ce calcul.",
+        ],
+        [
+            "Alertes actives",
+            "Concaténation, dans cet ordre, des alertes suivantes quand elles sont présentes : Justificatifs incomplets ; Sans prochaine revue ; Revue trop ancienne ; Cross-border élevé ; Cash intensité élevée ; Risque avéré ou Risque potentiel ; EDD <statut> si le statut EDD n’est ni ‘Validée’, ni ‘Non requise’, ni ‘Aucun’.",
+            "Société",
+            "Si aucune alerte n’est active, la valeur affichée est ‘Aucune’.",
+        ],
+        [
+            "Détail des alertes calculées",
+            "Justificatifs incomplets = Alerte justificatif incomplet == 1 ; Sans prochaine revue = Alerte sans prochaine revue == 1 ; Revue trop ancienne = Alerte revue trop ancienne == 1 ; Cross-border élevé = Alerte cross-border élevé == 1 ; Cash intensité élevée = Alerte cash intensité élevée == 1.",
+            "Société",
+            "Les colonnes d’alerte proviennent du portefeuille préparé en amont et sont simplement relues ici.",
+        ],
+        [
+            "Statut estimé par défaut",
+            "Si aucun statut estimé n’est déjà sauvegardé, la simulation applique ces règles : sans alerte, on baisse d’un cran vers Aucune ; avec alerte majeure (Risque avéré, Cross-border élevé, Cash intensité élevée), on conserve Critique/Élevée ou on force Élevée ; sinon Critique → Élevée, Élevée → Modérée, Modérée → Allégée, Allégée → Allégée, Aucune → Aucune.",
+            "Société",
+            "Cette simulation par défaut est remplacée si une valeur manuelle ou IA existe déjà.",
+        ],
+        [
+            "Filtre sur le statut de vigilance réel",
+            "working_df = working_df[Statut de vigilance réel ∈ sélection du multiselect] ; si aucune valeur n’est sélectionnée, l’écran est vidé.",
+            "Tableau Revues & Simulations",
+            "Ce filtre agit après les jauges et avant la sélection du tableau.",
+        ],
+        [
+            "Indicateur de tendance",
+            "Comparaison des rangs de vigilance : Critique = 0, Élevée = 1, Modérée = 2, Allégée = 3, Aucune = 4. Si rang estimé < rang réel → S’aggrave ; si rang estimé > rang réel → S’améliore ; sinon → Stable.",
+            "Société",
+            "Le tableau affiche ensuite l’icône correspondante : 🔴 ▲, 🟠 • ou 🟢 ▼.",
+        ],
+        [
+            "Appliquer",
+            "Pour toutes les lignes sélectionnées : mise à jour du Statut de vigilance estimé après remédiation avec la valeur choisie dans la liste, puis recalcul immédiat de la tendance.",
+            "Sélection courante",
+            "La sélection est mémorisée par la clé [Société|SIREN] jusqu’au clic sur ‘Effacer’.",
+        ],
+        [
+            "Agent IA",
+            f"Traitement du lot courant sur au plus {GEMINI_MAX_BATCH_SIZE} SIREN sélectionnés. L’agent reçoit un payload structuré avec contexte_simulation, alertes_calculees, donnees_base_source, indicateurs_source et indicateurs_source_groupes ; il renseigne ‘Explique moi’, l’analyse IA structurée, le statut estimé et déclenche la génération / mise à jour des PDF.",
+            "Sélection courante",
+            "Le bouton est désactivé sans sélection ou sans clé Agent IA.",
+        ],
+        [
+            "Explique moi (affichage)",
+            "Dans le tableau, le contenu textuel est remplacé par ‘a lire’ si la cellule contient du texte ; un clic ouvre la restitution complète en grand format.",
+            "Tableau visible",
+            "Le texte complet reste stocké dans le magasin persistant des revues.",
+        ],
+        [
+            "Export CSV",
+            "Export du tableau visible après filtres, avec conversion de la date en format court et conservation des colonnes : Société, SIREN, Dénomination, Statut réel, Type de revue, Prochaine revue, Alertes actives, Explique moi, Tendance, Statut estimé.",
+            "Périmètre filtré visible",
+            "L’export reflète l’écran courant, pas l’ensemble du portefeuille.",
+        ],
+        [
+            "PDF(s) / ZIP PDF",
+            "PDF(s) télécharge le document unique du SIREN sélectionné, ou un ZIP si plusieurs PDF existent déjà pour ce dossier ; ZIP PDF agrège tous les PDF structurés disponibles sur le périmètre recherché.",
+            "Documents déjà générés",
+            "La disponibilité dépend de la présence effective des PDF sur le serveur et de l’installation de ReportLab.",
+        ],
+    ]
+
+    with st.expander("Glossaire & calculs de l’écran Revues & Simulations", expanded=False):
+        st.caption("Aide documentaire de lecture. Ce bloc n’a aucun impact sur les calculs ni sur les exports de l’écran.")
+
+        glossary_tab, calculation_tab = st.tabs(["Glossaire", "Calculs"])
+
+        with glossary_tab:
+            st.dataframe(
+                pd.DataFrame(glossary_rows, columns=["Terme", "Définition"]),
+                use_container_width=True,
+                hide_index=True,
+                height=540,
+            )
+
+        with calculation_tab:
+            render_reference_table(
+                pd.DataFrame(calc_rows, columns=["Indicateur", "Calcul / règle", "Périmètre", "Note"]),
+                column_min_widths=["260px", "760px", "210px", "520px"],
+            )
+
+
+
 def render_review_simulations_screen(portfolio: pd.DataFrame, user: dict) -> None:
     render_home_hero("Revues & Simulations")
     nav = render_primary_navigation("review_simulations")
@@ -5297,6 +5440,8 @@ Tu dois répondre exclusivement en JSON valide, sans texte avant ni après, avec
         st.info(PDF_DEPENDENCY_ERROR_MESSAGE)
 
     review_simulation_emit_feedback()
+
+    render_review_simulation_glossary_expander()
 
     render_review_simulation_explain_overlay(working_df)
 
