@@ -239,7 +239,7 @@ ANALYSIS_TOP_PERCENT_STYLE = {
     "% NC": {"base": "#94A3B8", "text": "#475569"},
     "% sans risque": {"base": "#16A34A", "text": "#14532D"},
 }
-ANALYSIS_SCREEN_CACHE_VERSION = "v206_analysis_committee_pack"
+ANALYSIS_SCREEN_CACHE_VERSION = "v207_analysis_committee_pack"
 ANALYSIS_PORTFOLIO_FILTER_LABELS = ["Vigilance", "Risque", "EDD", "Segment", "Pays", "Produit", "Canal", "Analyste", "Valideur"]
 ANALYSIS_INDICATOR_FILTER_KEYS = ["Indicateur", "Statut", "Famille", "Fraîcheur"]
 ANALYSIS_INDICATOR_FAMILY_EXACT = {
@@ -9978,7 +9978,6 @@ def render_analysis_screen(portfolio: pd.DataFrame, indicators: pd.DataFrame) ->
         analysis_table=analysis_table,
     )
 
-    st.divider()
     with st.expander("Préparer votre Comité des Risques", expanded=False):
         st.caption("Pack Excel multi-onglets adapté à l’écran Analyse : répartitions, tops, indicateurs contributifs, tableau d’analyse, clients scope et cas indicateurs, avec une présentation soignée.")
         st.download_button(
@@ -9990,7 +9989,6 @@ def render_analysis_screen(portfolio: pd.DataFrame, indicators: pd.DataFrame) ->
             use_container_width=True,
         )
 
-    st.divider()
     with st.expander("Lecture détaillée des dimensions", expanded=False):
         render_analysis_panel_header(
             "Tableau d’analyse",
@@ -10047,7 +10045,6 @@ def render_analysis_screen(portfolio: pd.DataFrame, indicators: pd.DataFrame) ->
                 key_prefix="analysis_detail_clients",
             )
 
-    st.divider()
     render_analysis_glossary_expander()
 
 
