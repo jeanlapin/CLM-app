@@ -239,7 +239,7 @@ ANALYSIS_TOP_PERCENT_STYLE = {
     "% NC": {"base": "#94A3B8", "text": "#475569"},
     "% sans risque": {"base": "#16A34A", "text": "#14532D"},
 }
-ANALYSIS_SCREEN_CACHE_VERSION = "v203_analysis_glossary_expander"
+ANALYSIS_SCREEN_CACHE_VERSION = "v204_analysis_glossary_expander"
 ANALYSIS_PORTFOLIO_FILTER_LABELS = ["Vigilance", "Risque", "EDD", "Segment", "Pays", "Produit", "Canal", "Analyste", "Valideur"]
 ANALYSIS_INDICATOR_FILTER_KEYS = ["Indicateur", "Statut", "Famille", "Fraîcheur"]
 ANALYSIS_INDICATOR_FAMILY_EXACT = {
@@ -9859,44 +9859,44 @@ def render_analysis_screen(portfolio: pd.DataFrame, indicators: pd.DataFrame) ->
         elif display_analysis_table.empty:
             st.info("Aucune ligne ne correspond aux contrôles intégrés du tableau d’analyse.")
 
+        st.divider()
+        st.markdown("<div id='clients-sous-jacents'></div>", unsafe_allow_html=True)
+        st.markdown('<h3 class="cm-section-title">Clients sous-jacents</h3>', unsafe_allow_html=True)
+
+        focus_selection = st.session_state.get("analysis_focus_selection")
+        detail_df, focus_parts = build_analysis_focus_dataset_from_selection(analysis_client_scope, focus_selection)
+
+        focus_bar_left, focus_bar_right = st.columns([6.0, 1.2])
+        with focus_bar_left:
+            if focus_parts:
+                if len(focus_parts) == 1:
+                    st.caption("Focus actif : " + focus_parts[0])
+                else:
+                    preview = " ; ".join(focus_parts[:2])
+                    if len(focus_parts) > 2:
+                        preview += f" ; +{len(focus_parts) - 2} autre(s) ligne(s)"
+                    st.caption(f"Focus actif : {len(focus_parts)} lignes sélectionnées — " + preview)
+            else:
+                st.caption("Cliquez sur une ou plusieurs lignes du tableau d’analyse pour afficher ici les clients sous-jacents correspondants.")
+        with focus_bar_right:
+            if focus_parts and st.button("Effacer le focus", type="secondary", key="analysis_clear_focus"):
+                clear_analysis_focus()
+                st.rerun()
+
+        if detail_df.empty:
+            st.info("Aucun client sous-jacent à afficher tant qu’aucun focus n’est sélectionné.")
+        else:
+            st.caption("Cliquez sur un SIREN pour ouvrir la fiche client sans quitter votre contexte d’analyse.")
+            render_clickable_styled_dataframe(
+                style_dataframe(detail_df),
+                detail_df,
+                height=440,
+                hide_index=True,
+                key_prefix="analysis_detail_clients",
+            )
+
     st.divider()
     render_analysis_glossary_expander()
-
-    st.divider()
-    st.markdown("<div id='clients-sous-jacents'></div>", unsafe_allow_html=True)
-    st.markdown('<h3 class="cm-section-title">Clients sous-jacents</h3>', unsafe_allow_html=True)
-
-    focus_selection = st.session_state.get("analysis_focus_selection")
-    detail_df, focus_parts = build_analysis_focus_dataset_from_selection(analysis_client_scope, focus_selection)
-
-    focus_bar_left, focus_bar_right = st.columns([6.0, 1.2])
-    with focus_bar_left:
-        if focus_parts:
-            if len(focus_parts) == 1:
-                st.caption("Focus actif : " + focus_parts[0])
-            else:
-                preview = " ; ".join(focus_parts[:2])
-                if len(focus_parts) > 2:
-                    preview += f" ; +{len(focus_parts) - 2} autre(s) ligne(s)"
-                st.caption(f"Focus actif : {len(focus_parts)} lignes sélectionnées — " + preview)
-        else:
-            st.caption("Ouvrez ‘Lecture détaillée des dimensions’, cliquez sur une ou plusieurs lignes, puis retrouvez ici les clients sous-jacents correspondants.")
-    with focus_bar_right:
-        if focus_parts and st.button("Effacer le focus", type="secondary", key="analysis_clear_focus"):
-            clear_analysis_focus()
-            st.rerun()
-
-    if detail_df.empty:
-        st.info("Aucun client sous-jacent à afficher tant qu’aucun focus n’est sélectionné.")
-    else:
-        st.caption("Cliquez sur un SIREN pour ouvrir la fiche client sans quitter votre contexte d’analyse.")
-        render_clickable_styled_dataframe(
-            style_dataframe(detail_df),
-            detail_df,
-            height=440,
-            hide_index=True,
-            key_prefix="analysis_detail_clients",
-        )
 
 
 def review_setting_slug(label: str) -> str:
