@@ -239,7 +239,7 @@ ANALYSIS_TOP_PERCENT_STYLE = {
     "% NC": {"base": "#94A3B8", "text": "#475569"},
     "% sans risque": {"base": "#16A34A", "text": "#14532D"},
 }
-ANALYSIS_SCREEN_CACHE_VERSION = "v208_analysis_committee_pdf"
+ANALYSIS_SCREEN_CACHE_VERSION = "v209_analysis_committee_pdf"
 ANALYSIS_PORTFOLIO_FILTER_LABELS = ["Vigilance", "Risque", "EDD", "Segment", "Pays", "Produit", "Canal", "Analyste", "Valideur"]
 ANALYSIS_INDICATOR_FILTER_KEYS = ["Indicateur", "Statut", "Famille", "Fraîcheur"]
 ANALYSIS_INDICATOR_FAMILY_EXACT = {
@@ -10460,27 +10460,30 @@ def render_analysis_screen(portfolio: pd.DataFrame, indicators: pd.DataFrame) ->
         analysis_committee_pdf_error = PDF_DEPENDENCY_ERROR_MESSAGE
 
     with st.expander("Préparer votre Comité des Risques", expanded=False):
-        st.caption("Pack Excel multi-onglets adapté à l’écran Analyse : répartitions, tops, indicateurs contributifs, tableau d’analyse, clients scope et cas indicateurs, avec une présentation soignée.")
-        st.download_button(
-            label="Pack Comité des Risques (.xlsx)",
-            data=analysis_committee_excel,
-            file_name=analysis_committee_pack_download_name(list(analysis_societies_key)),
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            type="primary",
-            use_container_width=True,
-        )
-
-        st.caption("Synthèse PDF exécutive adaptée à l’analyse des alertes : statuts, familles, concentrations, indicateurs les plus contributifs et clients les plus exposés.")
-        if analysis_committee_pdf_bytes:
+        st.caption("Exports Comité des Risques de l’écran Analyse : pack Excel multi-onglets et synthèse PDF exécutive adaptés aux alertes du périmètre filtré.")
+        export_col_excel, export_col_pdf = st.columns(2)
+        with export_col_excel:
             st.download_button(
-                label="Rapport Comité des Risques (.pdf)",
-                data=analysis_committee_pdf_bytes,
-                file_name=analysis_committee_report_download_name(list(analysis_societies_key)),
-                mime="application/pdf",
+                label="Pack Comité des Risques (.xlsx)",
+                data=analysis_committee_excel,
+                file_name=analysis_committee_pack_download_name(list(analysis_societies_key)),
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                type="primary",
                 use_container_width=True,
             )
-        elif analysis_committee_pdf_error:
-            st.info(analysis_committee_pdf_error)
+        with export_col_pdf:
+            if analysis_committee_pdf_bytes is not None and len(analysis_committee_pdf_bytes) > 0:
+                st.download_button(
+                    label="Rapport Comité des Risques (.pdf)",
+                    data=analysis_committee_pdf_bytes,
+                    file_name=analysis_committee_report_download_name(list(analysis_societies_key)),
+                    mime="application/pdf",
+                    use_container_width=True,
+                )
+            elif analysis_committee_pdf_error:
+                st.info(analysis_committee_pdf_error)
+            else:
+                st.warning("Le PDF n’a pas pu être préparé pour ce périmètre.")
 
     with st.expander("Lecture détaillée des dimensions", expanded=False):
         render_analysis_panel_header(
