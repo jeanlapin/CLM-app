@@ -6561,6 +6561,30 @@ def render_portfolio_glossary_expander() -> None:
 
     calc_rows = [
         [
+            "Segment (source)",
+            "Champ 'Segment' lu directement dans le fichier 01 / base",
+            "Client",
+            "Utilisé tel quel dans les filtres et lectures de concentration de l’écran Portefeuille.",
+        ],
+        [
+            "Pays (source)",
+            "Champ 'Pays de résidence' lu directement dans le fichier 01 / base",
+            "Client",
+            "Le Top Pays et les concentrations Pays reposent sur cette colonne de base, pas sur le fichier 02 indicateurs.",
+        ],
+        [
+            "Produit (source)",
+            "Champ 'Produit(service) principal' lu directement dans le fichier 01 / base",
+            "Client",
+            "Le Top Produits et les concentrations Produits reposent sur cette colonne de base, pas sur le fichier 02 indicateurs.",
+        ],
+        [
+            "Canal (source)",
+            "Champ 'Canal d’opérations principal 12 mois' lu directement dans le fichier 01 / base",
+            "Client",
+            "Le Top Canaux et les concentrations Canaux reposent sur cette colonne de base, pas sur le fichier 02 indicateurs.",
+        ],
+        [
             "Clients visibles",
             "Nombre de clients uniques après déduplication par clé client",
             "Portefeuille filtré",
