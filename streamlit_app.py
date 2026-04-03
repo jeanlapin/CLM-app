@@ -239,7 +239,7 @@ ANALYSIS_TOP_PERCENT_STYLE = {
     "% NC": {"base": "#94A3B8", "text": "#475569"},
     "% sans risque": {"base": "#16A34A", "text": "#14532D"},
 }
-ANALYSIS_SCREEN_CACHE_VERSION = "v207_analysis_committee_pack"
+ANALYSIS_SCREEN_CACHE_VERSION = "v208_analysis_committee_pdf"
 ANALYSIS_PORTFOLIO_FILTER_LABELS = ["Vigilance", "Risque", "EDD", "Segment", "Pays", "Produit", "Canal", "Analyste", "Valideur"]
 ANALYSIS_INDICATOR_FILTER_KEYS = ["Indicateur", "Statut", "Famille", "Fraîcheur"]
 ANALYSIS_INDICATOR_FAMILY_EXACT = {
@@ -5509,6 +5509,15 @@ def analysis_committee_pack_download_name(selected_societies: list[str]) -> str:
     return f"pack_comite_risques_analyse_{scope_key}_{datetime.now().strftime('%Y%m%d')}.xlsx"
 
 
+def analysis_committee_report_download_name(selected_societies: list[str]) -> str:
+    cleaned = [committee_report_slug(item)[:18] for item in selected_societies if str(item or "").strip()]
+    if len(cleaned) > 2:
+        scope_key = "_".join(cleaned[:2]) + f"_plus_{len(cleaned) - 2}"
+    else:
+        scope_key = "_".join(cleaned) or "analyse"
+    return f"rapport_comite_risques_analyse_{scope_key}_{datetime.now().strftime('%Y%m%d')}.pdf"
+
+
 @st.cache_data(show_spinner=False)
 def build_analysis_committee_pack_excel_bytes(
     *,
@@ -5611,6 +5620,451 @@ def build_analysis_committee_pack_excel_bytes(
     ]
     return dataframes_to_excel_bytes(sheets)
 
+
+
+def analysis_committee_report_prepare_top_table(df: pd.DataFrame, *, max_rows: int = 8) -> pd.DataFrame:
+    columns = [
+        "Indicateurs",
+        "Nb",
+        "%",
+        "Nb avéré",
+        "% avéré",
+        "Nb potentiel",
+        "% potentiel",
+        "Nb NC",
+        "% NC",
+        "Nb sans risque",
+        "% sans risque",
+    ]
+    if df is None or df.empty:
+        return pd.DataFrame(columns=columns)
+    available = [col for col in columns if col in df.columns]
+    export = df[available].copy().head(max_rows)
+    return export.reset_index(drop=True)
+
+
+
+def analysis_committee_report_prepare_indicator_table(indicator_table: pd.DataFrame, *, max_rows: int = 10) -> pd.DataFrame:
+    columns = ["Indicateur"] + ANALYSIS_STATUS_ORDER + ["Total cas"]
+    if indicator_table is None or indicator_table.empty:
+        return pd.DataFrame(columns=["Indicateur"] + [analysis_status_ui_label(status) for status in ANALYSIS_STATUS_ORDER] + ["Total cas"])
+    export = indicator_table[[col for col in columns if col in indicator_table.columns]].copy().head(max_rows)
+    export = export.rename(columns={status: analysis_status_ui_label(status) for status in ANALYSIS_STATUS_ORDER})
+    return export.reset_index(drop=True)
+
+
+
+def analysis_committee_report_prepare_clients_table(indicator_df: pd.DataFrame, *, max_rows: int = 12) -> pd.DataFrame:
+    columns = ["SIREN", "Dénomination", "Cas", "Indicateurs distincts", "Statut dominant", "Famille dominante", "Indicateurs clés"]
+    if indicator_df is None or indicator_df.empty:
+        return pd.DataFrame(columns=columns)
+
+    group_cols = [col for col in [SOC_COL, "SIREN", "Dénomination"] if col in indicator_df.columns]
+    if not group_cols:
+        return pd.DataFrame(columns=columns)
+
+    rows: list[dict[str, object]] = []
+    for keys, group in indicator_df.groupby(group_cols, dropna=False):
+        if not isinstance(keys, tuple):
+            keys = (keys,)
+        mapping = dict(zip(group_cols, keys))
+        status_counts = group.get("Statut", pd.Series(dtype="object")).astype(str).value_counts()
+        dominant_status = ""
+        if not status_counts.empty:
+            ordered_statuses = sorted(
+                status_counts.items(),
+                key=lambda item: (-int(item[1]), ANALYSIS_STATUS_ORDER.index(item[0]) if item[0] in ANALYSIS_STATUS_ORDER else 999, str(item[0])),
+            )
+            dominant_status = analysis_status_ui_label(ordered_statuses[0][0])
+
+        family_counts = group.get("Famille indicateur", pd.Series(dtype="object")).astype(str).value_counts()
+        dominant_family = str(family_counts.index[0]) if not family_counts.empty else ""
+        indicator_names = [str(name).strip() for name in group.get("Indicateur", pd.Series(dtype="object")).astype(str).value_counts().head(3).index if str(name).strip()]
+        rows.append({
+            "SIREN": mapping.get("SIREN", ""),
+            "Dénomination": mapping.get("Dénomination", ""),
+            "Cas": int(len(group)),
+            "Indicateurs distincts": int(group.get("Indicateur", pd.Series(dtype="object")).astype(str).replace({"": pd.NA}).dropna().nunique()),
+            "Statut dominant": dominant_status,
+            "Famille dominante": dominant_family,
+            "Indicateurs clés": ", ".join(indicator_names),
+        })
+
+    export = pd.DataFrame(rows)
+    if export.empty:
+        return pd.DataFrame(columns=columns)
+    export = export.sort_values(["Cas", "Indicateurs distincts", "Dénomination"], ascending=[False, False, True], kind="stable")
+    return export[columns].head(max_rows).reset_index(drop=True)
+
+
+
+def analysis_committee_report_top_commentary(title: str, df: pd.DataFrame, sort_mode: str) -> str:
+    if df is None or df.empty:
+        return f"Aucun indicateur exploitable n’est disponible sur {title.lower()}."
+    first_row = df.iloc[0]
+    indicator_name = committee_report_format_scalar(first_row.get("Indicateurs"), "Indicateurs")
+    metric_column = sort_mode if sort_mode in df.columns else "Nb"
+    metric_value = committee_report_format_scalar(first_row.get(metric_column), metric_column)
+    extra_parts: list[str] = []
+    for column_name in ["% avéré", "% potentiel", "% NC", "% sans risque"]:
+        if column_name in df.columns:
+            current_value = committee_report_numeric(first_row.get(column_name))
+            if current_value > 0:
+                extra_parts.append(f"{committee_report_format_scalar(current_value, column_name)} en {column_name.replace('% ', '').lower()}")
+    extra_label = " ; ".join(extra_parts[:2]) if extra_parts else ""
+    sentence = f"Sur {title.lower()}, l’indicateur {indicator_name} arrive en tête selon le tri {metric_column.lower()} avec {metric_value}."
+    if extra_label:
+        sentence += f" Lecture complémentaire : {extra_label}."
+    return sentence
+
+
+
+def analysis_committee_report_find_primary_signal(top_sections: list[tuple[str, pd.DataFrame]], sort_mode: str) -> str:
+    best_message = "Aucune poche d’alerte significative n’a pu être mise en évidence sur le périmètre filtré."
+    best_value = -1.0
+    for title, df in top_sections:
+        if df is None or df.empty:
+            continue
+        metric_column = sort_mode if sort_mode in df.columns else "Nb"
+        row = df.iloc[0]
+        current_value = committee_report_numeric(row.get(metric_column))
+        if current_value > best_value:
+            best_value = current_value
+            best_message = analysis_committee_report_top_commentary(title, df, sort_mode)
+    return best_message
+
+
+
+def analysis_committee_report_key_messages(
+    metrics: dict[str, object],
+    top_sections: list[tuple[str, pd.DataFrame]],
+    indicator_table: pd.DataFrame,
+    sort_mode: str,
+) -> list[str]:
+    concerned_clients = int(metrics.get("concerned_clients", 0) or 0)
+    total_clients_filtered = int(metrics.get("total_clients_filtered", 0) or 0)
+    total_cases = int(metrics.get("total_cases", 0) or 0)
+    distinct_indicators = int(metrics.get("distinct_indicators", 0) or 0)
+    avers = int(metrics.get("risk_avere", 0) or 0)
+    potentials = int(metrics.get("risk_potentiel", 0) or 0)
+    non_calculable = int(metrics.get("risk_nc", 0) or 0)
+    sans_risque = int(metrics.get("risk_sans", 0) or 0)
+    stale_cases = int(metrics.get("stale_cases", 0) or 0)
+    no_date_cases = int(metrics.get("no_date_cases", 0) or 0)
+
+    messages: list[str] = []
+    if total_clients_filtered:
+        share_clients = concerned_clients / total_clients_filtered if total_clients_filtered else 0.0
+        messages.append(
+            f"Le périmètre analysé couvre {concerned_clients} clients concernés sur {total_clients_filtered} clients du portefeuille filtré ({committee_report_format_scalar(share_clients, '%')})."
+        )
+    if total_cases or distinct_indicators:
+        messages.append(
+            f"{total_cases} cas indicateurs sont visibles, portés par {distinct_indicators} indicateurs distincts ; c’est la base de lecture du présent rapport."
+        )
+    sensitive_cases = avers + potentials + non_calculable
+    if total_cases:
+        sensitive_share = sensitive_cases / total_cases if total_cases else 0.0
+        messages.append(
+            f"Les statuts sensibles (avéré, potentiel, non calculable) représentent {sensitive_cases} cas, soit {committee_report_format_scalar(sensitive_share, '%')} des alertes visibles."
+        )
+    if sans_risque > 0:
+        safe_share = sans_risque / total_cases if total_cases else 0.0
+        messages.append(
+            f"{sans_risque} cas relèvent d’un statut sans risque, soit {committee_report_format_scalar(safe_share, '%')} du périmètre indicateurs ; ce volume doit être lu en miroir des poches sensibles."
+        )
+    if stale_cases > 0 or no_date_cases > 0:
+        fragments = []
+        if stale_cases > 0:
+            fragments.append(f"{stale_cases} cas anciens (> 90 jours)")
+        if no_date_cases > 0:
+            fragments.append(f"{no_date_cases} cas sans date de mise à jour")
+        messages.append("La fraîcheur des alertes appelle une vigilance particulière : " + " et ".join(fragments) + ".")
+
+    messages.append(analysis_committee_report_find_primary_signal(top_sections, sort_mode))
+
+    if indicator_table is not None and not indicator_table.empty and "Indicateur" in indicator_table.columns:
+        head_names = [str(name).strip() for name in indicator_table["Indicateur"].head(3).tolist() if str(name or "").strip()]
+        if head_names:
+            if len(head_names) == 1:
+                names_text = head_names[0]
+            elif len(head_names) == 2:
+                names_text = f"{head_names[0]} et {head_names[1]}"
+            else:
+                names_text = ", ".join(head_names[:-1]) + f" et {head_names[-1]}"
+            messages.append(f"Les indicateurs les plus contributifs du périmètre sont : {names_text}.")
+
+    return messages[:5]
+
+
+
+def analysis_committee_report_decision_points(
+    metrics: dict[str, object],
+    top_sections: list[tuple[str, pd.DataFrame]],
+    indicator_table: pd.DataFrame,
+    sort_mode: str,
+) -> list[str]:
+    decisions: list[str] = []
+    if int(metrics.get("risk_avere", 0) or 0) > 0:
+        decisions.append("Arbitrer les actions à conduire sur les cas en risque avéré et confirmer les priorités de remédiation les plus immédiates.")
+    if int(metrics.get("risk_potentiel", 0) or 0) > 0:
+        decisions.append("Hiérarchiser les cas en risque potentiel afin de cibler les revues ou approfondissements à lancer à court terme.")
+    if int(metrics.get("risk_nc", 0) or 0) > 0:
+        decisions.append("Fiabiliser les cas non calculables pour réduire les angles morts de lecture avant le prochain comité.")
+    if int(metrics.get("stale_cases", 0) or 0) > 0 or int(metrics.get("no_date_cases", 0) or 0) > 0:
+        decisions.append("Mettre sous pilotage la fraîcheur des alertes afin d’éviter qu’une part du périmètre repose sur des signaux anciens ou non datés.")
+    primary_signal = analysis_committee_report_find_primary_signal(top_sections, sort_mode)
+    if primary_signal:
+        decisions.append("Suivre au prochain comité la famille d’indicateurs la plus contributive et les poches de concentration qui lui sont liées.")
+    if indicator_table is not None and not indicator_table.empty:
+        decisions.append("Documenter, pour les indicateurs les plus contributifs, les mesures déjà prises et les actions complémentaires à décider en séance.")
+
+    default_items = [
+        "Conserver le pack Excel en annexe de travail pour l’analyse détaillée et la traçabilité post-séance.",
+        "Formaliser les propriétaires d’action pour chaque poche d’alerte retenue en séance.",
+    ]
+    for item in default_items:
+        if len(decisions) >= 5:
+            break
+        decisions.append(item)
+    return decisions[:5]
+
+
+
+def build_analysis_committee_report_pdf_bytes(
+    *,
+    selected_societies: list[str],
+    portfolio_filters: dict[str, object],
+    indicator_filters: dict[str, object],
+    sort_mode: str,
+    filtered_portfolio: pd.DataFrame,
+    filtered_indicators: pd.DataFrame,
+    analysis_client_scope: pd.DataFrame,
+    status_distribution: pd.DataFrame,
+    family_distribution: pd.DataFrame,
+    freshness_distribution: pd.DataFrame,
+    top_segment_df: pd.DataFrame,
+    top_pays_df: pd.DataFrame,
+    top_produits_df: pd.DataFrame,
+    top_canaux_df: pd.DataFrame,
+    indicator_table: pd.DataFrame,
+    analysis_table: pd.DataFrame,
+) -> bytes:
+    if not REPORTLAB_AVAILABLE or SimpleDocTemplate is None or colors is None or mm is None or PageBreak is None:
+        raise ModuleNotFoundError(PDF_DEPENDENCY_ERROR_MESSAGE)
+
+    styles = committee_report_pdf_styles()
+    generated_at = datetime.now()
+
+    concerned_clients = int(build_unique_client_snapshot(analysis_client_scope).shape[0]) if isinstance(analysis_client_scope, pd.DataFrame) else 0
+    total_clients_filtered = int(build_unique_client_snapshot(filtered_portfolio).shape[0]) if isinstance(filtered_portfolio, pd.DataFrame) else 0
+    total_cases = int(len(filtered_indicators)) if isinstance(filtered_indicators, pd.DataFrame) else 0
+    distinct_indicators = int(filtered_indicators.get("Indicateur", pd.Series(dtype="object")).astype(str).replace({"": pd.NA}).dropna().nunique()) if isinstance(filtered_indicators, pd.DataFrame) else 0
+    last_update = pd.to_datetime(filtered_indicators.get("Date de mise à jour"), errors="coerce").max() if isinstance(filtered_indicators, pd.DataFrame) and "Date de mise à jour" in filtered_indicators.columns else pd.NaT
+    stale_cases = int(filtered_indicators.get("Fraîcheur indicateur", pd.Series(dtype="object")).astype(str).eq("> 90 jours").sum()) if isinstance(filtered_indicators, pd.DataFrame) else 0
+    no_date_cases = int(filtered_indicators.get("Fraîcheur indicateur", pd.Series(dtype="object")).astype(str).eq("Sans date").sum()) if isinstance(filtered_indicators, pd.DataFrame) else 0
+    status_series = filtered_indicators.get("Statut", pd.Series(dtype="object")) if isinstance(filtered_indicators, pd.DataFrame) else pd.Series(dtype="object")
+    metrics = {
+        "concerned_clients": concerned_clients,
+        "total_clients_filtered": total_clients_filtered,
+        "total_cases": total_cases,
+        "distinct_indicators": distinct_indicators,
+        "risk_avere": int(status_series.astype(str).eq("Risque avéré").sum()) if not status_series.empty else 0,
+        "risk_potentiel": int(status_series.astype(str).eq("Risque potentiel").sum()) if not status_series.empty else 0,
+        "risk_mitige": int(status_series.astype(str).eq("Risque mitigé").sum()) if not status_series.empty else 0,
+        "risk_leve": int(status_series.astype(str).eq("Risque levé").sum()) if not status_series.empty else 0,
+        "risk_nc": int(status_series.astype(str).eq("Non calculable").sum()) if not status_series.empty else 0,
+        "risk_sans": int(status_series.astype(str).eq("Aucun risque détecté").sum()) if not status_series.empty else 0,
+        "last_update": last_update,
+        "stale_cases": stale_cases,
+        "no_date_cases": no_date_cases,
+    }
+
+    scope_label = committee_report_scope_label(selected_societies)
+    portfolio_filters_label = committee_report_filters_label(portfolio_filters)
+    indicator_filters_label = committee_report_filters_label(indicator_filters)
+
+    top_sections_raw = [
+        ("Top segment / client", top_segment_df),
+        ("Top pays", top_pays_df),
+        ("Top produits", top_produits_df),
+        ("Top canaux", top_canaux_df),
+    ]
+    top_sections = [(title, analysis_committee_report_prepare_top_table(df)) for title, df in top_sections_raw]
+    key_messages = analysis_committee_report_key_messages(metrics, top_sections_raw, indicator_table, sort_mode)
+    decision_points = analysis_committee_report_decision_points(metrics, top_sections_raw, indicator_table, sort_mode)
+    indicator_pdf_df = analysis_committee_report_prepare_indicator_table(indicator_table)
+    clients_pdf_df = analysis_committee_report_prepare_clients_table(filtered_indicators)
+    analysis_excerpt_df = analysis_table.copy().head(12) if analysis_table is not None else pd.DataFrame()
+
+    metric_cards = [
+        ("Clients concernés", concerned_clients, "clients avec au moins 1 indicateur"),
+        ("Cas indicateurs", total_cases, "occurrences visibles"),
+        ("Indicateurs distincts", distinct_indicators, "indicateurs présents"),
+        ("Risque avéré", metrics["risk_avere"], "cas classés avérés"),
+        ("Risque potentiel", metrics["risk_potentiel"], "cas classés potentiels"),
+        ("Non calculable", metrics["risk_nc"], "cas à fiabiliser"),
+        ("Sans risque", metrics["risk_sans"], "cas sans risque détecté"),
+    ]
+
+    cover_metadata = {
+        "Périmètre société": scope_label,
+        "Filtres portefeuille": portfolio_filters_label,
+        "Filtres indicateurs": indicator_filters_label,
+        "Tri des tops": sort_mode or "Nb",
+        "Date de génération": generated_at.strftime("%d/%m/%Y %H:%M"),
+        "Clients concernés": concerned_clients,
+        "Cas indicateurs": total_cases,
+        "Dernière mise à jour visible": committee_report_format_scalar(last_update, "Date de mise à jour") if pd.notna(last_update) else "Non renseignée",
+        "Version analyse": ANALYSIS_SCREEN_CACHE_VERSION,
+    }
+
+    buffer = BytesIO()
+    doc = SimpleDocTemplate(
+        buffer,
+        pagesize=A4,
+        leftMargin=18 * mm,
+        rightMargin=18 * mm,
+        topMargin=18 * mm,
+        bottomMargin=16 * mm,
+        title=f"Rapport Comité des Risques - Analyse - {scope_label}",
+        author=PAGE_TITLE,
+        subject="Synthèse d’analyse des alertes pour comité des risques",
+    )
+
+    regular_font, _ = ensure_review_simulation_pdf_fonts()
+    primary_color = colors.HexColor(PRIMARY_COLOR)
+    muted_color = colors.HexColor("#5B6B7F")
+
+    def _draw_page(canvas, doc_obj):
+        canvas.saveState()
+        canvas.setStrokeColor(primary_color)
+        canvas.setLineWidth(0.9)
+        canvas.line(doc_obj.leftMargin, A4[1] - 12 * mm, A4[0] - doc_obj.rightMargin, A4[1] - 12 * mm)
+        canvas.setFont(regular_font, 8)
+        canvas.setFillColor(muted_color)
+        canvas.drawString(doc_obj.leftMargin, 10 * mm, f"{PAGE_TITLE} - Rapport Comité des Risques")
+        canvas.drawRightString(A4[0] - doc_obj.rightMargin, 10 * mm, f"Page {canvas.getPageNumber()}")
+        canvas.restoreState()
+
+    story: list[object] = [
+        committee_report_paragraph("Document préparatoire", styles["cover_kicker"]),
+        committee_report_paragraph("Rapport Comité des Risques", styles["cover_title"]),
+        committee_report_paragraph(
+            f"Analyse des alertes - {scope_label}\nGénéré le {generated_at.strftime('%d/%m/%Y à %H:%M')}",
+            styles["cover_subtitle"],
+        ),
+        committee_report_message_box(
+            "Finalité du document",
+            [
+                "Fournir une lecture exécutive des indicateurs d’alerte sur le périmètre filtré de l’écran Analyse.",
+                "Mettre en évidence les statuts, familles d’indicateurs, concentrations et signaux les plus contributifs.",
+                "Appuyer les arbitrages du Comité des Risques en complément du pack Excel détaillé généré depuis l’écran.",
+            ],
+            styles,
+        ),
+        Spacer(1, 7 * mm),
+        committee_report_cover_table(cover_metadata, styles),
+        PageBreak(),
+        committee_report_paragraph("1. Synthèse exécutive", styles["section"]),
+        committee_report_metric_grid(metric_cards, styles),
+        Spacer(1, 6 * mm),
+        committee_report_message_box("Messages clés", key_messages, styles),
+        Spacer(1, 6 * mm),
+        committee_report_message_box(
+            "Lecture du rapport",
+            [
+                "Le document est calculé uniquement sur les filtres actifs de l’écran Analyse au moment de la génération.",
+                "Les répartitions et tops présentés ici sont propres aux indicateurs d’alerte et n’impactent pas l’écran Portefeuille.",
+            ],
+            styles,
+        ),
+        PageBreak(),
+        committee_report_paragraph("2. Panorama des alertes", styles["section"]),
+        committee_report_paragraph("Répartition par statut", styles["subsection"]),
+        committee_report_dataframe_table(status_distribution, styles, column_widths=[88 * mm, 34 * mm, 52 * mm]),
+        Spacer(1, 4 * mm),
+        committee_report_paragraph("Répartition par famille", styles["subsection"]),
+        committee_report_dataframe_table(family_distribution, styles, column_widths=[78 * mm, 30 * mm, 30 * mm, 36 * mm]),
+        Spacer(1, 4 * mm),
+        committee_report_paragraph("Répartition par fraîcheur", styles["subsection"]),
+        committee_report_dataframe_table(freshness_distribution, styles, column_widths=[88 * mm, 34 * mm, 52 * mm]),
+        Spacer(1, 4 * mm),
+        committee_report_message_box(
+            "Lecture managériale",
+            [
+                f"Le périmètre d’analyse couvre {concerned_clients} clients concernés et {total_cases} cas indicateurs visibles.",
+                f"La part des cas anciens ou non datés atteint {committee_report_format_scalar(((stale_cases + no_date_cases) / total_cases) if total_cases else 0.0, '%')} du périmètre indicateurs.",
+                "Les sections suivantes détaillent les poches de concentration par famille d’indicateurs, puis les indicateurs et clients à suivre en priorité.",
+            ],
+            styles,
+        ),
+        PageBreak(),
+        committee_report_paragraph("3. Concentrations des alertes", styles["section"]),
+    ]
+
+    for idx, (title, table_df) in enumerate(top_sections):
+        if idx > 0:
+            story.append(Spacer(1, 4 * mm))
+        story.extend([
+            committee_report_paragraph(title, styles["subsection"]),
+            committee_report_dataframe_table(
+                table_df,
+                styles,
+                column_widths=committee_report_auto_col_widths(table_df) if table_df is not None and not table_df.empty else None,
+            ),
+            Spacer(1, 2.5 * mm),
+            committee_report_message_box("Lecture", [analysis_committee_report_top_commentary(title, top_sections_raw[idx][1], sort_mode)], styles),
+        ])
+        if idx in {1, 3} and idx < len(top_sections) - 1:
+            story.append(PageBreak())
+
+    story.extend([
+        PageBreak(),
+        committee_report_paragraph("4. Indicateurs les plus contributifs", styles["section"]),
+        committee_report_message_box(
+            "Principe de lecture",
+            [
+                "Le classement ci-dessous reprend les indicateurs qui contribuent le plus au volume de cas sur le périmètre filtré.",
+                "La ventilation par statut permet d’identifier rapidement les indicateurs à dominante sensible, favorable ou non calculable.",
+            ],
+            styles,
+        ),
+        Spacer(1, 5 * mm),
+        committee_report_dataframe_table(
+            indicator_pdf_df,
+            styles,
+            column_widths=committee_report_auto_col_widths(indicator_pdf_df) if indicator_pdf_df is not None and not indicator_pdf_df.empty else None,
+        ),
+        Spacer(1, 5 * mm),
+        committee_report_paragraph("5. Clients les plus exposés", styles["section"]),
+        committee_report_dataframe_table(
+            clients_pdf_df,
+            styles,
+            column_widths=[22 * mm, 52 * mm, 18 * mm, 28 * mm, 26 * mm, 30 * mm, 48 * mm],
+        ),
+        Spacer(1, 5 * mm),
+        committee_report_paragraph("6. Décisions proposées au Comité", styles["section"]),
+        committee_report_message_box("Décisions attendues", decision_points, styles),
+        PageBreak(),
+        committee_report_paragraph("Annexe - Extrait du tableau d’analyse", styles["section"]),
+        committee_report_paragraph(
+            "Cet extrait rappelle la lecture détaillée par dimensions. Le pack Excel généré depuis l’écran Analyse reste la référence détaillée pour l’exploitation opérationnelle.",
+            styles["body_muted"],
+        ),
+        Spacer(1, 3 * mm),
+        committee_report_dataframe_table(
+            analysis_excerpt_df,
+            styles,
+            column_widths=committee_report_auto_col_widths(analysis_excerpt_df) if analysis_excerpt_df is not None and not analysis_excerpt_df.empty else None,
+            max_rows=12,
+        ),
+    ])
+
+    doc.build(story, onFirstPage=_draw_page, onLaterPages=_draw_page)
+    pdf_value = buffer.getvalue()
+    buffer.close()
+    return pdf_value
 
 
 def committee_report_slug(value: object) -> str:
@@ -9978,6 +10432,33 @@ def render_analysis_screen(portfolio: pd.DataFrame, indicators: pd.DataFrame) ->
         analysis_table=analysis_table,
     )
 
+    analysis_committee_pdf_bytes = None
+    analysis_committee_pdf_error = ""
+    if REPORTLAB_AVAILABLE:
+        try:
+            analysis_committee_pdf_bytes = build_analysis_committee_report_pdf_bytes(
+                selected_societies=list(analysis_societies_key),
+                portfolio_filters=portfolio_filters_export,
+                indicator_filters=indicator_filters_export,
+                sort_mode=active_analysis_top_sort,
+                filtered_portfolio=filtered_portfolio,
+                filtered_indicators=filtered_indicators,
+                analysis_client_scope=analysis_client_scope,
+                status_distribution=status_distribution,
+                family_distribution=family_distribution,
+                freshness_distribution=freshness_distribution,
+                top_segment_df=analysis_top_tables.get("Segment / Client", pd.DataFrame()),
+                top_pays_df=analysis_top_tables.get("Indicateurs Pays", pd.DataFrame()),
+                top_produits_df=analysis_top_tables.get("Indicateurs Produits", pd.DataFrame()),
+                top_canaux_df=analysis_top_tables.get("Indicateurs Canal", pd.DataFrame()),
+                indicator_table=indicator_table,
+                analysis_table=analysis_table,
+            )
+        except Exception as exc:
+            analysis_committee_pdf_error = str(exc)
+    else:
+        analysis_committee_pdf_error = PDF_DEPENDENCY_ERROR_MESSAGE
+
     with st.expander("Préparer votre Comité des Risques", expanded=False):
         st.caption("Pack Excel multi-onglets adapté à l’écran Analyse : répartitions, tops, indicateurs contributifs, tableau d’analyse, clients scope et cas indicateurs, avec une présentation soignée.")
         st.download_button(
@@ -9988,6 +10469,18 @@ def render_analysis_screen(portfolio: pd.DataFrame, indicators: pd.DataFrame) ->
             type="primary",
             use_container_width=True,
         )
+
+        st.caption("Synthèse PDF exécutive adaptée à l’analyse des alertes : statuts, familles, concentrations, indicateurs les plus contributifs et clients les plus exposés.")
+        if analysis_committee_pdf_bytes:
+            st.download_button(
+                label="Rapport Comité des Risques (.pdf)",
+                data=analysis_committee_pdf_bytes,
+                file_name=analysis_committee_report_download_name(list(analysis_societies_key)),
+                mime="application/pdf",
+                use_container_width=True,
+            )
+        elif analysis_committee_pdf_error:
+            st.info(analysis_committee_pdf_error)
 
     with st.expander("Lecture détaillée des dimensions", expanded=False):
         render_analysis_panel_header(
