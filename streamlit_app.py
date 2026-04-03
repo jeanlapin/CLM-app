@@ -239,7 +239,7 @@ ANALYSIS_TOP_PERCENT_STYLE = {
     "% NC": {"base": "#94A3B8", "text": "#475569"},
     "% sans risque": {"base": "#16A34A", "text": "#14532D"},
 }
-ANALYSIS_SCREEN_CACHE_VERSION = "v204_analysis_glossary_expander"
+ANALYSIS_SCREEN_CACHE_VERSION = "v205_analysis_focus_motif_fix"
 ANALYSIS_PORTFOLIO_FILTER_LABELS = ["Vigilance", "Risque", "EDD", "Segment", "Pays", "Produit", "Canal", "Analyste", "Valideur"]
 ANALYSIS_INDICATOR_FILTER_KEYS = ["Indicateur", "Statut", "Famille", "Fraîcheur"]
 ANALYSIS_INDICATOR_FAMILY_EXACT = {
@@ -9554,7 +9554,7 @@ def build_analysis_focus_dataset_from_selection(
     detail_columns = [c for c in detail_columns if c in detail.columns]
 
     aggregate = {col: "first" for col in detail_columns if col != "Motif de présence"}
-    aggregate["Motif de présence"] = lambda s: " || ".join(pd.unique([str(v) for v in s if pd.notna(v) and str(v).strip()]))
+    aggregate["Motif de présence"] = lambda s: " || ".join(dict.fromkeys(str(v) for v in s if pd.notna(v) and str(v).strip()))
     detail = (
         detail[["cm_client_key"] + detail_columns]
         .groupby("cm_client_key", as_index=False)
