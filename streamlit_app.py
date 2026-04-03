@@ -238,7 +238,7 @@ ANALYSIS_TOP_PERCENT_STYLE = {
     "% NC": {"base": "#94A3B8", "text": "#475569"},
     "% sans risque": {"base": "#16A34A", "text": "#14532D"},
 }
-ANALYSIS_SCREEN_CACHE_VERSION = "v197_analysis_progress_preview"
+ANALYSIS_SCREEN_CACHE_VERSION = "v198_analysis_family_overrides"
 ANALYSIS_PORTFOLIO_FILTER_LABELS = ["Vigilance", "Risque", "EDD", "Segment", "Pays", "Produit", "Canal", "Analyste", "Valideur"]
 ANALYSIS_INDICATOR_FILTER_KEYS = ["Indicateur", "Statut", "Famille", "Fraîcheur"]
 ANALYSIS_INDICATOR_FAMILY_EXACT = {
@@ -250,6 +250,10 @@ ANALYSIS_INDICATOR_FAMILY_EXACT = {
         "médias négatifs",
         "media negatif",
         "média négatif",
+        "siren / categorie juridique",
+        "siren / catégorie juridique",
+        "bodacc / depot des comptes",
+        "bodacc / dépôt des comptes",
     },
     "Indicateurs Pays": {
         "gafi",
