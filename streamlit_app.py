@@ -26,7 +26,7 @@ REPORTLAB_AVAILABLE = True
 REPORTLAB_IMPORT_ERROR = ""
 try:
     from reportlab.lib import colors
-    from reportlab.lib.pagesizes import A4
+    from reportlab.lib.pagesizes import A4, landscape
     from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
     from reportlab.lib.units import mm
     from reportlab.pdfbase import pdfmetrics
@@ -37,6 +37,7 @@ except Exception as exc:
     REPORTLAB_IMPORT_ERROR = str(exc)
     colors = None
     A4 = None
+    landscape = None
     ParagraphStyle = None
     getSampleStyleSheet = None
     mm = None
@@ -134,6 +135,43 @@ REVIEW_SIM_GEMINI_KEY_STATE = "review_sim_gemini_api_key"
 REVIEW_SIM_PDF_DIR = "review_simulation_pdfs"
 REVIEW_SIM_PDF_FONT_REGULAR = "CMDejaVuSans"
 REVIEW_SIM_PDF_FONT_BOLD = "CMDejaVuSans-Bold"
+REVIEW_SIM_PDF_FONT_ITALIC = "CMDejaVuSans-Oblique"
+REVIEW_SIM_PDF_FONT_BOLDITALIC = "CMDejaVuSans-BoldOblique"
+CLASSIFICATION_PDF_PREFIX = "classification"
+CLASSIFICATION_AXIS_ORDER = ["Client", "Pays", "Produit", "Canal"]
+CLASSIFICATION_AXIS_LABELS = {
+    "Segment / Client": "Client",
+    "Indicateurs Pays": "Pays",
+    "Indicateurs Produits": "Produit",
+    "Indicateurs Canal": "Canal",
+}
+CLASSIFICATION_STATUS_COTATION = {
+    "Risque avéré": "4",
+    "Risque potentiel": "3",
+    "Risque mitigé": "2",
+    "Risque levé": "1",
+    "Aucun risque détecté": "0",
+    "Non calculable": "",
+}
+CLASSIFICATION_STATUS_NEW_COTATION = {
+    "Risque avéré": "4",
+    "Risque potentiel": "4 ou 3",
+    "Risque mitigé": "2",
+    "Risque levé": "1",
+    "Aucun risque détecté": "0",
+    "Non calculable": "",
+}
+CLASSIFICATION_STATUS_REAL_RISK = {
+    "Risque avéré": "Risque avéré",
+    "Risque potentiel": "Risque avéré ou Risque potentiel",
+    "Risque mitigé": "Risque mitigé",
+    "Risque levé": "Risque levé",
+    "Aucun risque détecté": "Aucun risque détecté",
+    "Non calculable": "",
+}
+CLASSIFICATION_EXCLUDED_INDICATORS = {"Vigilance"}
+CLASSIFICATION_COMMENT_PLACEHOLDER_TEXT = "Commentaire absent (à compléter dans Beclm)."
+CLASSIFICATION_AI_PLACEHOLDER_TEXT = "Analyse IA absente (à régénérer dans Revues & Simulations)."
 GEMINI_BASE_SOURCE_PREFIX = "Base source :: "
 GEMINI_INDICATORS_SOURCE_PREFIX = "Indicateurs source :: "
 PDF_DEPENDENCY_ERROR_MESSAGE = (
@@ -1750,6 +1788,40 @@ def review_simulation_pdf_path(row: pd.Series) -> Path:
     return review_simulation_pdfs_path() / review_simulation_pdf_storage_name(row)
 
 
+def review_simulation_classification_pdf_storage_name(row: pd.Series) -> str:
+    soc = safe_filename_component(row.get(SOC_COL, ""), fallback="societe")
+    siren = safe_filename_component(row.get("SIREN", ""), fallback="siren")
+    return f"{CLASSIFICATION_PDF_PREFIX}_{soc}_{siren}.pdf"
+
+
+def review_simulation_classification_pdf_download_name(row: pd.Series) -> str:
+    siren = safe_filename_component(row.get("SIREN", ""), fallback="siren")
+    denomination = safe_filename_component(row.get("Dénomination", ""), fallback="dossier")
+    return f"{CLASSIFICATION_PDF_PREFIX}_{siren}_{denomination}.pdf"
+
+
+def review_simulation_classification_pdf_path(row: pd.Series) -> Path:
+    return review_simulation_pdfs_path() / review_simulation_classification_pdf_storage_name(row)
+
+
+def review_simulation_pdf_entries_for_row(row: pd.Series) -> list[dict[str, object]]:
+    base_label = f"{row.get('SIREN', '')} - {row.get('Dénomination', '')}"
+    return [
+        {
+            "kind": "review",
+            "path": review_simulation_pdf_path(row),
+            "label": f"{base_label} - Revue & Simulation",
+            "download_name": review_simulation_pdf_download_name(row),
+        },
+        {
+            "kind": "classification",
+            "path": review_simulation_classification_pdf_path(row),
+            "label": f"{base_label} - Classification",
+            "download_name": review_simulation_classification_pdf_download_name(row),
+        },
+    ]
+
+
 def find_file(filename: str) -> Path:
     here = app_root()
     candidates = [
@@ -2810,6 +2882,20 @@ def ensure_review_simulation_pdf_fonts() -> tuple[str, str]:
             pdfmetrics.registerFont(TTFont(REVIEW_SIM_PDF_FONT_REGULAR, "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"))
         if REVIEW_SIM_PDF_FONT_BOLD not in pdfmetrics.getRegisteredFontNames():
             pdfmetrics.registerFont(TTFont(REVIEW_SIM_PDF_FONT_BOLD, "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"))
+        if REVIEW_SIM_PDF_FONT_ITALIC not in pdfmetrics.getRegisteredFontNames():
+            pdfmetrics.registerFont(TTFont(REVIEW_SIM_PDF_FONT_ITALIC, "/usr/share/fonts/truetype/dejavu/DejaVuSans-Oblique.ttf"))
+        if REVIEW_SIM_PDF_FONT_BOLDITALIC not in pdfmetrics.getRegisteredFontNames():
+            pdfmetrics.registerFont(TTFont(REVIEW_SIM_PDF_FONT_BOLDITALIC, "/usr/share/fonts/truetype/dejavu/DejaVuSans-BoldOblique.ttf"))
+        try:
+            pdfmetrics.registerFontFamily(
+                REVIEW_SIM_PDF_FONT_REGULAR,
+                normal=REVIEW_SIM_PDF_FONT_REGULAR,
+                bold=REVIEW_SIM_PDF_FONT_BOLD,
+                italic=REVIEW_SIM_PDF_FONT_ITALIC,
+                boldItalic=REVIEW_SIM_PDF_FONT_BOLDITALIC,
+            )
+        except Exception:
+            pass
         regular_font = REVIEW_SIM_PDF_FONT_REGULAR
         bold_font = REVIEW_SIM_PDF_FONT_BOLD
     except Exception:
@@ -2892,6 +2978,39 @@ def review_simulation_pdf_styles() -> dict[str, ParagraphStyle]:
             fontSize=8.4,
             leading=10.4,
             textColor=colors.white,
+        ),
+        "table_header_small": ParagraphStyle(
+            "ReviewSimPdfTableHeaderSmall",
+            parent=base_styles["BodyText"],
+            fontName=bold_font,
+            fontSize=7.2,
+            leading=8.8,
+            textColor=colors.white,
+        ),
+        "body_small": ParagraphStyle(
+            "ReviewSimPdfBodySmall",
+            parent=base_styles["BodyText"],
+            fontName=regular_font,
+            fontSize=7.4,
+            leading=9.2,
+            textColor=colors.HexColor("#12263A"),
+        ),
+        "body_small_center": ParagraphStyle(
+            "ReviewSimPdfBodySmallCenter",
+            parent=base_styles["BodyText"],
+            fontName=regular_font,
+            fontSize=7.4,
+            leading=9.2,
+            textColor=colors.HexColor("#12263A"),
+            alignment=1,
+        ),
+        "body_small_bold": ParagraphStyle(
+            "ReviewSimPdfBodySmallBold",
+            parent=base_styles["BodyText"],
+            fontName=bold_font,
+            fontSize=7.5,
+            leading=9.3,
+            textColor=primary_color,
         ),
     }
 
@@ -3259,6 +3378,379 @@ def review_simulation_pdf_indicator_analysis_boxes(
     return boxes
 
 
+
+def review_simulation_pdf_rich_paragraph(html_text: object, style: ParagraphStyle) -> Paragraph:
+    rendered = str(html_text or "").strip() or escape("Non renseigné")
+    return Paragraph(rendered.replace("\n", "<br/>") , style)
+
+
+def review_simulation_pdf_nullable_paragraph(text: object, style: ParagraphStyle) -> Paragraph:
+    rendered = str(text or "").strip()
+    if not rendered:
+        return Paragraph("&nbsp;", style)
+    return Paragraph(escape(rendered).replace("\n", "<br/>"), style)
+
+
+def review_simulation_classification_status_colors(status: object) -> tuple[str, str]:
+    try:
+        return status_palette(status, "risk")
+    except Exception:
+        return ("#EEF2F7", "#334155")
+
+
+def review_simulation_classification_vigilance_colors(vigilance: object) -> tuple[str, str]:
+    try:
+        return status_palette(vigilance, "vigilance")
+    except Exception:
+        return ("#EEF2F7", "#334155")
+
+
+def review_simulation_classification_axis(indicator_name: object) -> str:
+    family = classify_analysis_indicator_family(indicator_name)
+    return CLASSIFICATION_AXIS_LABELS.get(family, "Client")
+
+
+def review_simulation_classification_cotation(status: object) -> str:
+    normalized = canonical_risk_label(status) or str(status or "").strip()
+    return CLASSIFICATION_STATUS_COTATION.get(normalized, "")
+
+
+def review_simulation_classification_new_cotation(status: object) -> str:
+    normalized = canonical_risk_label(status) or str(status or "").strip()
+    return CLASSIFICATION_STATUS_NEW_COTATION.get(normalized, "")
+
+
+def review_simulation_classification_real_risk(status: object) -> str:
+    normalized = canonical_risk_label(status) or str(status or "").strip()
+    return CLASSIFICATION_STATUS_REAL_RISK.get(normalized, "")
+
+
+def review_simulation_classification_comment_html(comment: object) -> str:
+    value = prompt_json_value(comment)
+    text_value = "" if value is None else str(value).strip()
+    if not text_value or normalize_text_for_matching(text_value) in {"non renseigne", "none", "nan"}:
+        return f"<i>{escape(CLASSIFICATION_COMMENT_PLACEHOLDER_TEXT)}</i>"
+    return escape(text_value).replace("\n", "<br/>")
+
+
+def review_simulation_classification_beclm_percent(value: object) -> str:
+    normalized = prompt_json_value(value)
+    if normalized is None:
+        return "Non renseigné"
+    try:
+        numeric = float(normalized)
+    except Exception:
+        text_value = str(normalized).strip()
+        return text_value or "Non renseigné"
+    if 0 <= numeric <= 1:
+        numeric *= 100
+    return f"{numeric:.2f} %".replace(".", ",")
+
+
+def review_simulation_classification_date_text(value: object) -> str:
+    text_value = format_short_date(value)
+    if text_value:
+        return text_value
+    rendered = review_simulation_pdf_value("Date de mise à jour", value)
+    return rendered if rendered != "Non renseigné" else "Non renseignée"
+
+
+def review_simulation_classification_structured_indicator_map(
+    structured_payload: dict[str, object] | None,
+    available_names: list[str],
+) -> dict[str, dict[str, str]]:
+    structured_payload = structured_payload or {}
+    items = normalize_gemini_indicator_analyses(structured_payload.get("analyses_indicateurs"), available_names)
+    return {str(item.get("nom_indicateur", "") or "").strip(): item for item in items if str(item.get("nom_indicateur", "") or "").strip()}
+
+
+def review_simulation_classification_scenario_html(indicator_name: str, data: dict[str, object]) -> str:
+    status = canonical_risk_label(data.get("Statut")) or review_simulation_pdf_value("Statut", data.get("Statut"))
+    date_text = review_simulation_classification_date_text(data.get("Date de mise à jour"))
+    return "<br/>".join([
+        f"<b>{escape(indicator_name)}</b>",
+        f"<b>% de risque BeCLM :</b> {escape(review_simulation_classification_beclm_percent(data.get('Valeur')))}",
+        f"<b>Statut :</b> {escape(status or 'Non renseigné')}",
+        f"<b>Date :</b> {escape(date_text)}",
+        f"<b>Commentaire BeCLM :</b> {review_simulation_classification_comment_html(data.get('Commentaire'))}",
+    ])
+
+
+def review_simulation_classification_dispositif_html(
+    status: object,
+    comment: object,
+    structured_item: dict[str, object] | None = None,
+) -> str:
+    normalized = canonical_risk_label(status) or str(status or "").strip()
+    if normalized != "Risque potentiel":
+        return review_simulation_classification_comment_html(comment)
+
+    structured_item = structured_item or {}
+    blocks: list[str] = []
+    for label, key in [
+        ("Mesures d’atténuation", "mesures_attenuation"),
+        ("Contrôles nécessaires", "controles_necessaires"),
+        ("Pièces à demander", "pieces_a_demander"),
+    ]:
+        value = str(structured_item.get(key, "") or "").strip()
+        if value:
+            blocks.append(f"<b>{escape(label)} :</b> {escape(value).replace(chr(10), '<br/>')}")
+    if blocks:
+        return "<br/><br/>".join(blocks)
+    return f"<i>{escape(CLASSIFICATION_AI_PLACEHOLDER_TEXT)}</i>"
+
+
+def review_simulation_classification_rows(
+    row: pd.Series,
+    source_row: pd.Series,
+) -> dict[str, list[dict[str, object]]]:
+    payload = build_gemini_source_payload(source_row)
+    grouped_items = payload.get("indicateurs_source_groupes") if isinstance(payload.get("indicateurs_source_groupes"), list) else []
+    available_names = [str(item.get("nom_indicateur", "") or "").strip() for item in grouped_items if str(item.get("nom_indicateur", "") or "").strip()]
+    structured_payload = review_simulation_parse_structured_ai_payload(row.get(REVIEW_SIM_AI_STRUCTURED_LABEL, ""))
+    structured_map = review_simulation_classification_structured_indicator_map(structured_payload, available_names)
+    vigilance_value = canonical_vigilance_label(row.get(REVIEW_SIM_EST_LABEL, "")) or canonical_vigilance_label(structured_payload.get("statut_estime", "")) or str(row.get(REVIEW_SIM_EST_LABEL, "") or structured_payload.get("statut_estime", "") or "Non renseigné").strip() or "Non renseigné"
+
+    by_axis: dict[str, list[dict[str, object]]] = {axis: [] for axis in CLASSIFICATION_AXIS_ORDER}
+    for item in grouped_items:
+        indicator_name = str(item.get("nom_indicateur", "") or "").strip()
+        if not indicator_name or indicator_name in CLASSIFICATION_EXCLUDED_INDICATORS:
+            continue
+        data = item.get("donnees") if isinstance(item.get("donnees"), dict) else {}
+        status = canonical_risk_label(data.get("Statut")) or str(data.get("Statut", "") or "").strip() or "Non renseigné"
+        axis = review_simulation_classification_axis(indicator_name)
+        by_axis.setdefault(axis, []).append({
+            "indicator_name": indicator_name,
+            "scenario_html": review_simulation_classification_scenario_html(indicator_name, data),
+            "status": status,
+            "cotation": review_simulation_classification_cotation(status),
+            "dispositif_html": review_simulation_classification_dispositif_html(status, data.get("Commentaire"), structured_map.get(indicator_name)),
+            "new_cotation": review_simulation_classification_new_cotation(status),
+            "real_risk": review_simulation_classification_real_risk(status),
+            "vigilance": vigilance_value,
+        })
+
+    def _sort_key(entry: dict[str, object]) -> tuple[int, str]:
+        status_value = canonical_risk_label(entry.get("status")) or str(entry.get("status", "") or "")
+        try:
+            rank = RISK_ORDER.index(status_value)
+        except ValueError:
+            rank = len(RISK_ORDER)
+        return rank, normalize_text_for_matching(entry.get("indicator_name", ""))
+
+    for axis in list(by_axis.keys()):
+        by_axis[axis] = sorted(by_axis[axis], key=_sort_key)
+    return by_axis
+
+
+def review_simulation_classification_legend_table(styles: dict[str, ParagraphStyle]) -> Table:
+    statuses = [
+        "Risque avéré",
+        "Risque potentiel",
+        "Risque mitigé",
+        "Risque levé",
+        "Aucun risque détecté",
+        "Non calculable",
+    ]
+    header_row: list[Paragraph] = []
+    value_row: list[Paragraph] = []
+    for status in statuses:
+        header_row.append(review_simulation_pdf_paragraph(status, styles["table_header_small"]))
+        value_row.append(review_simulation_pdf_nullable_paragraph(review_simulation_classification_cotation(status), styles["body_small_center"]))
+    table = Table([header_row, value_row], colWidths=[40 * mm] * len(statuses), hAlign="LEFT")
+    style_commands: list[tuple[object, ...]] = [
+        ("BOX", (0, 0), (-1, -1), 0.45, colors.HexColor("#D6E1EE")),
+        ("GRID", (0, 0), (-1, -1), 0.35, colors.HexColor("#D6E1EE")),
+        ("BACKGROUND", (0, 1), (-1, 1), colors.white),
+        ("ALIGN", (0, 0), (-1, -1), "CENTER"),
+        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+        ("LEFTPADDING", (0, 0), (-1, -1), 6),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 6),
+        ("TOPPADDING", (0, 0), (-1, -1), 6),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
+    ]
+    for col_idx, status in enumerate(statuses):
+        bg, fg = review_simulation_classification_status_colors(status)
+        style_commands.extend([
+            ("BACKGROUND", (col_idx, 0), (col_idx, 0), colors.HexColor(bg)),
+            ("TEXTCOLOR", (col_idx, 0), (col_idx, 0), colors.HexColor(fg)),
+            ("TEXTCOLOR", (col_idx, 1), (col_idx, 1), colors.HexColor(bg if bg != '#EEF2F7' else '#334155')),
+        ])
+    table.setStyle(TableStyle(style_commands))
+    return table
+
+
+def review_simulation_classification_axis_table(
+    axis_label: str,
+    rows_data: list[dict[str, object]],
+    styles: dict[str, ParagraphStyle],
+) -> Table:
+    headers = [
+        "Sous-catégories et scénarios de risques",
+        "Risque BeCLM",
+        "Cotation",
+        "Dispositif de maîtrise du risque",
+        "Nouvelle cotation",
+        "Risque réel",
+        "Niveau de vigilance applicable",
+    ]
+    rows: list[list[Paragraph]] = [[review_simulation_pdf_paragraph(header, styles["table_header_small"]) for header in headers]]
+    for item in rows_data:
+        rows.append([
+            review_simulation_pdf_rich_paragraph(item.get("scenario_html", ""), styles["body_small"]),
+            review_simulation_pdf_paragraph(item.get("status", ""), styles["body_small_center"]),
+            review_simulation_pdf_nullable_paragraph(item.get("cotation", ""), styles["body_small_center"]),
+            review_simulation_pdf_rich_paragraph(item.get("dispositif_html", ""), styles["body_small"]),
+            review_simulation_pdf_nullable_paragraph(item.get("new_cotation", ""), styles["body_small_center"]),
+            review_simulation_pdf_nullable_paragraph(item.get("real_risk", ""), styles["body_small_center"]),
+            review_simulation_pdf_paragraph(item.get("vigilance", ""), styles["body_small_center"]),
+        ])
+    table = Table(rows, colWidths=[72 * mm, 24 * mm, 12 * mm, 74 * mm, 18 * mm, 22 * mm, 23 * mm], repeatRows=1, hAlign="LEFT", splitByRow=1)
+    style_commands: list[tuple[object, ...]] = [
+        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor(PRIMARY_COLOR)),
+        ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+        ("GRID", (0, 0), (-1, -1), 0.35, colors.HexColor("#D6E1EE")),
+        ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#F7FAFE")]),
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ("LEFTPADDING", (0, 0), (-1, -1), 6),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 6),
+        ("TOPPADDING", (0, 0), (-1, -1), 5),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+        ("ALIGN", (1, 0), (2, -1), "CENTER"),
+        ("ALIGN", (4, 0), (6, -1), "CENTER"),
+    ]
+    for row_idx, item in enumerate(rows_data, start=1):
+        status = item.get("status", "")
+        risk_bg, risk_fg = review_simulation_classification_status_colors(status)
+        vigilance_bg, vigilance_fg = review_simulation_classification_vigilance_colors(item.get("vigilance", ""))
+        style_commands.extend([
+            ("BACKGROUND", (1, row_idx), (1, row_idx), colors.HexColor(risk_bg)),
+            ("TEXTCOLOR", (1, row_idx), (1, row_idx), colors.HexColor(risk_fg)),
+            ("BACKGROUND", (5, row_idx), (5, row_idx), colors.HexColor(risk_bg)),
+            ("TEXTCOLOR", (5, row_idx), (5, row_idx), colors.HexColor(risk_fg)),
+            ("BACKGROUND", (6, row_idx), (6, row_idx), colors.HexColor(vigilance_bg)),
+            ("TEXTCOLOR", (6, row_idx), (6, row_idx), colors.HexColor(vigilance_fg)),
+        ])
+        if str(item.get("cotation", "") or "").strip():
+            style_commands.append(("TEXTCOLOR", (2, row_idx), (2, row_idx), colors.HexColor(risk_bg)))
+        if str(item.get("new_cotation", "") or "").strip():
+            style_commands.append(("TEXTCOLOR", (4, row_idx), (4, row_idx), colors.HexColor(risk_bg)))
+    table.setStyle(TableStyle(style_commands))
+    return table
+
+
+def build_review_simulation_classification_pdf_story(
+    row: pd.Series,
+    source_row: pd.Series,
+    generated_at_utc: datetime,
+) -> tuple[list[object], dict[str, ParagraphStyle]]:
+    styles = review_simulation_pdf_styles()
+    generated_text = pd.Timestamp(generated_at_utc).strftime("%d/%m/%Y %H:%M UTC")
+    classification_rows = review_simulation_classification_rows(row, source_row)
+    estimated_vigilance = canonical_vigilance_label(row.get(REVIEW_SIM_EST_LABEL, "")) or str(row.get(REVIEW_SIM_EST_LABEL, "") or "Non renseigné").strip() or "Non renseigné"
+    total_rows = sum(len(items) for items in classification_rows.values())
+
+    metadata = {
+        "Société": row.get(SOC_COL, ""),
+        "SIREN": row.get("SIREN", ""),
+        "Dénomination": row.get("Dénomination", ""),
+        "Type de revue": row.get("Type de revue", review_type_for_vigilance(row.get(REVIEW_SIM_REAL_LABEL, row.get("Vigilance", "")))),
+        "Statut estimé IA retenu": estimated_vigilance,
+        "Indicateurs classés": total_rows,
+        "Date de génération": generated_text,
+    }
+    methodology_text = (
+        "Le document reprend la logique de la classification LCB-FT et regroupe les indicateurs BeCLM par axes Client, Pays, Produit et Canal.\n\n"
+        "La colonne ‘Risque BeCLM’ reprend le statut source de l’indicateur. La ‘Cotation’, la ‘Nouvelle cotation’ et le ‘Risque réel’ sont dérivés directement de ce statut selon les règles métier validées.\n\n"
+        "Le ‘Niveau de vigilance applicable’ reprend la valeur estimée par l’IA dans le premier PDF de Revue & Simulation."
+    )
+
+    story: list[object] = [
+        review_simulation_pdf_paragraph(
+            f"Classification - {review_simulation_pdf_value('SIREN', row.get('SIREN', ''))} - {review_simulation_pdf_value('Dénomination', row.get('Dénomination', ''))}",
+            styles["title"],
+        ),
+        review_simulation_pdf_paragraph(
+            f"Document de classification structurée généré le {generated_text}.",
+            styles["subtitle"],
+        ),
+        review_simulation_pdf_table(metadata, styles, col_widths=[62 * mm, 171 * mm]),
+        Spacer(1, 5 * mm),
+        review_simulation_pdf_paragraph("Méthodologie de lecture", styles["section"]),
+        review_simulation_pdf_explanation_table(methodology_text, styles),
+        Spacer(1, 5 * mm),
+        review_simulation_pdf_paragraph("Correspondance statut BeCLM / cotation", styles["section"]),
+        review_simulation_classification_legend_table(styles),
+        Spacer(1, 6 * mm),
+    ]
+
+    has_rows = False
+    for axis_label in CLASSIFICATION_AXIS_ORDER:
+        axis_rows = classification_rows.get(axis_label, [])
+        if not axis_rows:
+            continue
+        has_rows = True
+        story.extend([
+            review_simulation_pdf_paragraph(axis_label, styles["section"]),
+            review_simulation_classification_axis_table(axis_label, axis_rows, styles),
+            Spacer(1, 5 * mm),
+        ])
+
+    if not has_rows:
+        story.extend([
+            review_simulation_pdf_paragraph("Classification par axe", styles["section"]),
+            review_simulation_pdf_explanation_table("Aucun indicateur source exploitable n’est disponible pour construire le tableau de classification.", styles),
+        ])
+    return story, styles
+
+
+def write_review_simulation_classification_pdf(
+    row: pd.Series,
+    source_df: pd.DataFrame | None = None,
+) -> Path | None:
+    if not REPORTLAB_AVAILABLE:
+        raise ModuleNotFoundError(PDF_DEPENDENCY_ERROR_MESSAGE)
+    explain_text = str(row.get("Explique moi", "") or "").strip()
+    if not explain_text:
+        return None
+
+    source_row = merge_review_row_with_source_data(row, source_df=source_df)
+    pdf_path = review_simulation_classification_pdf_path(row)
+    generated_at_utc = datetime.now(timezone.utc)
+    story, styles = build_review_simulation_classification_pdf_story(row, source_row, generated_at_utc)
+    page_size = landscape(A4)
+    doc = SimpleDocTemplate(
+        str(pdf_path),
+        pagesize=page_size,
+        leftMargin=16 * mm,
+        rightMargin=16 * mm,
+        topMargin=16 * mm,
+        bottomMargin=14 * mm,
+        title=f"Classification - {row.get('SIREN', '')}",
+        author=PAGE_TITLE,
+        subject="Classification structurée des risques BeCLM",
+    )
+
+    regular_font = styles["body"].fontName
+    primary_color = colors.HexColor(PRIMARY_COLOR)
+    muted_color = colors.HexColor("#5B6B7F")
+
+    def _draw_page(canvas, doc_obj):
+        canvas.saveState()
+        width, height = doc_obj.pagesize
+        canvas.setStrokeColor(primary_color)
+        canvas.setLineWidth(0.8)
+        canvas.line(doc_obj.leftMargin, height - 11 * mm, width - doc_obj.rightMargin, height - 11 * mm)
+        canvas.setFont(regular_font, 8)
+        canvas.setFillColor(muted_color)
+        canvas.drawString(doc_obj.leftMargin, 9 * mm, f"{PAGE_TITLE} - Classification BeCLM")
+        canvas.drawRightString(width - doc_obj.rightMargin, 9 * mm, f"Page {canvas.getPageNumber()}")
+        canvas.restoreState()
+
+    doc.build(story, onFirstPage=_draw_page, onLaterPages=_draw_page)
+    return pdf_path
+
+
 def review_simulation_summary_payload(row: pd.Series) -> dict[str, object]:
     return {
         "Société": row.get(SOC_COL, ""),
@@ -3390,10 +3882,11 @@ def write_review_simulation_pdf(
     return pdf_path
 
 
-def delete_review_simulation_pdf(row: pd.Series) -> None:
-    pdf_path = review_simulation_pdf_path(row)
-    if pdf_path.exists():
-        pdf_path.unlink()
+def delete_review_simulation_pdfs(row: pd.Series) -> None:
+    for item in review_simulation_pdf_entries_for_row(row):
+        path = item.get("path")
+        if isinstance(path, Path) and path.exists():
+            path.unlink()
 
 
 def sync_review_simulation_pdfs(
@@ -3412,13 +3905,18 @@ def sync_review_simulation_pdfs(
         siren = str(row.get("SIREN", "") or "").strip() or "SIREN inconnu"
         explain_text = str(row.get("Explique moi", "") or "").strip()
         if not explain_text:
-            delete_review_simulation_pdf(row)
+            delete_review_simulation_pdfs(row)
             continue
         try:
             if write_review_simulation_pdf(row, source_df=source_df, prompt_template=prompt_template):
                 generated += 1
         except Exception as exc:
-            errors.append(f"PDF {siren} : {exc}")
+            errors.append(f"PDF revue {siren} : {exc}")
+        try:
+            if write_review_simulation_classification_pdf(row, source_df=source_df):
+                generated += 1
+        except Exception as exc:
+            errors.append(f"PDF classification {siren} : {exc}")
     return generated, errors
 
 
@@ -3438,19 +3936,21 @@ def review_simulation_available_pdfs(
     seen_paths: set[str] = set()
     for idx in row_indices:
         row = df.iloc[idx]
-        pdf_path = review_simulation_pdf_path(row)
-        if not pdf_path.exists():
-            continue
-        resolved_path = str(pdf_path.resolve())
-        if resolved_path in seen_paths:
-            continue
-        seen_paths.add(resolved_path)
-        items.append({
-            "row": row,
-            "path": pdf_path,
-            "label": f"{row.get('SIREN', '')} - {row.get('Dénomination', '')}",
-            "download_name": review_simulation_pdf_download_name(row),
-        })
+        for entry in review_simulation_pdf_entries_for_row(row):
+            pdf_path = entry.get("path")
+            if not isinstance(pdf_path, Path) or not pdf_path.exists():
+                continue
+            resolved_path = str(pdf_path.resolve())
+            if resolved_path in seen_paths:
+                continue
+            seen_paths.add(resolved_path)
+            items.append({
+                "row": row,
+                "kind": entry.get("kind", "pdf"),
+                "path": pdf_path,
+                "label": entry.get("label", f"{row.get('SIREN', '')} - {row.get('Dénomination', '')}"),
+                "download_name": entry.get("download_name", pdf_path.name),
+            })
     return items
 
 
@@ -3463,6 +3963,25 @@ def review_simulation_pdfs_zip_bytes(items: list[dict[str, object]]) -> bytes:
             if isinstance(path, Path) and path.exists():
                 archive.writestr(download_name, path.read_bytes())
     return buffer.getvalue()
+
+
+def review_simulation_single_download_payload(items: list[dict[str, object]]) -> tuple[bytes | None, str, str]:
+    if not items:
+        return None, "revue_simulation.pdf", "application/pdf"
+    if len(items) == 1:
+        path = items[0].get("path")
+        if isinstance(path, Path) and path.exists():
+            return path.read_bytes(), str(items[0].get("download_name", path.name)), "application/pdf"
+        return None, "revue_simulation.pdf", "application/pdf"
+
+    first_row = items[0].get("row")
+    if isinstance(first_row, pd.Series):
+        siren = safe_filename_component(first_row.get("SIREN", ""), fallback="siren")
+        denomination = safe_filename_component(first_row.get("Dénomination", ""), fallback="dossier")
+        file_name = f"documents_pdf_{siren}_{denomination}.zip"
+    else:
+        file_name = "documents_pdf.zip"
+    return review_simulation_pdfs_zip_bytes(items), file_name, "application/zip"
 
 
 def build_simulated_review_explanation(row: pd.Series) -> str:
@@ -4577,12 +5096,9 @@ Tu dois répondre exclusivement en JSON valide, sans texte avant ni après, avec
     csv_export_bytes = dataframe_to_csv_bytes(build_review_simulation_export_dataframe(working_df))
     single_pdf_bytes: bytes | None = None
     single_pdf_name = "revue_simulation.pdf"
-    if REPORTLAB_AVAILABLE and len(selected_pdf_items) == 1:
-        pdf_item = selected_pdf_items[0]
-        pdf_path = pdf_item.get("path")
-        if isinstance(pdf_path, Path) and pdf_path.exists():
-            single_pdf_bytes = pdf_path.read_bytes()
-            single_pdf_name = str(pdf_item.get("download_name", single_pdf_name))
+    single_pdf_mime = "application/pdf"
+    if REPORTLAB_AVAILABLE and selected_count == 1 and selected_pdf_items:
+        single_pdf_bytes, single_pdf_name, single_pdf_mime = review_simulation_single_download_payload(selected_pdf_items)
     zip_pdf_bytes = review_simulation_pdfs_zip_bytes(zip_pdf_items) if REPORTLAB_AVAILABLE and zip_pdf_items else None
     gemini_button_disabled = (selected_count == 0) or (not gemini_api_key)
 
@@ -4636,14 +5152,14 @@ Tu dois répondre exclusivement en JSON valide, sans texte avant ni après, avec
     with toolbar_cols[4]:
         st.markdown("<div style='height: 1.9rem;'></div>", unsafe_allow_html=True)
         review_simulation_download_button(
-            "PDF",
+            "PDF(s)",
             data=(single_pdf_bytes or b""),
             file_name=single_pdf_name,
-            mime="application/pdf",
+            mime=single_pdf_mime,
             key="review_toolbar_pdf",
             disabled=(single_pdf_bytes is None),
             use_container_width=True,
-            help="Télécharge le PDF du SIREN sélectionné lorsque la sélection contient une seule société.",
+            help="Télécharge le PDF du SIREN sélectionné, ou un ZIP lorsque plusieurs documents PDF existent pour le dossier.",
         )
     with toolbar_cols[5]:
         st.markdown("<div style='height: 1.9rem;'></div>", unsafe_allow_html=True)
