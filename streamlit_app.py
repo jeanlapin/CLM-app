@@ -238,6 +238,9 @@ ANALYSIS_TOP_PERCENT_STYLE = {
     "% NC": {"base": "#94A3B8", "text": "#475569"},
     "% sans risque": {"base": "#16A34A", "text": "#14532D"},
 }
+ANALYSIS_SCREEN_CACHE_VERSION = "v196_analysis_perf_isolated"
+ANALYSIS_PORTFOLIO_FILTER_LABELS = ["Vigilance", "Risque", "EDD", "Segment", "Pays", "Produit", "Canal", "Analyste", "Valideur"]
+ANALYSIS_INDICATOR_FILTER_KEYS = ["Indicateur", "Statut", "Famille", "Fraîcheur"]
 ANALYSIS_INDICATOR_FAMILY_EXACT = {
     "Segment / Client": {
         "ppe",
@@ -8087,8 +8090,9 @@ def normalize_indicators_current(indicators_df: pd.DataFrame) -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
-def build_analysis_indicator_dataset(filtered_portfolio: pd.DataFrame, indicators_df: pd.DataFrame) -> pd.DataFrame:
-    base_columns = [
+
+def analysis_indicator_base_columns() -> list[str]:
+    return [
         SOC_COL,
         "SIREN",
         "Dénomination",
@@ -8113,11 +8117,14 @@ def build_analysis_indicator_dataset(filtered_portfolio: pd.DataFrame, indicator
         "Fraîcheur indicateur",
         "cm_client_key",
     ]
+
+
+
+def build_analysis_indicator_scope_dataset(filtered_portfolio: pd.DataFrame, normalized_indicators_df: pd.DataFrame) -> pd.DataFrame:
+    base_columns = analysis_indicator_base_columns()
     if filtered_portfolio is None or filtered_portfolio.empty:
         return pd.DataFrame(columns=base_columns)
-
-    normalized = normalize_indicators_current(indicators_df)
-    if normalized.empty:
+    if normalized_indicators_df is None or normalized_indicators_df.empty:
         return pd.DataFrame(columns=base_columns)
 
     portfolio_join_columns = [
@@ -8138,7 +8145,7 @@ def build_analysis_indicator_dataset(filtered_portfolio: pd.DataFrame, indicator
     ]
     portfolio_join_columns = [col for col in portfolio_join_columns if col in filtered_portfolio.columns]
     client_scope = build_unique_client_snapshot(filtered_portfolio, portfolio_join_columns)
-    merged = normalized.merge(
+    merged = normalized_indicators_df.merge(
         client_scope.drop(columns=["cm_client_key"], errors="ignore"),
         how="inner",
         on=[col for col in [SOC_COL, "SIREN"] if col in client_scope.columns],
@@ -8156,6 +8163,106 @@ def build_analysis_indicator_dataset(filtered_portfolio: pd.DataFrame, indicator
         if column_name not in merged.columns:
             merged[column_name] = pd.NA
     return merged[base_columns].copy()
+
+
+
+def build_analysis_indicator_dataset(filtered_portfolio: pd.DataFrame, indicators_df: pd.DataFrame) -> pd.DataFrame:
+    normalized = normalize_indicators_current(indicators_df)
+    return build_analysis_indicator_scope_dataset(filtered_portfolio, normalized)
+
+
+@st.cache_data(show_spinner=False)
+def get_analysis_normalized_indicators_cached(
+    dataset_signature: str,
+    analysis_cache_version: str,
+    societies_key: tuple[str, ...],
+) -> pd.DataFrame:
+    _base, indicators, _history, _portfolio = get_app_datasets_cached(dataset_signature)
+    scoped_indicators = restrict_to_societies(indicators, list(societies_key))
+    return normalize_indicators_current(scoped_indicators)
+
+
+@st.cache_data(show_spinner=False)
+def get_analysis_indicator_scope_cached(
+    dataset_signature: str,
+    analysis_cache_version: str,
+    societies_key: tuple[str, ...],
+) -> pd.DataFrame:
+    _base, _indicators, _history, portfolio = get_app_datasets_cached(dataset_signature)
+    scoped_portfolio = restrict_to_societies(portfolio, list(societies_key))
+    normalized = get_analysis_normalized_indicators_cached(dataset_signature, analysis_cache_version, societies_key)
+    return build_analysis_indicator_scope_dataset(scoped_portfolio, normalized)
+
+
+
+def restrict_analysis_indicator_scope_to_portfolio(
+    analysis_scope_df: pd.DataFrame,
+    filtered_portfolio: pd.DataFrame,
+) -> pd.DataFrame:
+    base_columns = analysis_indicator_base_columns()
+    if analysis_scope_df is None or analysis_scope_df.empty:
+        return pd.DataFrame(columns=base_columns)
+    if filtered_portfolio is None or filtered_portfolio.empty:
+        return pd.DataFrame(columns=base_columns)
+
+    if "cm_client_key" in filtered_portfolio.columns:
+        raw_keys = filtered_portfolio["cm_client_key"]
+    elif SOC_COL in filtered_portfolio.columns and "SIREN" in filtered_portfolio.columns:
+        raw_keys = filtered_portfolio[SOC_COL].astype(str).str.strip() + "|" + filtered_portfolio["SIREN"].astype(str).str.strip()
+    else:
+        raw_keys = pd.Series(dtype="object")
+
+    key_set = {str(value).strip() for value in raw_keys if pd.notna(value) and str(value).strip()}
+    if not key_set:
+        return pd.DataFrame(columns=base_columns)
+
+    work = analysis_scope_df[analysis_scope_df["cm_client_key"].astype(str).isin(key_set)].copy()
+    if work.empty:
+        return pd.DataFrame(columns=base_columns)
+    for column_name in base_columns:
+        if column_name not in work.columns:
+            work[column_name] = pd.NA
+    return work[base_columns].reset_index(drop=True)
+
+
+
+def normalize_filter_cache_key(filters: dict[str, object], ordered_keys: list[str]) -> tuple[tuple[str, str], ...]:
+    return tuple((key, str(filters.get(key, "Tous") or "Tous")) for key in ordered_keys)
+
+
+@st.cache_data(show_spinner=False)
+def get_analysis_base_for_portfolio_filters_cached(
+    dataset_signature: str,
+    analysis_cache_version: str,
+    societies_key: tuple[str, ...],
+    portfolio_filters_key: tuple[tuple[str, str], ...],
+) -> tuple[pd.DataFrame, pd.DataFrame]:
+    _base, _indicators, _history, portfolio = get_app_datasets_cached(dataset_signature)
+    scoped_portfolio = restrict_to_societies(portfolio, list(societies_key))
+    filtered_portfolio = apply_filters(scoped_portfolio, dict(portfolio_filters_key))
+    analysis_scope = get_analysis_indicator_scope_cached(dataset_signature, analysis_cache_version, societies_key)
+    analysis_base = restrict_analysis_indicator_scope_to_portfolio(analysis_scope, filtered_portfolio)
+    return filtered_portfolio, analysis_base
+
+
+@st.cache_data(show_spinner=False)
+def get_analysis_filtered_scope_cached(
+    dataset_signature: str,
+    analysis_cache_version: str,
+    societies_key: tuple[str, ...],
+    portfolio_filters_key: tuple[tuple[str, str], ...],
+    indicator_filters_key: tuple[tuple[str, str], ...],
+) -> tuple[pd.DataFrame, pd.DataFrame]:
+    filtered_portfolio, analysis_base = get_analysis_base_for_portfolio_filters_cached(
+        dataset_signature,
+        analysis_cache_version,
+        societies_key,
+        portfolio_filters_key,
+    )
+    filtered_indicators = apply_analysis_indicator_filters(analysis_base, dict(indicator_filters_key))
+    analysis_client_scope = build_analysis_client_scope(filtered_portfolio, filtered_indicators)
+    return filtered_indicators, analysis_client_scope
+
 
 
 def apply_analysis_indicator_filters(indicator_df: pd.DataFrame, filters: dict[str, object]) -> pd.DataFrame:
@@ -8190,6 +8297,7 @@ def build_analysis_client_scope(filtered_portfolio: pd.DataFrame, indicator_df: 
     return filtered_portfolio.merge(keys, how="inner", on=[SOC_COL, "SIREN"]).reset_index(drop=True)
 
 
+@st.cache_data(show_spinner=False)
 def build_analysis_status_distribution(indicator_df: pd.DataFrame) -> pd.DataFrame:
     rows = []
     total_cases = int(len(indicator_df)) if indicator_df is not None else 0
@@ -8200,6 +8308,7 @@ def build_analysis_status_distribution(indicator_df: pd.DataFrame) -> pd.DataFra
     return pd.DataFrame(rows)
 
 
+@st.cache_data(show_spinner=False)
 def build_analysis_family_distribution(indicator_df: pd.DataFrame) -> pd.DataFrame:
     rows = []
     total_cases = int(len(indicator_df)) if indicator_df is not None else 0
@@ -8215,6 +8324,7 @@ def build_analysis_family_distribution(indicator_df: pd.DataFrame) -> pd.DataFra
     return pd.DataFrame(rows)
 
 
+@st.cache_data(show_spinner=False)
 def build_analysis_freshness_distribution(indicator_df: pd.DataFrame) -> pd.DataFrame:
     rows = []
     total_cases = int(len(indicator_df)) if indicator_df is not None else 0
@@ -8385,6 +8495,7 @@ def render_analysis_top_block(title: str, df: pd.DataFrame, *, dialog_key: str |
     st.markdown(_build_analysis_top_table_html(df), unsafe_allow_html=True)
 
 
+@st.cache_data(show_spinner=False)
 def build_analysis_indicator_top_table(
     indicator_df: pd.DataFrame,
     *,
@@ -8449,6 +8560,7 @@ def render_analysis_concentrations(indicator_df: pd.DataFrame, analysis_client_s
             render_analysis_top_block(title, table, dialog_key=dialog_key)
 
 
+@st.cache_data(show_spinner=False)
 def build_indicator_analysis_table(indicator_scope: pd.DataFrame) -> pd.DataFrame:
     columns = ["Indicateur"] + ANALYSIS_STATUS_ORDER + ["Total cas"]
     if indicator_scope is None or indicator_scope.empty:
@@ -8874,6 +8986,7 @@ ANALYSIS_FILTER_COLUMNS: list[tuple[str, str]] = [
 ]
 
 
+@st.cache_data(show_spinner=False)
 def build_unified_analysis_table(df: pd.DataFrame) -> tuple[pd.DataFrame, str]:
     group_labels = [label for label, _ in ANALYSIS_FILTER_COLUMNS]
     if df is None or df.empty:
@@ -9117,10 +9230,12 @@ def render_analysis_screen(portfolio: pd.DataFrame, indicators: pd.DataFrame) ->
     st.markdown('<h3 class="cm-section-title">Filtres</h3>', unsafe_allow_html=True)
     st.caption("La première ligne cadre le portefeuille ; la seconde affine les cas indicateurs. Ces calculs sont propres à l’écran Analyse et n’impactent pas l’écran Portefeuille.")
 
-    portfolio_filter_labels = ["Vigilance", "Risque", "EDD", "Segment", "Pays", "Produit", "Canal", "Analyste", "Valideur"]
+    dataset_signature = build_dataset_cache_signature()
+    analysis_societies_key = tuple(available_societies(portfolio))
+
     selections: dict[str, str] = {}
     filter_cols = st.columns(5)
-    for idx, label in enumerate(portfolio_filter_labels):
+    for idx, label in enumerate(ANALYSIS_PORTFOLIO_FILTER_LABELS):
         column = FILTER_MAPPING[label]
         options = ["Tous"] + non_empty_sorted(portfolio[column].unique()) if column in portfolio.columns else ["Tous"]
         state_key = "filter_" + label
@@ -9128,15 +9243,19 @@ def render_analysis_screen(portfolio: pd.DataFrame, indicators: pd.DataFrame) ->
             st.session_state[state_key] = "Tous"
         with filter_cols[idx % 5]:
             selections[label] = st.selectbox(label, options=options, key=state_key)
-        if idx % 5 == 4 and idx < len(portfolio_filter_labels) - 1:
+        if idx % 5 == 4 and idx < len(ANALYSIS_PORTFOLIO_FILTER_LABELS) - 1:
             filter_cols = st.columns(5)
 
-    filtered_portfolio = apply_filters(portfolio, selections)
+    portfolio_filters_key = normalize_filter_cache_key(selections, ANALYSIS_PORTFOLIO_FILTER_LABELS)
+    filtered_portfolio, analysis_base = get_analysis_base_for_portfolio_filters_cached(
+        dataset_signature,
+        ANALYSIS_SCREEN_CACHE_VERSION,
+        analysis_societies_key,
+        portfolio_filters_key,
+    )
     if filtered_portfolio.empty:
         st.warning("Aucun client ne correspond au périmètre société + filtres sélectionnés.")
         return
-
-    analysis_base = build_analysis_indicator_dataset(filtered_portfolio, indicators)
 
     indicator_cols = st.columns(4)
     indicator_options = ["Tous"] + non_empty_sorted(analysis_base["Indicateur"].astype(str).unique()) if not analysis_base.empty else ["Tous"]
@@ -9175,8 +9294,14 @@ def render_analysis_screen(portfolio: pd.DataFrame, indicators: pd.DataFrame) ->
         "Famille": family_value,
         "Fraîcheur": freshness_value,
     }
-    filtered_indicators = apply_analysis_indicator_filters(analysis_base, indicator_filters)
-    analysis_client_scope = build_analysis_client_scope(filtered_portfolio, filtered_indicators)
+    indicator_filters_key = normalize_filter_cache_key(indicator_filters, ANALYSIS_INDICATOR_FILTER_KEYS)
+    filtered_indicators, analysis_client_scope = get_analysis_filtered_scope_cached(
+        dataset_signature,
+        ANALYSIS_SCREEN_CACHE_VERSION,
+        analysis_societies_key,
+        portfolio_filters_key,
+        indicator_filters_key,
+    )
 
     if filtered_indicators.empty:
         st.warning("Aucun cas indicateur ne correspond aux filtres d’analyse sélectionnés. Le bandeau, les répartitions et les concentrations reflètent donc un périmètre vide.")
