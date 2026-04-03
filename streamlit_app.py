@@ -184,7 +184,189 @@ INDICATOR_REFERENCE_FILENAME_CANDIDATES = (
 REVIEW_SIM_INDICATOR_REFERENCE_STATE = "review_sim_indicator_reference_df"
 REVIEW_SIM_INDICATOR_REFERENCE_SOURCE_STATE = "review_sim_indicator_reference_source"
 REVIEW_SIM_INDICATOR_REFERENCE_EDITOR_KEY = "review_sim_indicator_reference_editor"
-DEFAULT_INDICATOR_REFERENCE_ROWS = [('Segment / Client', 'Gel des avoirs société', 'Vérifie si la société elle-même est visée par une mesure de gel des avoirs ou une liste de sanctions.'), ('Segment / Client', 'Gel des avoirs / personnes liées', 'Vérifie si les dirigeants, bénéficiaires effectifs ou autres personnes liées sont visés par une mesure de gel des avoirs ou une liste de sanctions.'), ('Segment / Client', 'PPE / personnes liées', 'Mesure l’exposition des dirigeants ou des bénéficiaires effectifs de la société à des personnes politiquement exposées ou à leur entourage proche.'), ('Segment / Client', 'Média négatifs / société', 'Recherche si la société fait l’objet d’informations publiques défavorables pouvant signaler un risque réputationnel, judiciaire ou LCB-FT.'), ('Segment / Client', 'Média négatifs / personnes liées', 'Recherche si les personnes liées à la société, dirigeants ou bénéficiaires effectifs, font l’objet d’informations publiques défavorables pouvant signaler un risque réputationnel, judiciaire ou LCB-FT.'), ('Indicateurs Pays', 'Risque pays GAFI', 'Mesure l’exposition géographique de la société à un pays identifié comme sensible selon la grille ou les listes du GAFI.'), ('Indicateurs Pays', 'Risque pays UE', 'Mesure l’exposition géographique de la société à un pays classé sensible selon le référentiel ou les listes de l’Union européenne.'), ('Indicateurs Pays', 'Risque pays FR', 'Mesure l’exposition géographique de la société selon le référentiel ou l’appréciation du risque pays selon le référentiel de la France'), ('Indicateurs Pays', 'Risque pays Bale Institute', 'Mesure l’exposition géographique de la société selon un score ou classement de risque pays de type Basel AML Index.'), ('Segment / Client', 'SIREN / Secteur d’activité', 'Évalue si le secteur d’activité de la société est intrinsèquement plus exposé aux risques LCB-FT.'), ('Segment / Client', 'SIREN / Catégorie juridique', 'Évalue si la forme juridique de la société présente un niveau de risque particulier.'), ('Segment / Client', 'SIREN / N° d’immatriculation non trouvé', 'Signale une anomalie d’existence légale ou d’identification administrative de la société dans les registres.'), ('Segment / Client', 'SIREN / Société radiée', 'Signale que la société est radiée ou potentiellement inactive juridiquement, ce qui constitue une alerte majeure sur l’existence légale.'), ('Segment / Client', 'BODACC / Dépôt des comptes', 'Mesure si la société présente un défaut ou un retard de dépôt de ses comptes, pouvant signaler un manque de transparence ou une fragilité.'), ('Segment / Client', 'BODACC / Difficultés procédures collectives', 'Mesure l’exposition de la société à une procédure collective ou à une difficulté financière lourde.'), ('Segment / Client', 'BODAC / Création récente', 'Signale que la société est récente, donc avec peu d’historique, peu de recul et potentiellement moins de substance démontrée.'), ('Segment / Client', 'BODACC / Modifications administration', 'Mesure l’instabilité ou la fréquence des changements de gouvernance, de dirigeants ou d’administration.'), ('Segment / Client', 'BODACC / Ventes et cession', 'Signale des opérations de vente ou de cession pouvant traduire un changement de propriété, d’actifs ou de contrôle.'), ('Segment / Client', 'Risques Financiers / Part de l’EBIT dans le CA', 'Mesure si la rentabilité opérationnelle rapportée au chiffre d’affaires présente un niveau atypique ou sensible.'), ('Segment / Client', 'Risques Financiers / Résultat courant avant impôts sur CA', 'Mesure si le résultat courant avant impôts rapporté au chiffre d’affaires présente un niveau atypique ou sensible.'), ('Segment / Client', 'Risques Financiers / taux d’endettement', 'Mesure le niveau de tension financière ou de fragilité bilancielle via l’endettement.'), ('Segment / Client', 'Segment', 'Situe la société dans un segment de clientèle ou d’activité dont le profil de risque est plus ou moins sensible.'), ('Indicateurs Produits', 'Produit(service) principal', 'Évalue si le principal produit ou service vendu par la société est intrinsèquement plus exposé au risque.'), ('Indicateurs Produits', 'Part des opérations avec produits(services) hauts risques 12 m', 'Mesure la concentration des opérations sur des produits ou services considérés à haut risque sur les 12 derniers mois.'), ('Indicateurs Canal', 'Canal principal 12m', 'Identifie le canal dominant de la relation ou des opérations et son niveau de sensibilité.'), ('Indicateurs Canal', 'Part des opérations à distance 12m', 'Mesure la proportion d’opérations réalisées à distance, donc avec moins de contact physique direct.'), ('Indicateurs Produits', 'Cash intensité', 'Mesure l’importance du cash ou des flux assimilés cash dans l’activité de la société.'), ('Indicateurs Pays', 'Cross border', 'Mesure l’intensité de l’activité transfrontalière ou des flux impliquant plusieurs pays.')]
+DEFAULT_INDICATOR_REFERENCE_ROWS = [
+    (
+        "Segment / Client",
+        "Gel des avoirs société",
+        "Vérifie si la personne morale elle-même correspond à une personne ou entité faisant l’objet d’un gel des avoirs ou d’une mesure de sanctions. Ne pas confondre avec un simple risque pays, une mauvaise presse ou un doute commercial. Toute correspondance positive ou non levée reste critique tant que l’identité n’est pas formellement confirmée ou écartée.",
+    ),
+    (
+        "Segment / Client",
+        "Gel des avoirs / personnes liées",
+        "Vérifie si un dirigeant, bénéficiaire effectif, actionnaire significatif ou autre personne liée correspond à une personne visée par un gel des avoirs ou une mesure de sanctions. L’analyse doit distinguer une correspondance confirmée, une homonymie et un résultat non concluant.",
+    ),
+    (
+        "Segment / Client",
+        "PPE / personnes liées",
+        "Mesure l’exposition de la société à une personne politiquement exposée ou à un proche ou associé de PPE parmi les personnes liées. Ne pas assimiler une simple notoriété publique à une PPE. L’enjeu est la vigilance renforcée liée à la fonction, au pays, au lien avec la société et à la date d’exercice.",
+    ),
+    (
+        "Segment / Client",
+        "Média négatifs / société",
+        "Recherche des informations publiques défavorables crédibles sur la société pouvant signaler fraude, corruption, blanchiment, sanctions, criminalité financière ou atteinte grave à la réputation. Ne pas traiter comme un risque fort un article neutre, un litige commercial ordinaire ou une mention sans lien LCB-FT.",
+    ),
+    (
+        "Segment / Client",
+        "Média négatifs / personnes liées",
+        "Recherche des informations publiques défavorables crédibles sur les dirigeants, bénéficiaires effectifs ou autres personnes liées. L’analyse doit distinguer la gravité des faits, leur actualité, leur fiabilité et leur lien réel avec la société et avec le risque LCB-FT.",
+    ),
+    (
+        "Indicateurs Pays",
+        "Risque pays GAFI",
+        "Mesure l’exposition à un pays visé par les listes GAFI, liste noire ou liste grise selon le paramétrage BeCLM. Ne pas l’interpréter comme un simple pays étranger, un pays de résidence quelconque ou un flux international ordinaire.",
+    ),
+    (
+        "Indicateurs Pays",
+        "Risque pays UE",
+        "Mesure l’exposition à un pays tiers à haut risque au sens du référentiel ou de la liste UE utilisée par BeCLM. Ne pas l’interpréter comme des relations avec l’Union européenne au sens large.",
+    ),
+    (
+        "Indicateurs Pays",
+        "Risque pays FR",
+        "Mesure un signal de risque pays issu du référentiel France ou du paramétrage BeCLM. Ne jamais écrire que la France est un pays à risque sans élément explicite dans la donnée source. Il s’agit d’un classement interne ou référentiel, pas d’un jugement générique sur la France.",
+    ),
+    (
+        "Indicateurs Pays",
+        "Risque pays Bale Institute",
+        "Mesure l’exposition à un pays présentant un niveau de risque selon un indice de type Basel AML Index ou référentiel équivalent. Ne pas le confondre avec une liste GAFI, une liste UE ou une liste de sanctions.",
+    ),
+    (
+        "Segment / Client",
+        "SIREN / Secteur d’activité",
+        "Évalue si le secteur d’activité réel de la société est exposé par nature à des risques plus élevés : cash, flux internationaux, intermédiation, biens facilement transférables, actifs difficiles à valoriser, complexité opérationnelle ou secteurs fortement exposés à la fraude ou à l’opacité. Ne pas se limiter au code NAF si l’activité réelle diffère.",
+    ),
+    (
+        "Segment / Client",
+        "SIREN / Catégorie juridique",
+        "Évalue si la forme juridique crée un risque particulier de complexité, interposition, opacité de gouvernance ou difficulté d’identification des parties prenantes. Ne pas considérer qu’une forme est risquée par principe ; le risque vient surtout de ce qu’elle permet en termes de structure, de contrôle et de transparence.",
+    ),
+    (
+        "Segment / Client",
+        "SIREN / N° d’immatriculation non trouvé",
+        "Signale une anomalie d’identification légale : la société n’est pas retrouvée comme attendu dans les registres ou les données de référence. Ce n’est pas un risque pays ni un risque activité ; c’est d’abord un risque d’existence légale, de qualité de donnée ou d’usurpation.",
+    ),
+    (
+        "Segment / Client",
+        "SIREN / Société radiée",
+        "Signale qu’une société est radiée, inactive ou juridiquement sortie du registre, ce qui remet en cause la poursuite normale de la relation d’affaires. Ne pas en déduire automatiquement une fraude, mais traiter cela comme une alerte critique d’existence légale tant que la situation n’est pas clarifiée.",
+    ),
+    (
+        "Segment / Client",
+        "BODACC / Dépôt des comptes",
+        "Mesure le niveau de transparence comptable et de régularité déclarative de la société. Le risque augmente si l’absence de dépôt est répétée, ancienne ou incohérente avec la taille et l’activité. Ne pas confondre un retard isolé avec une opacité structurelle.",
+    ),
+    (
+        "Segment / Client",
+        "BODACC / Difficultés procédures collectives",
+        "Mesure l’exposition à une procédure collective ou à une difficulté financière lourde. Ce n’est pas un indicateur direct de blanchiment, mais un signal de fragilité financière pouvant accroître le risque d’opérations atypiques, de pression de trésorerie ou de comportements opportunistes.",
+    ),
+    (
+        "Segment / Client",
+        "BODAC / Création récente",
+        "Signale une société récemment créée, donc avec peu d’historique, peu de recul et une substance économique encore à démontrer. Le risque est surtout élevé si le niveau d’activité, la complexité ou les flux observés sont disproportionnés par rapport à l’ancienneté de la société.",
+    ),
+    (
+        "Segment / Client",
+        "BODACC / Modifications administration",
+        "Mesure l’instabilité de gouvernance à travers les changements de dirigeants, administrateurs ou organes de gestion. Le risque augmente si les changements sont fréquents, récents, peu expliqués ou combinés à d’autres alertes. Un changement isolé et documenté n’a pas la même portée.",
+    ),
+    (
+        "Segment / Client",
+        "BODACC / Ventes et cession",
+        "Signale des cessions, ventes ou transferts pouvant affecter la propriété, le contrôle ou les actifs de la société. Le risque porte sur la compréhension du changement de contrôle ou de substance, pas sur l’existence d’une cession en soi.",
+    ),
+    (
+        "Segment / Client",
+        "Risques Financiers / Part de l’EBIT dans le CA",
+        "Mesure si la rentabilité opérationnelle rapportée au chiffre d’affaires paraît atypique au regard du secteur, de la taille ou de l’historique. Ne pas interpréter le ratio comme une preuve de fraude ; c’est un signal d’anomalie économique à expliquer.",
+    ),
+    (
+        "Segment / Client",
+        "Risques Financiers / Résultat courant avant impôts sur CA",
+        "Mesure si le résultat courant avant impôts rapporté au chiffre d’affaires paraît anormalement élevé, faible ou instable. C’est un indicateur de cohérence économique et financière, pas un indicateur autonome de criminalité.",
+    ),
+    (
+        "Segment / Client",
+        "Risques Financiers / taux d’endettement",
+        "Mesure le niveau de tension financière et de dépendance à l’endettement. Le risque est plus fort si l’endettement paraît incompatible avec l’activité, la rentabilité ou les flux observés, surtout combiné à d’autres signaux de fragilité.",
+    ),
+    (
+        "Segment / Client",
+        "Segment",
+        "Situe la société dans un segment interne BeCLM ou une catégorie de clientèle ou d’activité censée porter un niveau de risque particulier. L’analyse doit s’appuyer sur le sens métier interne du segment et ne pas inventer seule ce que le segment signifie. Si le contenu exact du segment n’est pas explicité, rester prudent et l’indiquer.",
+    ),
+    (
+        "Indicateurs Produits",
+        "Produit(service) principal",
+        "Évalue si le produit ou service principal présente un risque intrinsèque plus élevé en raison de sa complexité, de sa liquidité, de sa difficulté de valorisation, de son caractère intermédié, de son exposition au cash, de sa portabilité ou de sa dimension internationale. Expliquer le risque par les caractéristiques du produit, pas seulement par son nom.",
+    ),
+    (
+        "Indicateurs Produits",
+        "Part des opérations avec produits(services) hauts risques 12 m",
+        "Mesure la part des opérations sur 12 mois portant sur des produits ou services classés haut risque par le référentiel interne BeCLM. L’analyse ne doit pas inventer seule ce qui est haut risque si la liste interne n’est pas fournie ; elle doit s’appuyer sur le classement BeCLM ou rester prudente.",
+    ),
+    (
+        "Indicateurs Canal",
+        "Canal principal 12m",
+        "Identifie le canal dominant de la relation ou des opérations sur 12 mois : présentiel, distance, mail, tiers introducteur, onboarding intermédiaire, etc. Le risque porte sur la qualité du contact, la traçabilité, la présence éventuelle d’un tiers et le niveau de maîtrise du parcours. Éviter de mélanger plusieurs notions si elles ne sont pas explicitement présentes.",
+    ),
+    (
+        "Indicateurs Canal",
+        "Part des opérations à distance 12m",
+        "Mesure la proportion d’opérations réalisées à distance sur 12 mois. Cet indicateur ne mesure ni le risque pays ni l’intermédiation par un tiers ; il mesure spécifiquement le caractère non présentiel et les besoins associés en contrôle d’identité, sécurité et traçabilité.",
+    ),
+    (
+        "Indicateurs Produits",
+        "Cash intensité",
+        "Mesure la part de cash ou d’opérations assimilables au cash dans l’activité. Le risque vient de l’opacité, de la traçabilité plus faible et de la liquidité. Ne pas confondre espèces réelles, quasi-cash et simples flux bancaires classiques si la donnée ne le permet pas.",
+    ),
+    (
+        "Indicateurs Pays",
+        "Cross border",
+        "Mesure l’intensité des flux, opérations ou relations transfrontalières, c’est-à-dire impliquant plusieurs pays. Ne pas en déduire automatiquement qu’un pays est sensible. Cet indicateur mesure d’abord le caractère international des flux, pas la dangerosité intrinsèque d’un pays. Si les pays concernés ne sont pas connus, écrire pays à préciser et ne pas en inventer.",
+    ),
+]
+INDICATOR_REFERENCE_DEFAULT_SOURCE_LABEL = "Référentiel durci intégré BeCLM."
+INDICATOR_REFERENCE_GLOBAL_GUARDRAILS = [
+    "Ne jamais inventer un pays, une personne, un fait ou un flux absent de la fiche client.",
+    "Ne jamais traiter GAFI, UE, FR, Bale Institute et Cross border comme des synonymes.",
+    "Toujours raisonner à partir du sens métier de l’indicateur avant de proposer une action.",
+    "Quand une donnée métier précise manque, écrire à préciser plutôt que produire une interprétation libre.",
+    "Ne pas transformer un classement interne BeCLM en affirmation générale sur un pays, un secteur ou une forme juridique.",
+]
+INDICATOR_REFERENCE_STRICT_RULES = {
+    "Risque pays GAFI": {
+        "must_include_any": ["gafi", "liste grise", "liste noire"],
+        "must_not_include": ["union europeenne au sens large"],
+    },
+    "Risque pays UE": {
+        "must_include_any": ["ue", "union européenne", "liste ue", "pays tiers"],
+        "must_not_include": ["gafi"],
+    },
+    "Risque pays FR": {
+        "must_include_any": ["référentiel", "france", "paramétrage", "classement interne"],
+        "must_not_include": ["la france est un pays à risque", "france est un pays à risque"],
+    },
+    "Risque pays Bale Institute": {
+        "must_include_any": ["bale", "basel", "indice", "index"],
+        "must_not_include": ["gafi", "liste de sanctions"],
+    },
+    "Cross border": {
+        "must_include_any": ["transfrontal", "international", "plusieurs pays", "cross-border"],
+        "must_not_include": ["liste gafi", "liste ue", "sanctions"],
+    },
+    "Segment": {"must_include_any": ["segment", "classification interne", "catégorie"], "must_not_include": []},
+    "SIREN / Catégorie juridique": {"must_include_any": ["forme juridique", "structure", "gouvernance", "transparence"], "must_not_include": []},
+    "SIREN / Secteur d’activité": {"must_include_any": ["secteur", "activité", "réel"], "must_not_include": []},
+    "Produit(service) principal": {"must_include_any": ["produit", "service", "caractéristiques"], "must_not_include": []},
+    "Part des opérations avec produits(services) hauts risques 12 m": {"must_include_any": ["haut risque", "12 mois", "part des opérations"], "must_not_include": []},
+    "Canal principal 12m": {"must_include_any": ["canal", "parcours", "tiers", "présentiel", "distance"], "must_not_include": []},
+    "Part des opérations à distance 12m": {"must_include_any": ["distance", "non présentiel", "12 mois"], "must_not_include": []},
+    "Cash intensité": {"must_include_any": ["cash", "espèces", "traçabilité", "liquidité"], "must_not_include": []},
+    "Risques Financiers / Part de l’EBIT dans le CA": {"must_include_any": ["ebit", "rentabilité", "ratio"], "must_not_include": []},
+    "Risques Financiers / Résultat courant avant impôts sur CA": {"must_include_any": ["résultat courant", "ratio", "cohérence"], "must_not_include": []},
+    "Risques Financiers / taux d’endettement": {"must_include_any": ["endettement", "tension financière", "ratio"], "must_not_include": []},
+}
 GEMINI_BASE_SOURCE_PREFIX = "Base source :: "
 GEMINI_INDICATORS_SOURCE_PREFIX = "Indicateurs source :: "
 PDF_DEPENDENCY_ERROR_MESSAGE = (
@@ -2280,6 +2462,10 @@ def available_indicator_names_from_row(row: pd.Series) -> list[str]:
 
 
 
+def indicator_reference_key(value: object) -> str:
+    return normalize_text_for_matching(value)
+
+
 def indicator_reference_default_df() -> pd.DataFrame:
     return pd.DataFrame(list(DEFAULT_INDICATOR_REFERENCE_ROWS), columns=INDICATOR_REFERENCE_COLUMNS)
 
@@ -2298,6 +2484,35 @@ def sanitize_indicator_reference_df(df: pd.DataFrame | None) -> pd.DataFrame:
         result[col] = result[col].map(lambda value: "" if value is None or pd.isna(value) else str(value).strip())
     result = result[result["Indicateur d’alerte"].astype(str).str.strip().ne("")].reset_index(drop=True)
     return result
+
+
+def merge_indicator_reference_with_hard_defaults(df: pd.DataFrame | None, prefer_loaded_for_known: bool = False) -> pd.DataFrame:
+    baseline = sanitize_indicator_reference_df(indicator_reference_default_df())
+    if df is None:
+        return baseline
+    loaded = sanitize_indicator_reference_df(df)
+    if loaded.empty:
+        return baseline
+
+    baseline = baseline.assign(__key=baseline["Indicateur d’alerte"].map(indicator_reference_key))
+    loaded = loaded.assign(__key=loaded["Indicateur d’alerte"].map(indicator_reference_key))
+
+    if prefer_loaded_for_known:
+        merged = baseline.set_index("__key")
+        for _, record in loaded.iterrows():
+            key = str(record.get("__key", "") or "").strip()
+            if not key:
+                continue
+            merged.loc[key, INDICATOR_REFERENCE_COLUMNS] = [record.get(col, "") for col in INDICATOR_REFERENCE_COLUMNS]
+        result = merged.reset_index(drop=True)[INDICATOR_REFERENCE_COLUMNS]
+        return sanitize_indicator_reference_df(result)
+
+    baseline_keys = set(baseline["__key"].tolist())
+    extra_rows = loaded[~loaded["__key"].isin(baseline_keys)].copy()
+    if extra_rows.empty:
+        return baseline[INDICATOR_REFERENCE_COLUMNS].reset_index(drop=True)
+    result = pd.concat([baseline[INDICATOR_REFERENCE_COLUMNS], extra_rows[INDICATOR_REFERENCE_COLUMNS]], ignore_index=True)
+    return sanitize_indicator_reference_df(result)
 
 
 @st.cache_data(show_spinner=False)
@@ -2321,13 +2536,15 @@ def load_indicator_reference_seed() -> tuple[pd.DataFrame, str]:
                 continue
             try:
                 loaded = pd.read_excel(candidate, dtype=str)
-                loaded = sanitize_indicator_reference_df(loaded)
-                if not loaded.empty:
-                    return loaded, f"Référentiel chargé depuis {candidate.name}."
+                merged = merge_indicator_reference_with_hard_defaults(loaded)
+                if not merged.empty:
+                    return merged, (
+                        f"{INDICATOR_REFERENCE_DEFAULT_SOURCE_LABEL} Socle imposé, complété le cas échéant par des indicateurs supplémentaires issus de {candidate.name}."
+                    )
             except Exception:
                 continue
 
-    return indicator_reference_default_df(), "Référentiel intégré par défaut."
+    return indicator_reference_default_df(), INDICATOR_REFERENCE_DEFAULT_SOURCE_LABEL
 
 
 def ensure_review_simulation_indicator_reference_state() -> None:
@@ -2336,10 +2553,9 @@ def ensure_review_simulation_indicator_reference_state() -> None:
         st.session_state[REVIEW_SIM_INDICATOR_REFERENCE_STATE] = sanitize_indicator_reference_df(seed_df)
         st.session_state[REVIEW_SIM_INDICATOR_REFERENCE_SOURCE_STATE] = str(source_label)
     else:
-        st.session_state[REVIEW_SIM_INDICATOR_REFERENCE_STATE] = sanitize_indicator_reference_df(
-            pd.DataFrame(st.session_state[REVIEW_SIM_INDICATOR_REFERENCE_STATE])
-        )
-        st.session_state.setdefault(REVIEW_SIM_INDICATOR_REFERENCE_SOURCE_STATE, "Référentiel intégré par défaut.")
+        current_df = sanitize_indicator_reference_df(pd.DataFrame(st.session_state[REVIEW_SIM_INDICATOR_REFERENCE_STATE]))
+        st.session_state[REVIEW_SIM_INDICATOR_REFERENCE_STATE] = merge_indicator_reference_with_hard_defaults(current_df, prefer_loaded_for_known=True)
+        st.session_state.setdefault(REVIEW_SIM_INDICATOR_REFERENCE_SOURCE_STATE, INDICATOR_REFERENCE_DEFAULT_SOURCE_LABEL)
 
 
 def get_review_simulation_indicator_reference_df() -> pd.DataFrame:
@@ -2347,26 +2563,68 @@ def get_review_simulation_indicator_reference_df() -> pd.DataFrame:
     return sanitize_indicator_reference_df(pd.DataFrame(st.session_state[REVIEW_SIM_INDICATOR_REFERENCE_STATE]))
 
 
+def indicator_reference_map() -> dict[str, dict[str, str]]:
+    reference_df = get_review_simulation_indicator_reference_df()
+    mapping: dict[str, dict[str, str]] = {}
+    for _, record in reference_df.iterrows():
+        key = indicator_reference_key(record.get("Indicateur d’alerte"))
+        if not key:
+            continue
+        mapping[key] = {
+            "famille": str(record.get("Famille", "") or "").strip(),
+            "nom_indicateur": str(record.get("Indicateur d’alerte", "") or "").strip(),
+            "sens_metier": str(record.get("Sens métier de l’indicateur pour l’IA", "") or "").strip(),
+        }
+    return mapping
+
+
+def build_indicator_reference_guardrails(indicator_names: list[str] | None = None) -> list[dict[str, object]]:
+    reference = indicator_reference_map()
+    if indicator_names:
+        allowed = {indicator_reference_key(name) for name in indicator_names if str(name or "").strip()}
+    else:
+        allowed = set(reference.keys())
+    guardrails: list[dict[str, object]] = []
+    for key, item in reference.items():
+        if allowed and key not in allowed:
+            continue
+        rules = INDICATOR_REFERENCE_STRICT_RULES.get(item["nom_indicateur"], {})
+        guardrails.append(
+            {
+                "nom_indicateur": prompt_json_value(item["nom_indicateur"]),
+                "must_include_any": prompt_json_value(rules.get("must_include_any", [])),
+                "must_not_include": prompt_json_value(rules.get("must_not_include", [])),
+            }
+        )
+    return guardrails
+
+
 def build_indicator_reference_payload(indicator_names: list[str] | None = None) -> list[dict[str, object]]:
     reference_df = get_review_simulation_indicator_reference_df()
     if indicator_names:
         normalized_names = {
-            normalize_text_for_matching(name)
+            indicator_reference_key(name)
             for name in indicator_names
             if str(name or "").strip()
         }
         if normalized_names:
             reference_df = reference_df[
-                reference_df["Indicateur d’alerte"].map(normalize_text_for_matching).isin(normalized_names)
+                reference_df["Indicateur d’alerte"].map(indicator_reference_key).isin(normalized_names)
             ].reset_index(drop=True)
 
     payload: list[dict[str, object]] = []
     for _, record in reference_df.iterrows():
+        indicator_name = str(record.get("Indicateur d’alerte", "") or "").strip()
+        strict_rules = INDICATOR_REFERENCE_STRICT_RULES.get(indicator_name, {})
         payload.append(
             {
                 "famille": prompt_json_value(record.get("Famille")),
-                "nom_indicateur": prompt_json_value(record.get("Indicateur d’alerte")),
+                "nom_indicateur": prompt_json_value(indicator_name),
                 "sens_metier": prompt_json_value(record.get("Sens métier de l’indicateur pour l’IA")),
+                "regles_strictes": {
+                    "must_include_any": prompt_json_value(strict_rules.get("must_include_any", [])),
+                    "must_not_include": prompt_json_value(strict_rules.get("must_not_include", [])),
+                },
             }
         )
     return payload
@@ -2430,6 +2688,7 @@ def build_gemini_source_payload(row: pd.Series) -> dict[str, object]:
     indicator_reference_payload = build_indicator_reference_payload(
         [str(item.get("nom_indicateur", "") or "").strip() for item in indicator_groups_payload]
     )
+    active_indicator_names = [str(item.get("nom_indicateur", "") or "").strip() for item in indicator_groups_payload]
     return {
         "contexte_simulation": row_payload_from_columns(row, context_columns),
         "alertes_calculees": build_row_alert_labels(row),
@@ -2437,6 +2696,8 @@ def build_gemini_source_payload(row: pd.Series) -> dict[str, object]:
         "indicateurs_source": indicators_source_payload,
         "indicateurs_source_groupes": indicator_groups_payload,
         "referentiel_indicateurs_actifs": indicator_reference_payload,
+        "garde_fous_referentiel_globaux": prompt_json_value(INDICATOR_REFERENCE_GLOBAL_GUARDRAILS),
+        "garde_fous_referentiel_indicateurs": build_indicator_reference_guardrails(active_indicator_names),
     }
 
 
@@ -2773,12 +3034,89 @@ def format_review_prompt_template(prompt_template: str, row: pd.Series) -> str:
     return prompt
 
 
-def build_gemini_review_prompt(base_prompt: str, row: pd.Series) -> str:
+def build_active_indicator_reference_prompt_lines(row: pd.Series) -> str:
+    active_names = available_indicator_names_from_row(row)
+    reference = indicator_reference_map()
+    lines: list[str] = []
+    for indicator_name in active_names:
+        item = reference.get(indicator_reference_key(indicator_name))
+        if not item:
+            continue
+        rules = INDICATOR_REFERENCE_STRICT_RULES.get(item["nom_indicateur"], {})
+        lines.append(f"- {item['nom_indicateur']} ({item['famille']}) : {item['sens_metier']}")
+        must_include = [str(value).strip() for value in rules.get("must_include_any", []) if str(value).strip()]
+        must_not_include = [str(value).strip() for value in rules.get("must_not_include", []) if str(value).strip()]
+        if must_include:
+            lines.append(f"  Points à refléter explicitement dans l’analyse : {', '.join(must_include)}.")
+        if must_not_include:
+            lines.append(f"  Formulations interdites ou trompeuses : {', '.join(must_not_include)}.")
+    return "\n".join(lines)
+
+
+def review_simulation_analysis_plain_text(item: dict[str, object]) -> str:
+    parts = []
+    for field in [
+        "constat",
+        "niveau_attention",
+        "mesures_attenuation",
+        "controles_necessaires",
+        "pieces_a_demander",
+    ]:
+        value = str(item.get(field, "") or "").strip()
+        if value:
+            parts.append(value)
+    return normalize_text_for_matching(" ".join(parts))
+
+
+def validate_gemini_indicator_analyses(analyses_indicateurs: list[dict[str, object]]) -> list[str]:
+    issues: list[str] = []
+    for item in analyses_indicateurs:
+        indicator_name = str(item.get("nom_indicateur", "") or "").strip()
+        if not indicator_name:
+            continue
+        rules = INDICATOR_REFERENCE_STRICT_RULES.get(indicator_name, {})
+        if not rules:
+            continue
+        text_norm = review_simulation_analysis_plain_text(item)
+        if not text_norm:
+            issues.append(f"{indicator_name} : analyse vide ou trop pauvre pour être fiable.")
+            continue
+        must_include = [normalize_text_for_matching(value) for value in rules.get("must_include_any", []) if str(value).strip()]
+        if must_include and not any(value in text_norm for value in must_include):
+            issues.append(
+                f"{indicator_name} : l’analyse ne reflète pas clairement le sens métier attendu ({', '.join(rules.get('must_include_any', [])[:3])})."
+            )
+        for forbidden in [str(value).strip() for value in rules.get("must_not_include", []) if str(value).strip()]:
+            if normalize_text_for_matching(forbidden) in text_norm:
+                issues.append(f"{indicator_name} : l’analyse contient une formulation à proscrire ({forbidden}).")
+        if indicator_name == "Risque pays FR" and "pays a risque" in text_norm and all(token not in text_norm for token in ["referentiel", "parametrage", "classement interne"]):
+            issues.append("Risque pays FR : l’analyse suggère un pays à risque sans rappeler le caractère référentiel ou interne du signal.")
+        if indicator_name == "Cross border" and "pays a risque" in text_norm and all(token not in text_norm for token in ["transfrontal", "international", "plusieurs pays"]):
+            issues.append("Cross border : l’analyse dérive vers un risque pays au lieu de qualifier l’intensité des flux transfrontaliers.")
+    return issues[:12]
+
+
+def build_gemini_review_prompt(base_prompt: str, row: pd.Series, correction_issues: list[str] | None = None) -> str:
     prompt_parts: list[str] = []
     generic_prompt = format_review_prompt_template(base_prompt, row)
     if generic_prompt:
         prompt_parts.append("Consignes générales à respecter :\n" + generic_prompt)
     prompt_parts.append("Contexte détaillé du dossier :\n" + build_row_review_prompt(row))
+    prompt_parts.append(
+        "Garde-fous globaux d’interprétation (impératifs et prioritaires sur toute interprétation libre) :\n- "
+        + "\n- ".join(INDICATOR_REFERENCE_GLOBAL_GUARDRAILS)
+    )
+    active_indicator_reference_lines = build_active_indicator_reference_prompt_lines(row)
+    if active_indicator_reference_lines:
+        prompt_parts.append(
+            "Référentiel durci des indicateurs actifs à respecter strictement :\n"
+            + active_indicator_reference_lines
+        )
+    if correction_issues:
+        prompt_parts.append(
+            "Corrections impératives après contrôle qualité interne de la première réponse :\n- "
+            + "\n- ".join(str(issue).strip() for issue in correction_issues if str(issue).strip())
+        )
     prompt_parts.append(
         "Données source complètes du SIREN (analyse exhaustivement toutes les colonnes des objets JSON ci-dessous avant de conclure) :\n"
         + json.dumps(build_gemini_source_payload(row), ensure_ascii=False, indent=2)
@@ -2786,10 +3124,11 @@ def build_gemini_review_prompt(base_prompt: str, row: pd.Series) -> str:
     prompt_parts.append(
         "Réponds exclusivement avec un JSON valide conforme au schéma demandé.\n"
         f"La valeur de 'statut_estime' doit être exactement l’une des suivantes : {', '.join(VIGILANCE_ORDER)}.\n"
-        "La valeur de 'explique_moi' doit être rédigée en français, sans markdown, directement exploitable dans une cellule, "
-        "et contenir un diagnostic synthétique, les actions prioritaires, les justificatifs à obtenir et les points de contrôle.\n"
-        "Le diagnostic et le statut estimé doivent être déterminés à partir de l’ensemble des données de base source, "
-        "de l’ensemble des indicateurs source et des alertes calculées, et pas uniquement à partir de leur synthèse."
+        "Tu dois analyser chaque indicateur de la source 02 à partir de son sens métier BeCLM et des données réellement présentes dans la fiche.\n"
+        "Ne renomme aucun indicateur. N’invente ni pays, ni personnes, ni faits, ni documents absents de la fiche.\n"
+        "Quand une donnée métier précise manque, écris à préciser au lieu d’extrapoler.\n"
+        "Pour les indicateurs pays, distingue explicitement GAFI, UE, FR, Bale Institute et Cross border ; ils ne sont pas synonymes.\n"
+        "Le diagnostic et le statut estimé doivent être déterminés à partir de l’ensemble des données de base source, de l’ensemble des indicateurs source et des alertes calculées, et pas uniquement à partir de leur synthèse."
     )
     return "\n\n".join(prompt_parts)
 
@@ -2880,31 +3219,57 @@ def call_gemini_json(prompt: str, api_key: str, model: str = GEMINI_MODEL_DEFAUL
 
 def run_gemini_review_simulation(row: pd.Series, api_key: str, base_prompt: str, model: str = GEMINI_MODEL_DEFAULT) -> tuple[str, str, str]:
     available_names = available_indicator_names_from_row(row)
-    result = call_gemini_json(build_gemini_review_prompt(base_prompt, row), api_key=api_key, model=model)
-    explication_generale = str(result.get("explication_generale", result.get("explicationGenerale", "")) or "").strip()
-    conclusion_generale = str(result.get("conclusion_generale", result.get("conclusionGenerale", "")) or "").strip()
-    estimated_status = canonical_vigilance_label(result.get("statut_estime", result.get("statutEstime", "")))
-    analyses_indicateurs = normalize_gemini_indicator_analyses(
-        result.get("analyses_indicateurs", result.get("analysesIndicateurs", [])),
-        available_names,
-    )
-    explanation = structured_explain_text_from_payload(explication_generale, analyses_indicateurs, conclusion_generale, estimated_status)
-    if not explication_generale:
-        raise ValueError("Gemini a renvoyé un champ 'explication_generale' vide.")
-    if not conclusion_generale:
-        raise ValueError("Gemini a renvoyé un champ 'conclusion_generale' vide.")
-    if not estimated_status:
-        raise ValueError("Gemini a renvoyé un statut estimé invalide.")
-    if available_names and not analyses_indicateurs:
-        raise ValueError("Gemini n’a renvoyé aucune analyse structurée par indicateur de la source 02.")
-    structured_payload = {
-        "schema_version": 2,
-        "explication_generale": explication_generale,
-        "analyses_indicateurs": analyses_indicateurs,
-        "conclusion_generale": conclusion_generale,
-        "statut_estime": estimated_status,
-    }
-    return explanation, estimated_status, json.dumps(structured_payload, ensure_ascii=False)
+    correction_issues: list[str] | None = None
+    last_validation_issues: list[str] = []
+
+    for attempt_idx in range(2):
+        result = call_gemini_json(
+            build_gemini_review_prompt(base_prompt, row, correction_issues=correction_issues),
+            api_key=api_key,
+            model=model,
+        )
+        explication_generale = str(result.get("explication_generale", result.get("explicationGenerale", "")) or "").strip()
+        conclusion_generale = str(result.get("conclusion_generale", result.get("conclusionGenerale", "")) or "").strip()
+        estimated_status = canonical_vigilance_label(result.get("statut_estime", result.get("statutEstime", "")))
+        analyses_indicateurs = normalize_gemini_indicator_analyses(
+            result.get("analyses_indicateurs", result.get("analysesIndicateurs", [])),
+            available_names,
+        )
+        explanation = structured_explain_text_from_payload(explication_generale, analyses_indicateurs, conclusion_generale, estimated_status)
+        if not explication_generale:
+            raise ValueError("Gemini a renvoyé un champ 'explication_generale' vide.")
+        if not conclusion_generale:
+            raise ValueError("Gemini a renvoyé un champ 'conclusion_generale' vide.")
+        if not estimated_status:
+            raise ValueError("Gemini a renvoyé un statut estimé invalide.")
+        if available_names and not analyses_indicateurs:
+            raise ValueError("Gemini n’a renvoyé aucune analyse structurée par indicateur de la source 02.")
+
+        validation_issues = validate_gemini_indicator_analyses(analyses_indicateurs)
+        if validation_issues and attempt_idx == 0:
+            correction_issues = validation_issues
+            last_validation_issues = validation_issues
+            continue
+        if validation_issues:
+            raise ValueError(
+                "Gemini a renvoyé une analyse encore insuffisamment contrainte par le référentiel durci : "
+                + " | ".join(validation_issues[:6])
+            )
+
+        structured_payload = {
+            "schema_version": 3,
+            "explication_generale": explication_generale,
+            "analyses_indicateurs": analyses_indicateurs,
+            "conclusion_generale": conclusion_generale,
+            "statut_estime": estimated_status,
+            "controle_referentiel_durci": {
+                "tentatives": attempt_idx + 1,
+                "issues_corrigees": last_validation_issues if attempt_idx == 1 else [],
+            },
+        }
+        return explanation, estimated_status, json.dumps(structured_payload, ensure_ascii=False)
+
+    raise ValueError("Gemini n’a pas pu produire une analyse conforme au référentiel durci.")
 
 
 def review_simulation_source_row(row: pd.Series, source_df: pd.DataFrame) -> pd.Series:
@@ -4879,7 +5244,7 @@ def render_review_simulation_glossary_expander() -> None:
         ["Alertes actives", "Liste textuelle des alertes calculées du dossier, concaténées dans un ordre fixe."],
         ["Explique moi", "Restitution textuelle de l’analyse opérationnelle de revue. Le tableau affiche ‘a lire’ quand un contenu existe."],
         ["Analyse IA structurée", "JSON structuré renvoyé par l’Agent IA et réutilisé pour les PDF de revue et de classification."],
-        ["Référentiel des indicateurs actifs", "Expander affichant le référentiel des indicateurs transmis à l’Agent IA ; seule la colonne ‘Sens métier de l’indicateur pour l’IA’ est modifiable depuis l’écran."],
+        ["Référentiel des indicateurs actifs", "Expander affichant le référentiel durci transmis à l’Agent IA ; le socle BeCLM est imposé et seule la colonne ‘Sens métier de l’indicateur pour l’IA’ reste modifiable depuis l’écran."],
         ["PDF(s)", "Téléchargement du PDF du SIREN sélectionné, ou d’un ZIP quand plusieurs PDF existent déjà pour ce dossier."],
         ["ZIP PDF", "Téléchargement de tous les PDF structurés déjà générés sur le périmètre courant."],
         ["CSV", "Export du tableau visible de l’écran Revues & Simulations après application des filtres."],
@@ -4960,7 +5325,7 @@ def render_review_simulation_glossary_expander() -> None:
         ],
         [
             "Agent IA",
-            f"Traitement du lot courant sur au plus {GEMINI_MAX_BATCH_SIZE} SIREN sélectionnés. L’agent reçoit un payload structuré avec contexte_simulation, alertes_calculees, donnees_base_source, indicateurs_source, indicateurs_source_groupes et referentiel_indicateurs_actifs ; il renseigne ‘Explique moi’, l’analyse IA structurée, le statut estimé et déclenche la génération / mise à jour des PDF.",
+            f"Traitement du lot courant sur au plus {GEMINI_MAX_BATCH_SIZE} SIREN sélectionnés. L’agent reçoit un payload structuré avec contexte_simulation, alertes_calculees, donnees_base_source, indicateurs_source, indicateurs_source_groupes, referentiel_indicateurs_actifs et les garde-fous du référentiel durci ; il renseigne ‘Explique moi’, l’analyse IA structurée, le statut estimé et déclenche la génération / mise à jour des PDF, avec un contrôle qualité et une éventuelle seconde tentative automatique.",
             "Sélection courante",
             "Le bouton est désactivé sans sélection ou sans clé Agent IA.",
         ],
@@ -4972,9 +5337,9 @@ def render_review_simulation_glossary_expander() -> None:
         ],
         [
             "Référentiel des indicateurs actifs",
-            "Table chargée depuis le fichier Excel du référentiel s’il est disponible, sinon depuis le référentiel intégré au script. Seule la colonne ‘Sens métier de l’indicateur pour l’IA’ est éditable ; les colonnes Famille et Indicateur d’alerte restent figées.",
+            "Table construite sur un socle durci BeCLM intégré au script. Si un fichier Excel de référentiel est disponible, seuls les indicateurs additionnels hors socle peuvent le compléter au chargement ; dans l’écran, seule la colonne ‘Sens métier de l’indicateur pour l’IA’ est éditable et les colonnes Famille et Indicateur d’alerte restent figées.",
             "Écran Revues & Simulations",
-            "Le référentiel édité dans la session est renvoyé à l’Agent IA dans le bloc ‘referentiel_indicateurs_actifs’.",
+            "Le référentiel édité dans la session est renvoyé à l’Agent IA dans le bloc ‘referentiel_indicateurs_actifs’, accompagné de garde-fous globaux et par indicateur ; l’appel Gemini peut être rejoué automatiquement une fois si la première réponse n’est pas assez conforme au référentiel durci.",
         ],
         [
             "Export CSV",
@@ -5014,12 +5379,12 @@ def render_review_simulation_glossary_expander() -> None:
 def render_review_simulation_indicator_reference_expander() -> None:
     ensure_review_simulation_indicator_reference_state()
     reference_df = get_review_simulation_indicator_reference_df()
-    source_label = str(st.session_state.get(REVIEW_SIM_INDICATOR_REFERENCE_SOURCE_STATE, "Référentiel intégré par défaut."))
+    source_label = str(st.session_state.get(REVIEW_SIM_INDICATOR_REFERENCE_SOURCE_STATE, INDICATOR_REFERENCE_DEFAULT_SOURCE_LABEL))
 
     with st.expander("Référentiel des indicateurs actifs (sens métier pour l’IA)", expanded=False):
         st.caption(
-            "Ce tableau sert de référentiel d’interprétation métier pour l’Agent IA sur l’écran Revues & Simulations. "
-            "Seule la colonne ‘Sens métier de l’indicateur pour l’IA’ est modifiable depuis l’écran."
+            "Ce tableau sert de référentiel d’interprétation métier durci pour l’Agent IA sur l’écran Revues & Simulations. "
+            "Le socle durci BeCLM est imposé dans l’application ; seule la colonne ‘Sens métier de l’indicateur pour l’IA’ est modifiable depuis l’écran."
         )
         st.caption(source_label)
         edited_df = st.data_editor(
@@ -5039,8 +5404,8 @@ def render_review_simulation_indicator_reference_expander() -> None:
             },
             height=760,
         )
-        st.session_state[REVIEW_SIM_INDICATOR_REFERENCE_STATE] = sanitize_indicator_reference_df(pd.DataFrame(edited_df))
-        st.caption("Les modifications sont conservées dans la session courante et sont ajoutées au contexte envoyé à l’Agent IA.")
+        st.session_state[REVIEW_SIM_INDICATOR_REFERENCE_STATE] = merge_indicator_reference_with_hard_defaults(pd.DataFrame(edited_df), prefer_loaded_for_known=True)
+        st.caption("Les modifications sont conservées dans la session courante, ajoutées au contexte envoyé à l’Agent IA et restent encadrées par le socle durci BeCLM.")
 
 
 def render_review_simulations_screen(portfolio: pd.DataFrame, user: dict) -> None:
@@ -5069,18 +5434,24 @@ Tu reçois en entrée la fiche client complète disponible pour le SIREN analys�
 - indicateurs_source
 - indicateurs_source_groupes
 - referentiel_indicateurs_actifs
+- garde_fous_referentiel_globaux
+- garde_fous_referentiel_indicateurs
 - alertes_calculees
 
-Consigne impérative :
+Consignes impératives :
 1. Tu dois fonder ton analyse sur l’ensemble des données de la fiche client disponibles en entrée.
 2. Tu dois utiliser de façon prioritaire :
    - toutes les données de base de la société,
    - l’ensemble des indicateurs,
    - les alertes calculées,
-   - les dates, statuts, niveaux de risque, informations EDD et toute information utile présente dans la fiche.
-3. Tu ne dois pas faire une analyse générique. Tu dois t’appuyer explicitement sur les informations concrètes de la fiche client.
-4. Si une information est absente, incohérente ou non exploitable, tu le signales clairement.
-5. La profondeur d’analyse, le niveau d’exigence, les mesures d’atténuation, les contrôles et les pièces demandées doivent être adaptés :
+   - le référentiel durci BeCLM et ses garde-fous.
+3. Le référentiel BeCLM prévaut sur toute interprétation libre : tu dois t’appuyer explicitement sur le sens métier de chaque indicateur.
+4. Tu ne dois pas faire une analyse générique. Tu dois t’appuyer explicitement sur les informations concrètes de la fiche client.
+5. Si une information est absente, incohérente ou non exploitable, tu le signales clairement en écrivant à préciser plutôt que d’extrapoler.
+6. Tu n’inventes jamais de pays, de personnes, de faits, de flux, de documents ou d’événements absents de la fiche.
+7. Tu ne renommes jamais les indicateurs de la source 02.
+8. Tu ne dois jamais traiter GAFI, UE, FR, Bale Institute et Cross border comme des synonymes.
+9. La profondeur d’analyse, le niveau d’exigence, les mesures d’atténuation, les contrôles et les pièces demandées doivent être adaptés :
    - au statut de vigilance réel,
    - au niveau de risque global,
    - et au statut réel de chaque indicateur.
@@ -5092,7 +5463,15 @@ Règles d’analyse :
 - Appuie-toi explicitement sur la fiche client complète.
 - Analyse les vrais indicateurs de la source 02 présents dans `indicateurs_source_groupes`.
 - Utilise exactement les noms des indicateurs fournis dans `indicateurs_source_groupes[].nom_indicateur`.
-- Utilise aussi `referentiel_indicateurs_actifs[].sens_metier` pour comprendre la signification métier des indicateurs, sans renommer les indicateurs de la source 02.
+- Utilise `referentiel_indicateurs_actifs[].sens_metier` pour comprendre la signification métier des indicateurs et `regles_strictes` pour éviter les contresens.
+- Si un indicateur relève d’un classement interne ou référentiel BeCLM, dis-le explicitement.
+- Quand une donnée métier précise manque, écris `à préciser` et n’invente pas.
+- Pour les indicateurs pays, distingue explicitement :
+  - le classement GAFI,
+  - la liste ou le référentiel UE,
+  - le référentiel FR / paramétrage France,
+  - l’indice Bale Institute,
+  - et le caractère transfrontalier de Cross border.
 - N’invente pas d’indicateur absent de la source 02.
 - N’agrège pas plusieurs indicateurs dans un seul objet.
 - Si un indicateur ne justifie pas d’action particulière, indique-le clairement de façon proportionnée.
@@ -5112,7 +5491,7 @@ Contenu attendu :
   - `mesures_attenuation`
   - `controles_necessaires`
   - `pieces_a_demander`
-- Les éléments doivent être concrets, opérationnels et directement exploitables par un analyste.
+- Les éléments doivent être concrets, opérationnels, directement exploitables par un analyste et alignés sur le sens métier BeCLM.
 
 3. `conclusion_generale`
 - Conclusion synthétique générale.
@@ -5134,7 +5513,7 @@ Tu dois répondre exclusivement en JSON valide, sans texte avant ni après, avec
   "analyses_indicateurs": [
     {
       "nom_indicateur": "Nom exact de l’indicateur de la source 02",
-      "constat": "Constat factuel appuyé sur la fiche client.",
+      "constat": "Constat factuel appuyé sur la fiche client et sur le sens métier BeCLM.",
       "niveau_attention": "Niveau d’attention ou de risque associé à l’indicateur.",
       "mesures_attenuation": "Mesures d’atténuation recommandées.",
       "controles_necessaires": "Contrôles nécessaires à réaliser.",
