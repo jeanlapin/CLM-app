@@ -29,6 +29,7 @@ try:
     from reportlab.lib.pagesizes import A4, landscape
     from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
     from reportlab.lib.units import mm
+    from reportlab.lib.utils import ImageReader
     from reportlab.pdfbase import pdfmetrics
     from reportlab.pdfbase.ttfonts import TTFont
     from reportlab.platypus import PageBreak, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
@@ -41,6 +42,7 @@ except Exception as exc:
     ParagraphStyle = None
     getSampleStyleSheet = None
     mm = None
+    ImageReader = None
     pdfmetrics = None
     TTFont = None
     PageBreak = None
@@ -3543,6 +3545,18 @@ def review_simulation_classification_rows(
     return by_axis
 
 
+def review_simulation_classification_logo_reader() -> object | None:
+    if not LOGO_DATA_URI or ImageReader is None:
+        return None
+    if not str(LOGO_DATA_URI).startswith("data:image"):
+        return None
+    try:
+        _meta, encoded = str(LOGO_DATA_URI).split(",", 1)
+        return ImageReader(BytesIO(base64.b64decode(encoded)))
+    except Exception:
+        return None
+
+
 def review_simulation_classification_legend_table(styles: dict[str, ParagraphStyle]) -> Table:
     statuses = [
         "Risque avéré",
@@ -3588,7 +3602,7 @@ def review_simulation_classification_axis_table(
     headers = [
         "Sous-catégories et scénarios de risques",
         "Risque BeCLM",
-        "Cotation",
+        "Cot.",
         "Dispositif de maîtrise du risque",
         "Nouvelle cotation",
         "Risque réel",
@@ -3689,6 +3703,8 @@ def build_review_simulation_classification_pdf_story(
         axis_rows = classification_rows.get(axis_label, [])
         if not axis_rows:
             continue
+        if has_rows:
+            story.append(PageBreak())
         has_rows = True
         story.extend([
             review_simulation_pdf_paragraph(axis_label, styles["section"]),
@@ -3724,7 +3740,7 @@ def write_review_simulation_classification_pdf(
         pagesize=page_size,
         leftMargin=16 * mm,
         rightMargin=16 * mm,
-        topMargin=16 * mm,
+        topMargin=22 * mm,
         bottomMargin=14 * mm,
         title=f"Classification - {row.get('SIREN', '')}",
         author=PAGE_TITLE,
@@ -3734,16 +3750,27 @@ def write_review_simulation_classification_pdf(
     regular_font = styles["body"].fontName
     primary_color = colors.HexColor(PRIMARY_COLOR)
     muted_color = colors.HexColor("#5B6B7F")
+    logo_reader = review_simulation_classification_logo_reader()
 
     def _draw_page(canvas, doc_obj):
         canvas.saveState()
         width, height = doc_obj.pagesize
+        header_line_y = height - 15 * mm
         canvas.setStrokeColor(primary_color)
         canvas.setLineWidth(0.8)
-        canvas.line(doc_obj.leftMargin, height - 11 * mm, width - doc_obj.rightMargin, height - 11 * mm)
+        canvas.line(doc_obj.leftMargin, header_line_y, width - doc_obj.rightMargin, header_line_y)
+        if logo_reader is not None:
+            logo_size = 10 * mm
+            logo_x = width - doc_obj.rightMargin - logo_size
+            logo_y = height - 4 * mm - logo_size
+            try:
+                canvas.drawImage(logo_reader, logo_x, logo_y, width=logo_size, height=logo_size, preserveAspectRatio=True, mask='auto')
+            except Exception:
+                pass
         canvas.setFont(regular_font, 8)
-        canvas.setFillColor(muted_color)
+        canvas.setFillColor(primary_color)
         canvas.drawString(doc_obj.leftMargin, 9 * mm, f"{PAGE_TITLE} - Classification BeCLM")
+        canvas.setFillColor(muted_color)
         canvas.drawRightString(width - doc_obj.rightMargin, 9 * mm, f"Page {canvas.getPageNumber()}")
         canvas.restoreState()
 
