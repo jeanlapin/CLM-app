@@ -238,7 +238,7 @@ ANALYSIS_TOP_PERCENT_STYLE = {
     "% NC": {"base": "#94A3B8", "text": "#475569"},
     "% sans risque": {"base": "#16A34A", "text": "#14532D"},
 }
-ANALYSIS_SCREEN_CACHE_VERSION = "v196_analysis_perf_isolated"
+ANALYSIS_SCREEN_CACHE_VERSION = "v197_analysis_progress_preview"
 ANALYSIS_PORTFOLIO_FILTER_LABELS = ["Vigilance", "Risque", "EDD", "Segment", "Pays", "Produit", "Canal", "Analyste", "Valideur"]
 ANALYSIS_INDICATOR_FILTER_KEYS = ["Indicateur", "Statut", "Famille", "Fraîcheur"]
 ANALYSIS_INDICATOR_FAMILY_EXACT = {
@@ -8387,21 +8387,34 @@ def render_analysis_alert_kpis(filtered_portfolio: pd.DataFrame, analysis_client
         )
 
 
-def render_analysis_repartition(indicator_df: pd.DataFrame) -> None:
+def render_analysis_repartition(
+    indicator_df: pd.DataFrame,
+    *,
+    status_distribution: pd.DataFrame | None = None,
+    family_distribution: pd.DataFrame | None = None,
+    freshness_distribution: pd.DataFrame | None = None,
+) -> None:
     render_analysis_panel_header(
         "Répartition",
         "Lecture des alertes par statut, par famille d’indicateurs et par fraîcheur de mise à jour. Les familles sont strictement cloisonnées : Segment / Client, Pays, Produits, Canal.",
     )
+    if status_distribution is None:
+        status_distribution = build_analysis_status_distribution(indicator_df)
+    if family_distribution is None:
+        family_distribution = build_analysis_family_distribution(indicator_df)
+    if freshness_distribution is None:
+        freshness_distribution = build_analysis_freshness_distribution(indicator_df)
+
     col_status, col_family, col_freshness = st.columns(3)
     with col_status:
         st.markdown("<div class='cm-table-panel-title' style='font-size:16px;'>Statuts des indicateurs</div>", unsafe_allow_html=True)
-        render_small_table(format_table_for_display(build_analysis_status_distribution(indicator_df)))
+        render_small_table(format_table_for_display(status_distribution))
     with col_family:
         st.markdown("<div class='cm-table-panel-title' style='font-size:16px;'>Familles d’indicateurs</div>", unsafe_allow_html=True)
-        render_small_table(format_table_for_display(build_analysis_family_distribution(indicator_df)))
+        render_small_table(format_table_for_display(family_distribution))
     with col_freshness:
         st.markdown("<div class='cm-table-panel-title' style='font-size:16px;'>Fraîcheur</div>", unsafe_allow_html=True)
-        render_small_table(format_table_for_display(build_analysis_freshness_distribution(indicator_df)))
+        render_small_table(format_table_for_display(freshness_distribution))
 
 
 def _format_analysis_top_cell(value: object, column_name: str) -> str:
@@ -8472,7 +8485,45 @@ else:
         st.info("La vue agrandie nécessite une version plus récente de Streamlit prenant en charge st.dialog.")
 
 
-def render_analysis_top_block(title: str, df: pd.DataFrame, *, dialog_key: str | None = None) -> None:
+def _build_analysis_top_preview_html(df: pd.DataFrame, sort_mode: str) -> str:
+    if df is None or df.empty:
+        return (
+            "<div style='background:#FFFFFF;border:1px solid rgba(22,58,89,0.08);border-radius:18px;padding:14px 16px;box-shadow:0 12px 28px rgba(15,23,42,0.05);'>"
+            "<div style='font-size:13px;color:#526273;'>Aucune donnée à afficher.</div>"
+            "</div>"
+        )
+
+    top_rows = df.head(3).copy()
+    rows_html: list[str] = []
+    for rank, row in enumerate(top_rows.to_dict('records'), start=1):
+        label = escape(str(row.get('Indicateurs', '')))
+        metric_raw = row.get(sort_mode, '') if sort_mode in top_rows.columns else ''
+        metric_display = _format_analysis_top_cell(metric_raw, sort_mode) if sort_mode in top_rows.columns else ''
+        metric_style = analysis_top_cell_style(sort_mode, metric_raw) if sort_mode in top_rows.columns else ''
+        metric_style = metric_style + " padding:4px 8px; border-radius:999px; white-space:nowrap; font-size:12px; font-weight:700;" if metric_display else metric_style
+        metric_attr = f" style='{metric_style}'" if metric_display and metric_style else " style='white-space:nowrap;font-size:12px;font-weight:700;color:#526273;'"
+        metric_html = f"<div{metric_attr}>{metric_display}</div>" if metric_display else ''
+        border_style = "border-bottom:1px solid rgba(22,58,89,0.08);" if rank < len(top_rows) else ""
+        rows_html.append(
+            f"<div style='display:flex;align-items:flex-start;justify-content:space-between;gap:12px;padding:9px 0;{border_style}'>"
+            f"<div style='display:flex;align-items:flex-start;gap:10px;min-width:0;'>"
+            f"<div style='min-width:22px;font-family:Sora,sans-serif;font-weight:800;font-size:13px;color:#163A59;'>{rank}.</div>"
+            f"<div style='font-family:Sora,sans-serif;font-weight:700;font-size:14px;line-height:1.35;color:#163A59;word-break:break-word;'>{label}</div>"
+            f"</div>"
+            f"{metric_html}"
+            f"</div>"
+        )
+
+    return (
+        "<div style='background:#FFFFFF;border:1px solid rgba(22,58,89,0.08);border-radius:18px;padding:14px 16px;box-shadow:0 12px 28px rgba(15,23,42,0.05);'>"
+        f"<div style='font-size:12px;color:#526273;margin-bottom:2px;'>Top 3 selon le tri <strong style='color:#163A59;'>{escape(str(sort_mode))}</strong>.</div>"
+        + ''.join(rows_html)
+        + "</div>"
+    )
+
+
+
+def render_analysis_top_block(title: str, df: pd.DataFrame, *, dialog_key: str | None = None, sort_mode: str = "Nb") -> None:
     title_col, action_col = st.columns([6.4, 0.8])
     with title_col:
         st.markdown(f'<h3 class="cm-section-title" style="white-space: nowrap; margin-bottom: 0;">{escape(title)}</h3>', unsafe_allow_html=True)
@@ -8492,7 +8543,7 @@ def render_analysis_top_block(title: str, df: pd.DataFrame, *, dialog_key: str |
         st.info("Aucune donnée à afficher.")
         return
 
-    st.markdown(_build_analysis_top_table_html(df), unsafe_allow_html=True)
+    st.markdown(_build_analysis_top_preview_html(df, sort_mode), unsafe_allow_html=True)
 
 
 @st.cache_data(show_spinner=False)
@@ -8534,15 +8585,24 @@ def build_analysis_indicator_top_table(
     return grouped[output_columns].reset_index(drop=True)
 
 
-def render_analysis_concentrations(indicator_df: pd.DataFrame, analysis_client_scope: pd.DataFrame | None = None) -> None:
+def render_analysis_concentrations(
+    indicator_df: pd.DataFrame,
+    analysis_client_scope: pd.DataFrame | None = None,
+    *,
+    precomputed_tables: dict[str, pd.DataFrame] | None = None,
+    sort_mode: str | None = None,
+) -> None:
     render_analysis_panel_header(
         "Concentrations",
-        "Chaque tableau top regroupe l’ensemble des indicateurs de la famille concernée. Les pourcentages sont calculés au sein de la famille et, pour chaque statut, au sein du total de ce statut.",
+        "Chaque bloc affiche uniquement le top 3 en vue normale. Ouvrez la vue agrandie pour consulter le tableau détaillé complet et ses couleurs de lecture sur les pourcentages.",
     )
+    current_sort_mode = st.session_state.get("analysis_top_sort_mode", sort_mode or "Nb")
+    if current_sort_mode not in ANALYSIS_TOP_SORT_OPTIONS:
+        current_sort_mode = sort_mode or "Nb"
     sort_mode = st.selectbox(
         "Trier les tableaux top par",
         options=ANALYSIS_TOP_SORT_OPTIONS,
-        index=ANALYSIS_TOP_SORT_OPTIONS.index(st.session_state.get("analysis_top_sort_mode", "Nb")) if st.session_state.get("analysis_top_sort_mode", "Nb") in ANALYSIS_TOP_SORT_OPTIONS else 0,
+        index=ANALYSIS_TOP_SORT_OPTIONS.index(current_sort_mode) if current_sort_mode in ANALYSIS_TOP_SORT_OPTIONS else 0,
         key="analysis_top_sort_mode",
     )
 
@@ -8552,12 +8612,93 @@ def render_analysis_concentrations(indicator_df: pd.DataFrame, analysis_client_s
     for container, config in zip(containers, ANALYSIS_TOP_AXIS_CONFIG):
         title, family_label, dialog_key = config
         with container:
-            table = build_analysis_indicator_top_table(
-                indicator_df,
-                family_label=family_label,
-                sort_mode=sort_mode,
-            )
-            render_analysis_top_block(title, table, dialog_key=dialog_key)
+            if precomputed_tables is not None and family_label in precomputed_tables:
+                table = precomputed_tables[family_label]
+            else:
+                table = build_analysis_indicator_top_table(
+                    indicator_df,
+                    family_label=family_label,
+                    sort_mode=sort_mode,
+                )
+            render_analysis_top_block(title, table, dialog_key=dialog_key, sort_mode=sort_mode)
+
+
+def build_analysis_screen_payload(
+    dataset_signature: str,
+    analysis_cache_version: str,
+    societies_key: tuple[str, ...],
+    portfolio_filters_key: tuple[tuple[str, str], ...],
+    indicator_filters_key: tuple[tuple[str, str], ...],
+    *,
+    sort_mode: str = "Nb",
+    progress_callback: Callable[[int, int, str], None] | None = None,
+) -> dict[str, object]:
+    total_steps = 9
+
+    def _step(step_number: int, label: str) -> None:
+        if progress_callback is not None:
+            progress_callback(step_number, total_steps, label)
+
+    _step(1, "Chargement du portefeuille filtré")
+    filtered_portfolio, analysis_base = get_analysis_base_for_portfolio_filters_cached(
+        dataset_signature,
+        analysis_cache_version,
+        societies_key,
+        portfolio_filters_key,
+    )
+
+    _step(2, "Chargement des cas indicateurs")
+    filtered_indicators, analysis_client_scope = get_analysis_filtered_scope_cached(
+        dataset_signature,
+        analysis_cache_version,
+        societies_key,
+        portfolio_filters_key,
+        indicator_filters_key,
+    )
+
+    _step(3, "Calcul de la répartition par statut")
+    status_distribution = build_analysis_status_distribution(filtered_indicators)
+
+    _step(4, "Calcul de la répartition par famille")
+    family_distribution = build_analysis_family_distribution(filtered_indicators)
+
+    _step(5, "Calcul de la répartition par fraîcheur")
+    freshness_distribution = build_analysis_freshness_distribution(filtered_indicators)
+
+    _step(6, "Préparation des tops Segment / Client et Pays")
+    top_tables: dict[str, pd.DataFrame] = {}
+    for family_label in ["Segment / Client", "Indicateurs Pays"]:
+        top_tables[family_label] = build_analysis_indicator_top_table(
+            filtered_indicators,
+            family_label=family_label,
+            sort_mode=sort_mode,
+        )
+
+    _step(7, "Préparation des tops Produits et Canaux")
+    for family_label in ["Indicateurs Produits", "Indicateurs Canal"]:
+        top_tables[family_label] = build_analysis_indicator_top_table(
+            filtered_indicators,
+            family_label=family_label,
+            sort_mode=sort_mode,
+        )
+
+    _step(8, "Classement des indicateurs les plus contributifs")
+    indicator_table = build_indicator_analysis_table(filtered_indicators)
+
+    _step(9, "Finalisation de l’écran Analyse")
+    return {
+        "filtered_portfolio": filtered_portfolio,
+        "analysis_base": analysis_base,
+        "filtered_indicators": filtered_indicators,
+        "analysis_client_scope": analysis_client_scope,
+        "status_distribution": status_distribution,
+        "family_distribution": family_distribution,
+        "freshness_distribution": freshness_distribution,
+        "top_tables": top_tables,
+        "indicator_table": indicator_table,
+        "sort_mode": sort_mode,
+    }
+
 
 
 @st.cache_data(show_spinner=False)
@@ -9295,13 +9436,95 @@ def render_analysis_screen(portfolio: pd.DataFrame, indicators: pd.DataFrame) ->
         "Fraîcheur": freshness_value,
     }
     indicator_filters_key = normalize_filter_cache_key(indicator_filters, ANALYSIS_INDICATOR_FILTER_KEYS)
-    filtered_indicators, analysis_client_scope = get_analysis_filtered_scope_cached(
+
+    current_sort_mode = st.session_state.get("analysis_top_sort_mode", "Nb")
+    if current_sort_mode not in ANALYSIS_TOP_SORT_OPTIONS:
+        current_sort_mode = "Nb"
+
+    compute_key = str((
         dataset_signature,
         ANALYSIS_SCREEN_CACHE_VERSION,
         analysis_societies_key,
         portfolio_filters_key,
         indicator_filters_key,
-    )
+    ))
+    seen_compute_keys = set(st.session_state.get("analysis_screen_compute_seen_keys", set()))
+    should_show_compute_status = compute_key not in seen_compute_keys
+
+    payload: dict[str, object]
+    if should_show_compute_status:
+        status_anchor = st.empty()
+        if hasattr(st, "status"):
+            with status_anchor.container():
+                with st.status("Les indicateurs sont en cours de calcul…", expanded=True) as status_box:
+                    counter_placeholder = st.empty()
+                    progress_bar = st.progress(0)
+
+                    def progress_callback(step_number: int, total_steps: int, label: str) -> None:
+                        progress_bar.progress(int((step_number / total_steps) * 100))
+                        counter_placeholder.info(f"Calcul {step_number}/{total_steps} — {label}")
+                        status_box.update(label=f"Les indicateurs sont en cours de calcul… {label}", state="running", expanded=True)
+
+                    payload = build_analysis_screen_payload(
+                        dataset_signature,
+                        ANALYSIS_SCREEN_CACHE_VERSION,
+                        analysis_societies_key,
+                        portfolio_filters_key,
+                        indicator_filters_key,
+                        sort_mode=current_sort_mode,
+                        progress_callback=progress_callback,
+                    )
+                    progress_bar.progress(100)
+                    counter_placeholder.success("Calcul terminé. Les compteurs et classements de l’écran Analyse sont prêts.")
+                    status_box.update(label="Calcul des indicateurs terminé", state="complete", expanded=False)
+            status_anchor.empty()
+        else:
+            with status_anchor.container():
+                info_box = st.info("Les indicateurs sont en cours de calcul…")
+                progress_bar = st.progress(0)
+                counter_placeholder = st.empty()
+
+                def progress_callback(step_number: int, total_steps: int, label: str) -> None:
+                    progress_bar.progress(int((step_number / total_steps) * 100))
+                    counter_placeholder.info(f"Calcul {step_number}/{total_steps} — {label}")
+
+                payload = build_analysis_screen_payload(
+                    dataset_signature,
+                    ANALYSIS_SCREEN_CACHE_VERSION,
+                    analysis_societies_key,
+                    portfolio_filters_key,
+                    indicator_filters_key,
+                    sort_mode=current_sort_mode,
+                    progress_callback=progress_callback,
+                )
+                progress_bar.progress(100)
+                counter_placeholder.success("Calcul terminé. Les compteurs et classements de l’écran Analyse sont prêts.")
+            status_anchor.empty()
+        seen_compute_keys.add(compute_key)
+        st.session_state["analysis_screen_compute_seen_keys"] = seen_compute_keys
+    else:
+        payload = build_analysis_screen_payload(
+            dataset_signature,
+            ANALYSIS_SCREEN_CACHE_VERSION,
+            analysis_societies_key,
+            portfolio_filters_key,
+            indicator_filters_key,
+            sort_mode=current_sort_mode,
+        )
+
+    filtered_portfolio = payload["filtered_portfolio"]
+    analysis_base = payload["analysis_base"]
+    filtered_indicators = payload["filtered_indicators"]
+    analysis_client_scope = payload["analysis_client_scope"]
+    status_distribution = payload["status_distribution"]
+    family_distribution = payload["family_distribution"]
+    freshness_distribution = payload["freshness_distribution"]
+    analysis_top_tables = payload["top_tables"]
+    indicator_table = payload["indicator_table"]
+
+    if filtered_portfolio.empty:
+        st.warning("Aucun client ne correspond au périmètre société + filtres sélectionnés.")
+        return
 
     if filtered_indicators.empty:
         st.warning("Aucun cas indicateur ne correspond aux filtres d’analyse sélectionnés. Le bandeau, les répartitions et les concentrations reflètent donc un périmètre vide.")
@@ -9309,13 +9532,22 @@ def render_analysis_screen(portfolio: pd.DataFrame, indicators: pd.DataFrame) ->
     render_analysis_alert_kpis(filtered_portfolio, analysis_client_scope, filtered_indicators)
 
     st.divider()
-    render_analysis_repartition(filtered_indicators)
+    render_analysis_repartition(
+        filtered_indicators,
+        status_distribution=status_distribution,
+        family_distribution=family_distribution,
+        freshness_distribution=freshness_distribution,
+    )
 
     st.divider()
-    render_analysis_concentrations(filtered_indicators, analysis_client_scope)
+    render_analysis_concentrations(
+        filtered_indicators,
+        analysis_client_scope,
+        precomputed_tables=analysis_top_tables,
+        sort_mode=current_sort_mode,
+    )
 
     st.divider()
-    indicator_table = build_indicator_analysis_table(filtered_indicators)
     render_indicator_contribution_chart(indicator_table)
 
     st.divider()
