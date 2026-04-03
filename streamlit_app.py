@@ -5400,11 +5400,15 @@ def dataframes_to_excel_bytes(sheets: list[tuple[str, pd.DataFrame]]) -> bytes:
         workbook = writer.book
         header_format = workbook.add_format({
             "bold": True,
-            "bg_color": "#DDEAF8",
+            "font_color": "#FFFFFF",
+            "bg_color": "#1F5B94",
             "border": 0,
             "valign": "top",
+            "text_wrap": True,
         })
         percent_format = workbook.add_format({"num_format": "0.0%"})
+        integer_format = workbook.add_format({"num_format": "0"})
+        date_format = workbook.add_format({"num_format": "dd/mm/yyyy"})
 
         used_sheet_names: set[str] = set()
         for index, (sheet_name, df) in enumerate(sheets, start=1):
@@ -5420,16 +5424,19 @@ def dataframes_to_excel_bytes(sheets: list[tuple[str, pd.DataFrame]]) -> bytes:
             export_df = dataframe_to_export_copy(df)
             export_df.to_excel(writer, sheet_name=safe_name, index=False)
             worksheet = writer.sheets[safe_name]
+            worksheet.hide_gridlines(2)
 
             num_rows, num_cols = export_df.shape
             if num_cols > 0:
                 worksheet.freeze_panes(1, 0)
                 worksheet.autofilter(0, 0, max(num_rows, 1), num_cols - 1)
+                worksheet.set_row(0, 26, header_format)
 
             percent_columns = {
                 col_idx
                 for col_idx, column_name in enumerate(export_df.columns)
                 if str(column_name).strip().startswith("%")
+                or "% " in str(column_name)
             }
 
             for col_idx, column_name in enumerate(export_df.columns):
@@ -5441,13 +5448,54 @@ def dataframes_to_excel_bytes(sheets: list[tuple[str, pd.DataFrame]]) -> bytes:
                 )
                 max_length = max((len(value) for value in values), default=0)
                 width = min(max(max_length + 2, 10), 42)
+
+                column_series = export_df.iloc[:, col_idx] if num_cols > 0 else pd.Series(dtype="object")
                 if col_idx in percent_columns:
                     worksheet.set_column(col_idx, col_idx, width, percent_format)
+                    if num_rows > 0:
+                        worksheet.conditional_format(1, col_idx, num_rows, col_idx, {
+                            "type": "3_color_scale",
+                            "min_color": "#FDECEC",
+                            "mid_color": "#FFF2CC",
+                            "max_color": "#D9EAD3",
+                        })
+                elif pd.api.types.is_datetime64_any_dtype(column_series):
+                    worksheet.set_column(col_idx, col_idx, width, date_format)
+                elif pd.api.types.is_integer_dtype(column_series) or pd.api.types.is_bool_dtype(column_series):
+                    worksheet.set_column(col_idx, col_idx, width, integer_format)
                 else:
                     worksheet.set_column(col_idx, col_idx, width)
 
     buffer.seek(0)
     return buffer.getvalue()
+
+
+
+def committee_pack_download_name(selected_societies: list[str]) -> str:
+    cleaned = [committee_report_slug(item)[:18] for item in selected_societies if str(item or "").strip()]
+    if len(cleaned) > 2:
+        scope_key = "_".join(cleaned[:2]) + f"_plus_{len(cleaned) - 2}"
+    else:
+        scope_key = "_".join(cleaned) or "portefeuille"
+    return f"pack_comite_risques_{scope_key}_{datetime.now().strftime('%Y%m%d')}.xlsx"
+
+
+
+def build_committee_pack_excel_bytes(
+    *,
+    selected_societies: list[str],
+    filters: dict[str, object],
+    sheets: list[tuple[str, pd.DataFrame]],
+) -> bytes:
+    summary_rows = [
+        ("Périmètre", committee_report_scope_label(selected_societies)),
+        ("Généré le", datetime.now().strftime('%d/%m/%Y %H:%M')),
+        ("Filtres actifs", committee_report_filters_label(filters)),
+        ("Onglets inclus", ", ".join(sheet_name for sheet_name, _ in sheets)),
+    ]
+    pack_sheets = [("Synthèse", pd.DataFrame(summary_rows, columns=["Rubrique", "Valeur"]))]
+    pack_sheets.extend(sheets)
+    return dataframes_to_excel_bytes(pack_sheets)
 
 
 
@@ -10459,9 +10507,15 @@ def main() -> None:
         ("Top canaux", top_canaux_df),
     ]
     repartition_export_sheets = [
-        ("Vigilance", vigilance_df),
-        ("Risques maximum", risk_df),
-        ("Gouvernance", alert_df),
+        ("Répartition vigilance", vigilance_df),
+        ("Répartition risques", risk_df),
+        ("Répartition gouvernance", alert_df),
+    ]
+    committee_pack_sheets = [
+        ("Vue filtrée", filtered_export_df),
+        ("Dossiers prioritaires", priority_df),
+        *top_risks_export_sheets,
+        *repartition_export_sheets,
     ]
 
     committee_report_pdf_bytes = None
@@ -10485,42 +10539,19 @@ def main() -> None:
         committee_report_pdf_error = PDF_DEPENDENCY_ERROR_MESSAGE
 
     with st.expander("Préparer votre Comité des Risques", expanded=False):
-        committee_row_1_col_1, committee_row_1_col_2 = st.columns(2)
-        with committee_row_1_col_1:
-            st.download_button(
-                label="Exporter la vue filtrée (.csv)",
-                data=dataframe_to_csv_bytes(filtered_export_df),
-                file_name="tableau1_portefeuille_filtre.csv",
-                mime="text/csv",
-                type="primary",
-                use_container_width=True,
-            )
-        with committee_row_1_col_2:
-            st.download_button(
-                label="Exporter les dossiers prioritaires (.csv)",
-                data=dataframe_to_csv_bytes(priority_df),
-                file_name="tableau2_dossiers_prioritaires.csv",
-                mime="text/csv",
-                use_container_width=True,
-            )
-
-        committee_row_2_col_1, committee_row_2_col_2 = st.columns(2)
-        with committee_row_2_col_1:
-            st.download_button(
-                label="Exporter les Top Risques (4 onglets .xlsx)",
-                data=dataframes_to_excel_bytes(top_risks_export_sheets),
-                file_name="tableau3_top_risques.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                use_container_width=True,
-            )
-        with committee_row_2_col_2:
-            st.download_button(
-                label="Exporter la répartition (3 onglets .xlsx)",
-                data=dataframes_to_excel_bytes(repartition_export_sheets),
-                file_name="tableau4_repartition.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                use_container_width=True,
-            )
+        st.caption("Pack Excel unique avec plusieurs onglets : vue filtrée, dossiers prioritaires, tops et répartitions.")
+        st.download_button(
+            label="Pack Comité des Risques (.xlsx)",
+            data=build_committee_pack_excel_bytes(
+                selected_societies=selected_societies,
+                filters=filters,
+                sheets=committee_pack_sheets,
+            ),
+            file_name=committee_pack_download_name(selected_societies),
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            type="primary",
+            use_container_width=True,
+        )
 
         st.caption("Synthèse PDF exécutive bâtie sur la vue filtrée, la répartition, les concentrations et les dossiers prioritaires.")
         if committee_report_pdf_bytes:
