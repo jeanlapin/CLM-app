@@ -174,6 +174,17 @@ CLASSIFICATION_STATUS_REAL_RISK = {
 CLASSIFICATION_EXCLUDED_INDICATORS = {"Vigilance"}
 CLASSIFICATION_COMMENT_PLACEHOLDER_TEXT = "Commentaire absent (à compléter dans Beclm)."
 CLASSIFICATION_AI_PLACEHOLDER_TEXT = "Analyse IA absente (à régénérer dans Revues & Simulations)."
+
+INDICATOR_REFERENCE_COLUMNS = ["Famille", "Indicateur d’alerte", "Sens métier de l’indicateur pour l’IA"]
+INDICATOR_REFERENCE_FILENAME_CANDIDATES = (
+    "Référentiel Indicateurs actifs.xlsx",
+    "Referentiel Indicateurs actifs.xlsx",
+    "referentiel_indicateurs_actifs.xlsx",
+)
+REVIEW_SIM_INDICATOR_REFERENCE_STATE = "review_sim_indicator_reference_df"
+REVIEW_SIM_INDICATOR_REFERENCE_SOURCE_STATE = "review_sim_indicator_reference_source"
+REVIEW_SIM_INDICATOR_REFERENCE_EDITOR_KEY = "review_sim_indicator_reference_editor"
+DEFAULT_INDICATOR_REFERENCE_ROWS = [('Segment / Client', 'Gel des avoirs société', 'Vérifie si la société elle-même est visée par une mesure de gel des avoirs ou une liste de sanctions.'), ('Segment / Client', 'Gel des avoirs / personnes liées', 'Vérifie si les dirigeants, bénéficiaires effectifs ou autres personnes liées sont visés par une mesure de gel des avoirs ou une liste de sanctions.'), ('Segment / Client', 'PPE / personnes liées', 'Mesure l’exposition des dirigeants ou des bénéficiaires effectifs de la société à des personnes politiquement exposées ou à leur entourage proche.'), ('Segment / Client', 'Média négatifs / société', 'Recherche si la société fait l’objet d’informations publiques défavorables pouvant signaler un risque réputationnel, judiciaire ou LCB-FT.'), ('Segment / Client', 'Média négatifs / personnes liées', 'Recherche si les personnes liées à la société, dirigeants ou bénéficiaires effectifs, font l’objet d’informations publiques défavorables pouvant signaler un risque réputationnel, judiciaire ou LCB-FT.'), ('Indicateurs Pays', 'Risque pays GAFI', 'Mesure l’exposition géographique de la société à un pays identifié comme sensible selon la grille ou les listes du GAFI.'), ('Indicateurs Pays', 'Risque pays UE', 'Mesure l’exposition géographique de la société à un pays classé sensible selon le référentiel ou les listes de l’Union européenne.'), ('Indicateurs Pays', 'Risque pays FR', 'Mesure l’exposition géographique de la société selon le référentiel ou l’appréciation du risque pays selon le référentiel de la France'), ('Indicateurs Pays', 'Risque pays Bale Institute', 'Mesure l’exposition géographique de la société selon un score ou classement de risque pays de type Basel AML Index.'), ('Segment / Client', 'SIREN / Secteur d’activité', 'Évalue si le secteur d’activité de la société est intrinsèquement plus exposé aux risques LCB-FT.'), ('Segment / Client', 'SIREN / Catégorie juridique', 'Évalue si la forme juridique de la société présente un niveau de risque particulier.'), ('Segment / Client', 'SIREN / N° d’immatriculation non trouvé', 'Signale une anomalie d’existence légale ou d’identification administrative de la société dans les registres.'), ('Segment / Client', 'SIREN / Société radiée', 'Signale que la société est radiée ou potentiellement inactive juridiquement, ce qui constitue une alerte majeure sur l’existence légale.'), ('Segment / Client', 'BODACC / Dépôt des comptes', 'Mesure si la société présente un défaut ou un retard de dépôt de ses comptes, pouvant signaler un manque de transparence ou une fragilité.'), ('Segment / Client', 'BODACC / Difficultés procédures collectives', 'Mesure l’exposition de la société à une procédure collective ou à une difficulté financière lourde.'), ('Segment / Client', 'BODAC / Création récente', 'Signale que la société est récente, donc avec peu d’historique, peu de recul et potentiellement moins de substance démontrée.'), ('Segment / Client', 'BODACC / Modifications administration', 'Mesure l’instabilité ou la fréquence des changements de gouvernance, de dirigeants ou d’administration.'), ('Segment / Client', 'BODACC / Ventes et cession', 'Signale des opérations de vente ou de cession pouvant traduire un changement de propriété, d’actifs ou de contrôle.'), ('Segment / Client', 'Risques Financiers / Part de l’EBIT dans le CA', 'Mesure si la rentabilité opérationnelle rapportée au chiffre d’affaires présente un niveau atypique ou sensible.'), ('Segment / Client', 'Risques Financiers / Résultat courant avant impôts sur CA', 'Mesure si le résultat courant avant impôts rapporté au chiffre d’affaires présente un niveau atypique ou sensible.'), ('Segment / Client', 'Risques Financiers / taux d’endettement', 'Mesure le niveau de tension financière ou de fragilité bilancielle via l’endettement.'), ('Segment / Client', 'Segment', 'Situe la société dans un segment de clientèle ou d’activité dont le profil de risque est plus ou moins sensible.'), ('Indicateurs Produits', 'Produit(service) principal', 'Évalue si le principal produit ou service vendu par la société est intrinsèquement plus exposé au risque.'), ('Indicateurs Produits', 'Part des opérations avec produits(services) hauts risques 12 m', 'Mesure la concentration des opérations sur des produits ou services considérés à haut risque sur les 12 derniers mois.'), ('Indicateurs Canal', 'Canal principal 12m', 'Identifie le canal dominant de la relation ou des opérations et son niveau de sensibilité.'), ('Indicateurs Canal', 'Part des opérations à distance 12m', 'Mesure la proportion d’opérations réalisées à distance, donc avec moins de contact physique direct.'), ('Indicateurs Produits', 'Cash intensité', 'Mesure l’importance du cash ou des flux assimilés cash dans l’activité de la société.'), ('Indicateurs Pays', 'Cross border', 'Mesure l’intensité de l’activité transfrontalière ou des flux impliquant plusieurs pays.')]
 GEMINI_BASE_SOURCE_PREFIX = "Base source :: "
 GEMINI_INDICATORS_SOURCE_PREFIX = "Indicateurs source :: "
 PDF_DEPENDENCY_ERROR_MESSAGE = (
@@ -2269,6 +2280,98 @@ def available_indicator_names_from_row(row: pd.Series) -> list[str]:
 
 
 
+def indicator_reference_default_df() -> pd.DataFrame:
+    return pd.DataFrame(list(DEFAULT_INDICATOR_REFERENCE_ROWS), columns=INDICATOR_REFERENCE_COLUMNS)
+
+
+def sanitize_indicator_reference_df(df: pd.DataFrame | None) -> pd.DataFrame:
+    if df is None:
+        return indicator_reference_default_df().copy()
+    if not isinstance(df, pd.DataFrame):
+        df = pd.DataFrame(df)
+    result = df.copy()
+    for col in INDICATOR_REFERENCE_COLUMNS:
+        if col not in result.columns:
+            result[col] = ""
+    result = result[INDICATOR_REFERENCE_COLUMNS].copy()
+    for col in INDICATOR_REFERENCE_COLUMNS:
+        result[col] = result[col].map(lambda value: "" if value is None or pd.isna(value) else str(value).strip())
+    result = result[result["Indicateur d’alerte"].astype(str).str.strip().ne("")].reset_index(drop=True)
+    return result
+
+
+@st.cache_data(show_spinner=False)
+def load_indicator_reference_seed() -> tuple[pd.DataFrame, str]:
+    roots: list[Path] = []
+    try:
+        roots.append(Path(__file__).resolve().parent)
+    except Exception:
+        pass
+    roots.extend([Path.cwd(), Path("/mnt/data")])
+
+    seen: set[str] = set()
+    for root in roots:
+        for filename in INDICATOR_REFERENCE_FILENAME_CANDIDATES:
+            candidate = root / filename
+            candidate_key = str(candidate.absolute())
+            if candidate_key in seen:
+                continue
+            seen.add(candidate_key)
+            if not candidate.exists():
+                continue
+            try:
+                loaded = pd.read_excel(candidate, dtype=str)
+                loaded = sanitize_indicator_reference_df(loaded)
+                if not loaded.empty:
+                    return loaded, f"Référentiel chargé depuis {candidate.name}."
+            except Exception:
+                continue
+
+    return indicator_reference_default_df(), "Référentiel intégré par défaut."
+
+
+def ensure_review_simulation_indicator_reference_state() -> None:
+    if REVIEW_SIM_INDICATOR_REFERENCE_STATE not in st.session_state:
+        seed_df, source_label = load_indicator_reference_seed()
+        st.session_state[REVIEW_SIM_INDICATOR_REFERENCE_STATE] = sanitize_indicator_reference_df(seed_df)
+        st.session_state[REVIEW_SIM_INDICATOR_REFERENCE_SOURCE_STATE] = str(source_label)
+    else:
+        st.session_state[REVIEW_SIM_INDICATOR_REFERENCE_STATE] = sanitize_indicator_reference_df(
+            pd.DataFrame(st.session_state[REVIEW_SIM_INDICATOR_REFERENCE_STATE])
+        )
+        st.session_state.setdefault(REVIEW_SIM_INDICATOR_REFERENCE_SOURCE_STATE, "Référentiel intégré par défaut.")
+
+
+def get_review_simulation_indicator_reference_df() -> pd.DataFrame:
+    ensure_review_simulation_indicator_reference_state()
+    return sanitize_indicator_reference_df(pd.DataFrame(st.session_state[REVIEW_SIM_INDICATOR_REFERENCE_STATE]))
+
+
+def build_indicator_reference_payload(indicator_names: list[str] | None = None) -> list[dict[str, object]]:
+    reference_df = get_review_simulation_indicator_reference_df()
+    if indicator_names:
+        normalized_names = {
+            normalize_text_for_matching(name)
+            for name in indicator_names
+            if str(name or "").strip()
+        }
+        if normalized_names:
+            reference_df = reference_df[
+                reference_df["Indicateur d’alerte"].map(normalize_text_for_matching).isin(normalized_names)
+            ].reset_index(drop=True)
+
+    payload: list[dict[str, object]] = []
+    for _, record in reference_df.iterrows():
+        payload.append(
+            {
+                "famille": prompt_json_value(record.get("Famille")),
+                "nom_indicateur": prompt_json_value(record.get("Indicateur d’alerte")),
+                "sens_metier": prompt_json_value(record.get("Sens métier de l’indicateur pour l’IA")),
+            }
+        )
+    return payload
+
+
 def build_gemini_source_payload(row: pd.Series) -> dict[str, object]:
     context_columns = [
         SOC_COL,
@@ -2324,12 +2427,16 @@ def build_gemini_source_payload(row: pd.Series) -> dict[str, object]:
             ],
         )
     indicator_groups_payload = grouped_indicators_payload(indicators_source_payload)
+    indicator_reference_payload = build_indicator_reference_payload(
+        [str(item.get("nom_indicateur", "") or "").strip() for item in indicator_groups_payload]
+    )
     return {
         "contexte_simulation": row_payload_from_columns(row, context_columns),
         "alertes_calculees": build_row_alert_labels(row),
         "donnees_base_source": base_source_payload,
         "indicateurs_source": indicators_source_payload,
         "indicateurs_source_groupes": indicator_groups_payload,
+        "referentiel_indicateurs_actifs": indicator_reference_payload,
     }
 
 
@@ -4772,6 +4879,7 @@ def render_review_simulation_glossary_expander() -> None:
         ["Alertes actives", "Liste textuelle des alertes calculées du dossier, concaténées dans un ordre fixe."],
         ["Explique moi", "Restitution textuelle de l’analyse opérationnelle de revue. Le tableau affiche ‘a lire’ quand un contenu existe."],
         ["Analyse IA structurée", "JSON structuré renvoyé par l’Agent IA et réutilisé pour les PDF de revue et de classification."],
+        ["Référentiel des indicateurs actifs", "Expander affichant le référentiel des indicateurs transmis à l’Agent IA ; seule la colonne ‘Sens métier de l’indicateur pour l’IA’ est modifiable depuis l’écran."],
         ["PDF(s)", "Téléchargement du PDF du SIREN sélectionné, ou d’un ZIP quand plusieurs PDF existent déjà pour ce dossier."],
         ["ZIP PDF", "Téléchargement de tous les PDF structurés déjà générés sur le périmètre courant."],
         ["CSV", "Export du tableau visible de l’écran Revues & Simulations après application des filtres."],
@@ -4852,7 +4960,7 @@ def render_review_simulation_glossary_expander() -> None:
         ],
         [
             "Agent IA",
-            f"Traitement du lot courant sur au plus {GEMINI_MAX_BATCH_SIZE} SIREN sélectionnés. L’agent reçoit un payload structuré avec contexte_simulation, alertes_calculees, donnees_base_source, indicateurs_source et indicateurs_source_groupes ; il renseigne ‘Explique moi’, l’analyse IA structurée, le statut estimé et déclenche la génération / mise à jour des PDF.",
+            f"Traitement du lot courant sur au plus {GEMINI_MAX_BATCH_SIZE} SIREN sélectionnés. L’agent reçoit un payload structuré avec contexte_simulation, alertes_calculees, donnees_base_source, indicateurs_source, indicateurs_source_groupes et referentiel_indicateurs_actifs ; il renseigne ‘Explique moi’, l’analyse IA structurée, le statut estimé et déclenche la génération / mise à jour des PDF.",
             "Sélection courante",
             "Le bouton est désactivé sans sélection ou sans clé Agent IA.",
         ],
@@ -4861,6 +4969,12 @@ def render_review_simulation_glossary_expander() -> None:
             "Dans le tableau, le contenu textuel est remplacé par ‘a lire’ si la cellule contient du texte ; un clic ouvre la restitution complète en grand format.",
             "Tableau visible",
             "Le texte complet reste stocké dans le magasin persistant des revues.",
+        ],
+        [
+            "Référentiel des indicateurs actifs",
+            "Table chargée depuis le fichier Excel du référentiel s’il est disponible, sinon depuis le référentiel intégré au script. Seule la colonne ‘Sens métier de l’indicateur pour l’IA’ est éditable ; les colonnes Famille et Indicateur d’alerte restent figées.",
+            "Écran Revues & Simulations",
+            "Le référentiel édité dans la session est renvoyé à l’Agent IA dans le bloc ‘referentiel_indicateurs_actifs’.",
         ],
         [
             "Export CSV",
@@ -4897,6 +5011,38 @@ def render_review_simulation_glossary_expander() -> None:
 
 
 
+def render_review_simulation_indicator_reference_expander() -> None:
+    ensure_review_simulation_indicator_reference_state()
+    reference_df = get_review_simulation_indicator_reference_df()
+    source_label = str(st.session_state.get(REVIEW_SIM_INDICATOR_REFERENCE_SOURCE_STATE, "Référentiel intégré par défaut."))
+
+    with st.expander("Référentiel des indicateurs actifs (sens métier pour l’IA)", expanded=False):
+        st.caption(
+            "Ce tableau sert de référentiel d’interprétation métier pour l’Agent IA sur l’écran Revues & Simulations. "
+            "Seule la colonne ‘Sens métier de l’indicateur pour l’IA’ est modifiable depuis l’écran."
+        )
+        st.caption(source_label)
+        edited_df = st.data_editor(
+            reference_df,
+            key=REVIEW_SIM_INDICATOR_REFERENCE_EDITOR_KEY,
+            hide_index=True,
+            use_container_width=True,
+            num_rows="fixed",
+            disabled=["Famille", "Indicateur d’alerte"],
+            column_config={
+                "Famille": st.column_config.TextColumn("Famille", width="medium"),
+                "Indicateur d’alerte": st.column_config.TextColumn("Indicateur d’alerte", width="medium"),
+                "Sens métier de l’indicateur pour l’IA": st.column_config.TextColumn(
+                    "Sens métier de l’indicateur pour l’IA",
+                    width="large",
+                ),
+            },
+            height=760,
+        )
+        st.session_state[REVIEW_SIM_INDICATOR_REFERENCE_STATE] = sanitize_indicator_reference_df(pd.DataFrame(edited_df))
+        st.caption("Les modifications sont conservées dans la session courante et sont ajoutées au contexte envoyé à l’Agent IA.")
+
+
 def render_review_simulations_screen(portfolio: pd.DataFrame, user: dict) -> None:
     render_home_hero("Revues & Simulations")
     nav = render_primary_navigation("review_simulations")
@@ -4910,6 +5056,7 @@ def render_review_simulations_screen(portfolio: pd.DataFrame, user: dict) -> Non
         open_review_dates_view()
         st.rerun()
 
+    ensure_review_simulation_indicator_reference_state()
     base_df = build_review_simulation_working_table(portfolio)
     if base_df.empty:
         st.info("Aucun SIREN disponible pour préparer une revue sur le périmètre courant.")
@@ -4921,6 +5068,7 @@ Tu reçois en entrée la fiche client complète disponible pour le SIREN analys�
 - donnees_base_source
 - indicateurs_source
 - indicateurs_source_groupes
+- referentiel_indicateurs_actifs
 - alertes_calculees
 
 Consigne impérative :
@@ -4944,6 +5092,7 @@ Règles d’analyse :
 - Appuie-toi explicitement sur la fiche client complète.
 - Analyse les vrais indicateurs de la source 02 présents dans `indicateurs_source_groupes`.
 - Utilise exactement les noms des indicateurs fournis dans `indicateurs_source_groupes[].nom_indicateur`.
+- Utilise aussi `referentiel_indicateurs_actifs[].sens_metier` pour comprendre la signification métier des indicateurs, sans renommer les indicateurs de la source 02.
 - N’invente pas d’indicateur absent de la source 02.
 - N’agrège pas plusieurs indicateurs dans un seul objet.
 - Si un indicateur ne justifie pas d’action particulière, indique-le clairement de façon proportionnée.
@@ -5441,6 +5590,7 @@ Tu dois répondre exclusivement en JSON valide, sans texte avant ni après, avec
 
     review_simulation_emit_feedback()
 
+    render_review_simulation_indicator_reference_expander()
     render_review_simulation_glossary_expander()
 
     render_review_simulation_explain_overlay(working_df)
