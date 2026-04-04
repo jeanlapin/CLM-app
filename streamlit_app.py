@@ -333,7 +333,51 @@ INDICATOR_REFERENCE_GLOBAL_GUARDRAILS = [
     "Toujours raisonner à partir du sens métier de l’indicateur avant de proposer une action.",
     "Quand une donnée métier précise manque, écrire à préciser plutôt que produire une interprétation libre.",
     "Ne pas transformer un classement interne BeCLM en affirmation générale sur un pays, un secteur ou une forme juridique.",
+    "Les valeurs détaillées, seuils, règles de calcul et paramétrages internes BeCLM ne sont pas communiqués à l’IA ; ils ne doivent jamais être supposés.",
+    "Le dispositif proposé doit venir de la nature de l’alerte et des meilleures pratiques de due diligence, pas d’une logique interne BeCLM supposée.",
 ]
+BECLM_METHODOLOGY_FRAME = {
+    "limites_information": [
+        "Les valeurs détaillées des indicateurs, les seuils de déclenchement, les pondérations et les paramétrages internes BeCLM ne sont pas communiqués à l’IA.",
+        "Le statut d’un indicateur ne permet pas, à lui seul, de déduire le motif exact de déclenchement ni la règle interne utilisée par BeCLM.",
+        "L’IA ne doit jamais construire une recommandation comme si elle connaissait une valeur cachée, un seuil interne ou une configuration BeCLM non fournie dans la fiche.",
+    ],
+    "posture_attendue": [
+        "L’IA agit comme un compliance officer senior spécialisé KYC / EDD / LCB-FT.",
+        "Pour chaque alerte, l’IA applique les meilleures pratiques de due diligence adaptées à la nature de l’alerte, de façon proportionnée, traçable, opérationnelle et défendable.",
+        "Quand une donnée manque, l’IA le dit explicitement et propose la diligence standard la plus pertinente sans extrapoler sur une logique interne cachée.",
+    ],
+    "exemples_imperatifs": [
+        "Exemple Risque pays UE : si le pays exact, la contrepartie ou le flux précis ne sont pas explicitement fournis, ne nommer aucun pays ; raisonner sur une alerte géographique potentiellement sensible au sens UE et écrire pays concerné à préciser si nécessaire.",
+        "Exemple SIREN / Catégorie juridique : si la forme juridique exacte ou la logique de classement BeCLM ne sont pas fournies, ne pas inventer la raison précise du déclenchement ; proposer les diligences usuelles liées à une structure juridique potentiellement complexe, opaque ou à clarifier.",
+    ],
+}
+INDICATOR_REFERENCE_INTERPRETATION_LIMITS = {
+    "Risque pays GAFI": "La valeur détaillée, le pays exact et la règle de déclenchement interne ne sont pas communiqués ; ne pas nommer un pays absent de la fiche et raisonner sur une vigilance géographique au sens GAFI.",
+    "Risque pays UE": "La valeur détaillée, le pays exact et la règle de déclenchement interne ne sont pas communiqués ; ne pas nommer un pays absent de la fiche et raisonner sur une vigilance géographique au sens UE.",
+    "Risque pays FR": "La valeur détaillée et la logique interne de classement France / BeCLM ne sont pas communiquées ; ne pas transformer cet indicateur en affirmation générale sur la France ou sur un pays précis.",
+    "Risque pays Bale Institute": "La valeur détaillée, le pays exact et la logique de score type Basel / Bale ne sont pas communiqués ; raisonner sur un signal de risque géographique fondé sur un indice et non sur une liste de sanctions ou GAFI.",
+    "Cross border": "La valeur détaillée et les flux précis ne sont pas nécessairement communiqués ; ne pas nommer un pays ou une contrepartie absents de la fiche et raisonner sur le caractère transfrontalier des opérations.",
+    "SIREN / Catégorie juridique": "La forme juridique exacte ayant motivé le signal et la logique interne BeCLM ne sont pas forcément communiquées ; ne pas inventer la raison précise du déclenchement.",
+    "Segment": "Le sens détaillé du segment peut relever d’une classification interne BeCLM ; ne pas inventer la logique exacte du segment si elle n’est pas fournie.",
+    "Produit(service) principal": "Le détail de la taxonomie interne des produits sensibles n’est pas entièrement communiqué ; ne pas inventer une logique interne cachée et raisonner sur la nature du produit explicitement visible.",
+    "Part des opérations avec produits(services) hauts risques 12 m": "La liste exacte des produits classés haut risque et les seuils internes BeCLM ne sont pas communiqués ; ne pas inventer le motif précis de classement.",
+    "Canal principal 12m": "Le détail complet du paramétrage canal BeCLM n’est pas communiqué ; ne pas déduire une logique interne cachée à partir du seul libellé.",
+    "Part des opérations à distance 12m": "Le seuil interne exact et les règles de scoring distance ne sont pas communiqués ; raisonner sur les meilleures pratiques liées au non-présentiel sans surinterpréter une valeur cachée.",
+}
+INDICATOR_REFERENCE_DUE_DILIGENCE_GUIDANCE = {
+    "Risque pays GAFI": "Appliquer les meilleures pratiques de due diligence géographique : identifier les pays et contreparties concernés s’ils sont connus, comprendre la nature des flux, vérifier la cohérence économique et documenter les contreparties et justificatifs associés.",
+    "Risque pays UE": "Appliquer les meilleures pratiques de due diligence géographique : identifier les pays et contreparties concernés s’ils sont connus, comprendre la nature des flux, vérifier la cohérence économique et documenter les contreparties et justificatifs associés.",
+    "Risque pays FR": "Appliquer les meilleures pratiques de clarification du signal géographique : comprendre l’exposition réelle, documenter le pays ou le rattachement concerné s’il est connu et conserver une formulation prudente si le motif exact n’est pas communiqué.",
+    "Risque pays Bale Institute": "Appliquer les meilleures pratiques de due diligence géographique en vérifiant la réalité de l’exposition internationale, les contreparties, les flux, leur cohérence économique et la documentation disponible.",
+    "Cross border": "Appliquer les meilleures pratiques sur les flux transfrontaliers : identifier les pays, contreparties, motifs économiques, circuits financiers, documents commerciaux et éléments de traçabilité lorsque ces informations sont disponibles.",
+    "SIREN / Catégorie juridique": "Appliquer les meilleures pratiques de due diligence structurelle : clarifier la forme juridique, la gouvernance, les organes de contrôle, les pouvoirs, les bénéficiaires effectifs, l’objet social et la substance de la structure.",
+    "Segment": "Appliquer les meilleures pratiques liées à une classification interne : confirmer le segment retenu, vérifier sa cohérence avec l’activité, la taille, les flux et le profil du client, et documenter les diligences proportionnées au segment.",
+    "Produit(service) principal": "Appliquer les meilleures pratiques de due diligence produit : comprendre la nature du produit ou service, ses caractéristiques sensibles, sa clientèle, ses flux, son circuit économique et les justificatifs métier pertinents.",
+    "Part des opérations avec produits(services) hauts risques 12 m": "Appliquer les meilleures pratiques de due diligence produit : identifier les produits ou services concernés, leur poids réel dans l’activité, la justification économique et les contrôles associés.",
+    "Canal principal 12m": "Appliquer les meilleures pratiques de due diligence canal : documenter le parcours client, la présence de tiers, les modalités d’entrée en relation, les points de contrôle et la traçabilité.",
+    "Part des opérations à distance 12m": "Appliquer les meilleures pratiques de due diligence non présentielle : fiabilisation de l’identité, preuves de parcours, contrôles de cohérence, sécurité et conservation des traces.",
+}
 INDICATOR_REFERENCE_STRICT_RULES = {
     "Risque pays GAFI": {
         "must_include_any": ["gafi", "liste grise", "liste noire"],
@@ -2594,6 +2638,8 @@ def build_indicator_reference_guardrails(indicator_names: list[str] | None = Non
                 "nom_indicateur": prompt_json_value(item["nom_indicateur"]),
                 "must_include_any": prompt_json_value(rules.get("must_include_any", [])),
                 "must_not_include": prompt_json_value(rules.get("must_not_include", [])),
+                "limites_interpretation": prompt_json_value(INDICATOR_REFERENCE_INTERPRETATION_LIMITS.get(item["nom_indicateur"], "Les valeurs détaillées, seuils et paramétrages internes BeCLM ne sont pas communiqués ; raisonner à partir de la nature de l’alerte et rester prudent.")),
+                "approche_due_diligence": prompt_json_value(INDICATOR_REFERENCE_DUE_DILIGENCE_GUIDANCE.get(item["nom_indicateur"], "Appliquer les meilleures pratiques de due diligence adaptées à la nature de l’alerte, de façon proportionnée, traçable et défendable.")),
             }
         )
     return guardrails
@@ -2625,6 +2671,8 @@ def build_indicator_reference_payload(indicator_names: list[str] | None = None) 
                     "must_include_any": prompt_json_value(strict_rules.get("must_include_any", [])),
                     "must_not_include": prompt_json_value(strict_rules.get("must_not_include", [])),
                 },
+                "limites_interpretation": prompt_json_value(INDICATOR_REFERENCE_INTERPRETATION_LIMITS.get(indicator_name, "Les valeurs détaillées, seuils et paramétrages internes BeCLM ne sont pas communiqués ; raisonner à partir de la nature de l’alerte et rester prudent.")),
+                "approche_due_diligence": prompt_json_value(INDICATOR_REFERENCE_DUE_DILIGENCE_GUIDANCE.get(indicator_name, "Appliquer les meilleures pratiques de due diligence adaptées à la nature de l’alerte, de façon proportionnée, traçable et défendable.")),
             }
         )
     return payload
@@ -2698,6 +2746,7 @@ def build_gemini_source_payload(row: pd.Series) -> dict[str, object]:
         "referentiel_indicateurs_actifs": indicator_reference_payload,
         "garde_fous_referentiel_globaux": prompt_json_value(INDICATOR_REFERENCE_GLOBAL_GUARDRAILS),
         "garde_fous_referentiel_indicateurs": build_indicator_reference_guardrails(active_indicator_names),
+        "cadre_methodologique_beclm": prompt_json_value(BECLM_METHODOLOGY_FRAME),
     }
 
 
@@ -3034,6 +3083,20 @@ def format_review_prompt_template(prompt_template: str, row: pd.Series) -> str:
     return prompt
 
 
+def build_beclm_methodology_prompt_lines() -> str:
+    lines: list[str] = []
+    for title, items in [
+        ("Limites d’information", BECLM_METHODOLOGY_FRAME.get("limites_information", [])),
+        ("Posture attendue", BECLM_METHODOLOGY_FRAME.get("posture_attendue", [])),
+        ("Exemples impératifs", BECLM_METHODOLOGY_FRAME.get("exemples_imperatifs", [])),
+    ]:
+        cleaned = [str(item).strip() for item in items if str(item).strip()]
+        if not cleaned:
+            continue
+        lines.append(f"- {title} :")
+        lines.extend([f"  - {item}" for item in cleaned])
+    return "\n".join(lines)
+
 def build_active_indicator_reference_prompt_lines(row: pd.Series) -> str:
     active_names = available_indicator_names_from_row(row)
     reference = indicator_reference_map()
@@ -3050,6 +3113,12 @@ def build_active_indicator_reference_prompt_lines(row: pd.Series) -> str:
             lines.append(f"  Points à refléter explicitement dans l’analyse : {', '.join(must_include)}.")
         if must_not_include:
             lines.append(f"  Formulations interdites ou trompeuses : {', '.join(must_not_include)}.")
+        interpretation_limit = INDICATOR_REFERENCE_INTERPRETATION_LIMITS.get(item["nom_indicateur"], "Les valeurs détaillées, seuils et paramétrages internes BeCLM ne sont pas communiqués ; raisonner à partir de la nature de l’alerte et rester prudent.")
+        if interpretation_limit:
+            lines.append(f"  Limites d’interprétation : {interpretation_limit}")
+        due_diligence = INDICATOR_REFERENCE_DUE_DILIGENCE_GUIDANCE.get(item["nom_indicateur"], "Appliquer les meilleures pratiques de due diligence adaptées à la nature de l’alerte, de façon proportionnée, traçable et défendable.")
+        if due_diligence:
+            lines.append(f"  Approche attendue de due diligence : {due_diligence}")
     return "\n".join(lines)
 
 
@@ -3106,6 +3175,12 @@ def build_gemini_review_prompt(base_prompt: str, row: pd.Series, correction_issu
         "Garde-fous globaux d’interprétation (impératifs et prioritaires sur toute interprétation libre) :\n- "
         + "\n- ".join(INDICATOR_REFERENCE_GLOBAL_GUARDRAILS)
     )
+    methodology_lines = build_beclm_methodology_prompt_lines()
+    if methodology_lines:
+        prompt_parts.append(
+            "Cadre méthodologique BeCLM à respecter strictement :\n"
+            + methodology_lines
+        )
     active_indicator_reference_lines = build_active_indicator_reference_prompt_lines(row)
     if active_indicator_reference_lines:
         prompt_parts.append(
@@ -3125,8 +3200,12 @@ def build_gemini_review_prompt(base_prompt: str, row: pd.Series, correction_issu
         "Réponds exclusivement avec un JSON valide conforme au schéma demandé.\n"
         f"La valeur de 'statut_estime' doit être exactement l’une des suivantes : {', '.join(VIGILANCE_ORDER)}.\n"
         "Tu dois analyser chaque indicateur de la source 02 à partir de son sens métier BeCLM et des données réellement présentes dans la fiche.\n"
+        "Les valeurs détaillées des indicateurs, les seuils de déclenchement, les pondérations et les paramétrages internes BeCLM ne te sont pas communiqués : tu ne peux pas les supposer ni bâtir ton dispositif comme si tu les connaissais.\n"
+        "Tu interviens comme un compliance officer senior : pour chaque alerte, applique les meilleures pratiques de due diligence adaptées au cas, de façon proportionnée, opérationnelle et défendable.\n"
         "Ne renomme aucun indicateur. N’invente ni pays, ni personnes, ni faits, ni documents absents de la fiche.\n"
-        "Quand une donnée métier précise manque, écris à préciser au lieu d’extrapoler.\n"
+        "Quand une donnée métier précise manque, écris à préciser ou non communiqué par BeCLM au lieu d’extrapoler.\n"
+        "Exemple impératif : pour Risque pays UE, si le pays exact n’est pas explicitement fourni, ne cite aucun pays et reste sur une diligence géographique générique au sens UE.\n"
+        "Exemple impératif : pour SIREN / Catégorie juridique, si la forme exacte ou la logique de classement BeCLM n’est pas fournie, n’invente pas la raison précise du déclenchement et propose les diligences standard sur la structure juridique à clarifier.\n"
         "Pour les indicateurs pays, distingue explicitement GAFI, UE, FR, Bale Institute et Cross border ; ils ne sont pas synonymes.\n"
         "Le diagnostic et le statut estimé doivent être déterminés à partir de l’ensemble des données de base source, de l’ensemble des indicateurs source et des alertes calculées, et pas uniquement à partir de leur synthèse."
     )
@@ -5325,7 +5404,7 @@ def render_review_simulation_glossary_expander() -> None:
         ],
         [
             "Agent IA",
-            f"Traitement du lot courant sur au plus {GEMINI_MAX_BATCH_SIZE} SIREN sélectionnés. L’agent reçoit un payload structuré avec contexte_simulation, alertes_calculees, donnees_base_source, indicateurs_source, indicateurs_source_groupes, referentiel_indicateurs_actifs et les garde-fous du référentiel durci ; il renseigne ‘Explique moi’, l’analyse IA structurée, le statut estimé et déclenche la génération / mise à jour des PDF, avec un contrôle qualité et une éventuelle seconde tentative automatique.",
+            f"Traitement du lot courant sur au plus {GEMINI_MAX_BATCH_SIZE} SIREN sélectionnés. L’agent reçoit un payload structuré avec contexte_simulation, alertes_calculees, donnees_base_source, indicateurs_source, indicateurs_source_groupes, referentiel_indicateurs_actifs, le cadre méthodologique BeCLM et les garde-fous du référentiel durci ; il renseigne ‘Explique moi’, l’analyse IA structurée, le statut estimé et déclenche la génération / mise à jour des PDF, avec un contrôle qualité et une éventuelle seconde tentative automatique.",
             "Sélection courante",
             "Le bouton est désactivé sans sélection ou sans clé Agent IA.",
         ],
@@ -5339,7 +5418,7 @@ def render_review_simulation_glossary_expander() -> None:
             "Référentiel des indicateurs actifs",
             "Table construite sur un socle durci BeCLM intégré au script. Si un fichier Excel de référentiel est disponible, seuls les indicateurs additionnels hors socle peuvent le compléter au chargement ; dans l’écran, seule la colonne ‘Sens métier de l’indicateur pour l’IA’ est éditable et les colonnes Famille et Indicateur d’alerte restent figées.",
             "Écran Revues & Simulations",
-            "Le référentiel édité dans la session est renvoyé à l’Agent IA dans le bloc ‘referentiel_indicateurs_actifs’, accompagné de garde-fous globaux et par indicateur ; l’appel Gemini peut être rejoué automatiquement une fois si la première réponse n’est pas assez conforme au référentiel durci.",
+            "Le référentiel édité dans la session est renvoyé à l’Agent IA dans le bloc ‘referentiel_indicateurs_actifs’, accompagné d’un cadre méthodologique BeCLM et de garde-fous globaux et par indicateur ; l’appel Gemini peut être rejoué automatiquement une fois si la première réponse n’est pas assez conforme au référentiel durci.",
         ],
         [
             "Export CSV",
@@ -5436,6 +5515,7 @@ Tu reçois en entrée la fiche client complète disponible pour le SIREN analys�
 - referentiel_indicateurs_actifs
 - garde_fous_referentiel_globaux
 - garde_fous_referentiel_indicateurs
+- cadre_methodologique_beclm
 - alertes_calculees
 
 Consignes impératives :
@@ -5444,17 +5524,25 @@ Consignes impératives :
    - toutes les données de base de la société,
    - l’ensemble des indicateurs,
    - les alertes calculées,
-   - le référentiel durci BeCLM et ses garde-fous.
+   - le référentiel durci BeCLM, ses garde-fous et le cadre méthodologique BeCLM.
 3. Le référentiel BeCLM prévaut sur toute interprétation libre : tu dois t’appuyer explicitement sur le sens métier de chaque indicateur.
 4. Tu ne dois pas faire une analyse générique. Tu dois t’appuyer explicitement sur les informations concrètes de la fiche client.
-5. Si une information est absente, incohérente ou non exploitable, tu le signales clairement en écrivant à préciser plutôt que d’extrapoler.
-6. Tu n’inventes jamais de pays, de personnes, de faits, de flux, de documents ou d’événements absents de la fiche.
-7. Tu ne renommes jamais les indicateurs de la source 02.
-8. Tu ne dois jamais traiter GAFI, UE, FR, Bale Institute et Cross border comme des synonymes.
-9. La profondeur d’analyse, le niveau d’exigence, les mesures d’atténuation, les contrôles et les pièces demandées doivent être adaptés :
+5. Les valeurs détaillées des indicateurs, les seuils de déclenchement, les pondérations et les paramétrages internes BeCLM ne te sont pas communiqués. Tu ne peux donc ni les deviner ni raisonner comme s’ils étaient connus.
+6. Le statut d’un indicateur ne te donne pas, à lui seul, le motif exact de déclenchement ni la logique interne BeCLM. Tu ne dois pas inventer ce motif exact.
+7. Tu es un compliance officer senior : pour chaque alerte, tu dois appliquer les meilleures pratiques de due diligence adaptées au cas, de façon proportionnée, traçable, opérationnelle et défendable.
+8. Quand une information est absente, incohérente ou non exploitable, tu le signales clairement en écrivant à préciser ou non communiqué par BeCLM plutôt que d’extrapoler.
+9. Tu n’inventes jamais de pays, de personnes, de faits, de flux, de documents, de valeurs cachées ou d’événements absents de la fiche.
+10. Tu ne renommes jamais les indicateurs de la source 02.
+11. Tu ne dois jamais traiter GAFI, UE, FR, Bale Institute et Cross border comme des synonymes.
+12. La profondeur d’analyse, le niveau d’exigence, les mesures d’atténuation, les contrôles et les pièces demandées doivent être adaptés :
    - au statut de vigilance réel,
    - au niveau de risque global,
    - et au statut réel de chaque indicateur.
+13. Tu dois proposer un dispositif basé sur la nature de l’alerte et sur les meilleures pratiques de conformité, jamais sur une valeur interne BeCLM supposée.
+
+Exemples impératifs :
+- Exemple Risque pays UE : si le pays exact, la contrepartie ou le flux précis ne sont pas explicitement fournis, ne nomme aucun pays et ne crée aucun scénario spécifique ; propose une diligence géographique générique au sens UE et écris pays concerné à préciser si nécessaire.
+- Exemple SIREN / Catégorie juridique : si la forme juridique exacte ou la logique de classement BeCLM ne sont pas fournies, ne déduis pas la raison précise du déclenchement ; propose les diligences usuelles sur la structure, la gouvernance, la transparence et l’identification des parties prenantes.
 
 Objectif :
 Produire une analyse opérationnelle pour la revue du SIREN avec une sortie JSON structurée directement exploitable par l’application et par le PDF.
@@ -5463,9 +5551,9 @@ Règles d’analyse :
 - Appuie-toi explicitement sur la fiche client complète.
 - Analyse les vrais indicateurs de la source 02 présents dans `indicateurs_source_groupes`.
 - Utilise exactement les noms des indicateurs fournis dans `indicateurs_source_groupes[].nom_indicateur`.
-- Utilise `referentiel_indicateurs_actifs[].sens_metier` pour comprendre la signification métier des indicateurs et `regles_strictes` pour éviter les contresens.
+- Utilise `referentiel_indicateurs_actifs[].sens_metier` pour comprendre la signification métier des indicateurs, `regles_strictes` pour éviter les contresens et `cadre_methodologique_beclm` pour respecter les limites d’interprétation.
 - Si un indicateur relève d’un classement interne ou référentiel BeCLM, dis-le explicitement.
-- Quand une donnée métier précise manque, écris `à préciser` et n’invente pas.
+- Quand une donnée métier précise manque, écris `à préciser` ou `non communiqué par BeCLM` et n’invente pas.
 - Pour les indicateurs pays, distingue explicitement :
   - le classement GAFI,
   - la liste ou le référentiel UE,
@@ -5475,7 +5563,7 @@ Règles d’analyse :
 - N’invente pas d’indicateur absent de la source 02.
 - N’agrège pas plusieurs indicateurs dans un seul objet.
 - Si un indicateur ne justifie pas d’action particulière, indique-le clairement de façon proportionnée.
-- Si un indicateur appelle un renforcement, détaille précisément ce qui doit être contrôlé et quelles pièces sont attendues.
+- Si un indicateur appelle un renforcement, détaille précisément ce qui doit être contrôlé et quelles pièces sont attendues, en t’appuyant sur les meilleures pratiques de due diligence adaptées au cas.
 
 Contenu attendu :
 1. `explication_generale`
@@ -5492,6 +5580,7 @@ Contenu attendu :
   - `controles_necessaires`
   - `pieces_a_demander`
 - Les éléments doivent être concrets, opérationnels, directement exploitables par un analyste et alignés sur le sens métier BeCLM.
+- Les recommandations doivent être fondées sur la nature de l’alerte et sur les meilleures pratiques de due diligence, pas sur un seuil ou une valeur interne supposés.
 
 3. `conclusion_generale`
 - Conclusion synthétique générale.
@@ -5513,11 +5602,11 @@ Tu dois répondre exclusivement en JSON valide, sans texte avant ni après, avec
   "analyses_indicateurs": [
     {
       "nom_indicateur": "Nom exact de l’indicateur de la source 02",
-      "constat": "Constat factuel appuyé sur la fiche client et sur le sens métier BeCLM.",
+      "constat": "Constat factuel appuyé sur la fiche client, le sens métier BeCLM et les limites d’interprétation connues.",
       "niveau_attention": "Niveau d’attention ou de risque associé à l’indicateur.",
-      "mesures_attenuation": "Mesures d’atténuation recommandées.",
-      "controles_necessaires": "Contrôles nécessaires à réaliser.",
-      "pieces_a_demander": "Pièces justificatives ou documents à demander."
+      "mesures_attenuation": "Mesures d’atténuation recommandées selon les meilleures pratiques de due diligence.",
+      "controles_necessaires": "Contrôles nécessaires à réaliser selon les meilleures pratiques de conformité.",
+      "pieces_a_demander": "Pièces justificatives ou documents à demander sans supposer une logique interne BeCLM non fournie."
     }
   ],
   "conclusion_generale": "Conclusion synthétique générale et justification du statut estimé.",
@@ -5639,9 +5728,17 @@ Tu dois répondre exclusivement en JSON valide, sans texte avant ni après, avec
         )
         prompt_state_key = "review_sim_show_prompt"
         prompt_value_key = "review_sim_prompt_preview"
+        prompt_version_key = "review_sim_prompt_preview_version"
         current_prompt_value = st.session_state.get(prompt_value_key)
-        if not isinstance(current_prompt_value, str) or not current_prompt_value.strip():
+        prompt_version = str(st.session_state.get(prompt_version_key, "") or "").strip()
+        prompt_needs_refresh = (
+            not isinstance(current_prompt_value, str)
+            or not current_prompt_value.strip()
+            or (prompt_version != "v216" and "Les valeurs détaillées des indicateurs, les seuils de déclenchement" not in str(current_prompt_value))
+        )
+        if prompt_needs_refresh:
             st.session_state[prompt_value_key] = default_prompt
+        st.session_state[prompt_version_key] = "v216"
         control_col, action_col = st.columns([1, 1], gap="medium")
         with control_col:
             st.markdown('<div class="agent-ia-field-label">Clé Agent IA</div>', unsafe_allow_html=True)
