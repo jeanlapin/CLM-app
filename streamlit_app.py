@@ -12526,8 +12526,6 @@ def render_review_planning_screen(portfolio: pd.DataFrame, user: dict) -> None:
         st.warning("Aucun client ne correspond au périmètre société + filtres sélectionnés.")
         return
 
-    render_review_planning_glossary_expander()
-
     st.divider()
     render_review_planning_content(
         filtered,
@@ -12537,6 +12535,9 @@ def render_review_planning_screen(portfolio: pd.DataFrame, user: dict) -> None:
         notice_key="review_schedule_apply_notice",
         persist_settings=True,
     )
+
+    st.divider()
+    render_review_planning_glossary_expander()
 
 
 
