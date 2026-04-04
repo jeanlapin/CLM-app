@@ -12364,6 +12364,121 @@ def render_review_planning_content(
 
 
 
+def render_review_planning_glossary_expander() -> None:
+    glossary_rows = [
+        ["Régime de vigilance", "Niveau de vigilance normalisé utilisé par l’écran de planification : Critique, Élevée, Modérée, Allégée ou Aucune."],
+        ["Fréquence (mois)", "Nombre de mois entre deux revues théoriques pour un régime de vigilance donné."],
+        ["Capacité max / mois", "Nombre maximal de dossiers que l’écran autorise à planifier sur un même mois pour un régime de vigilance donné."],
+        ["Date de base", "Date servant de point de départ au calcul de la prochaine revue théorique."],
+        ["Source date de base", "Origine de la date de base : Date dernière revue, Dernière mise à jour vigilance ou Date du jour si aucune date n’est disponible."],
+        ["Date prochaine revue théorique", "Date obtenue en ajoutant la fréquence du régime à la date de base, avant tout lissage de capacité."],
+        ["Date prochaine revue", "Date finalement planifiée après lissage mensuel et application de la capacité maximale du régime."],
+        ["Mois théorique", "Mois de rattachement de la date théorique de prochaine revue."],
+        ["Mois planifié", "Mois finalement retenu après lissage de la charge mensuelle."],
+        ["Lissé", "Indique si un dossier a été décalé à un mois ultérieur parce que la capacité du mois théorique était déjà atteinte."],
+        ["Décalage (mois)", "Nombre de mois de décalage entre le mois théorique et le mois planifié."],
+        ["Statut planning", "Lecture opérationnelle de l’échéance planifiée : En retard, À 30 jours, 31-90 jours ou Au-delà de 90 jours."],
+        ["Bandeau de synthèse", "Bloc de KPI résumant le volume planifié, la charge du mois courant, les dossiers lissés et les régimes les plus sensibles."],
+        ["Table de planification", "Tableau exportable par SIREN avec le régime, la fréquence, la date de base, la date théorique, la date planifiée et le lissage."],
+        ["Diffuser dans l’onglet 01", "Action d’écriture qui met à jour la colonne Date prochaine revue du fichier 01 sur le périmètre courant."],
+    ]
+
+    calc_rows = [
+        [
+            "Base de l’écran Planification",
+            "Le portefeuille filtré est transformé en calendrier de revues : normalisation du régime de vigilance, choix d’une date de base, calcul d’une date théorique puis lissage mensuel selon la capacité paramétrée par régime.",
+            "SIREN du périmètre courant",
+            "Les réglages de fréquence et de capacité sont modifiables par régime et réutilisés dans tout l’écran.",
+        ],
+        [
+            "Régime de vigilance",
+            "Normalisation de la colonne ‘Vigilance’ : texte contenant critique → Vigilance Critique ; élevée → Vigilance Élevée ; modérée → Vigilance Modérée ; allégée → Vigilance Allégée ; aucune → Vigilance Aucune ; à défaut → Vigilance Aucune.",
+            "Société",
+            "Cette normalisation alimente à la fois la fréquence par défaut et la capacité mensuelle du régime.",
+        ],
+        [
+            "Date de base",
+            "Priorité de calcul : 1) Date dernière revue si renseignée ; sinon 2) Vigilance Date de mise à jour ; sinon 3) Date du jour.",
+            "Société",
+            "La source retenue est affichée dans la colonne ‘Source date de base’.",
+        ],
+        [
+            "Date prochaine revue théorique",
+            "Date de base + fréquence (en mois) du régime de vigilance, puis normalisation sur la journée correspondante du mois cible.",
+            "Société",
+            "Cette date est calculée avant tout lissage de charge.",
+        ],
+        [
+            "Lissage mensuel",
+            "Pour chaque régime, tri par date théorique puis placement dans le mois théorique si la capacité n’est pas atteinte ; sinon décalage mois par mois jusqu’au premier mois disponible.",
+            "Régime × mois",
+            "Le lissage ne mélange pas les capacités de régimes différents.",
+        ],
+        [
+            "Capacité max / mois",
+            "Valeur paramétrable par régime, avec plancher à 1. Si le nombre de dossiers du mois théorique dépasse cette capacité, les dossiers excédentaires sont décalés sur les mois suivants.",
+            "Régime de vigilance",
+            "La capacité par défaut dépend du régime mais peut être modifiée à l’écran puis persistée.",
+        ],
+        [
+            "Lissé / Décalage (mois)",
+            "Lissé = Oui si le mois planifié est différent du mois théorique ; Décalage (mois) = nb de mois entre mois théorique et mois planifié.",
+            "Société",
+            "Permet de visualiser l’impact du lissage sur la charge de travail.",
+        ],
+        [
+            "Statut planning",
+            "Calcul sur l’écart entre la date planifiée et la date du jour : < 0 jour = En retard ; ≤ 30 jours = À 30 jours ; ≤ 90 jours = 31-90 jours ; sinon = Au-delà de 90 jours.",
+            "Société",
+            "La date planifiée est utilisée et non la date théorique.",
+        ],
+        [
+            "Jalons temporels de l’ensemble des revues",
+            "Agrégation mensuelle des dates planifiées : groupby(Mois planifié, Régime de vigilance), puis affichage en barres empilées avec total mensuel.",
+            "Périmètre filtré",
+            "L’horizon affiché couvre au moins les 12 prochains mois et s’étend si des dates planifiées vont au-delà.",
+        ],
+        [
+            "Bandeau de synthèse",
+            "SIREN planifiés = nb de lignes du calendrier ; Revues ce mois = nb de dates planifiées dans le mois courant ; Dossiers lissés = count(Lissé == Oui) ; En retard théorique = count(Date théorique < date du jour).",
+            "Périmètre filtré",
+            "Les compteurs Vigilance critique et Vigilance élevée proviennent directement de la colonne Régime de vigilance du calendrier.",
+        ],
+        [
+            "Table de planification / Export CSV",
+            "Export du calendrier visible par SIREN avec les colonnes régime, fréquence, date de base, date théorique, date planifiée, lissage et décalage.",
+            "Périmètre filtré",
+            "Le CSV reflète exactement le périmètre courant après filtres et réglages de fréquence/capacité.",
+        ],
+        [
+            "Diffuser dans l’onglet 01",
+            "Écriture des dates planifiées dans la colonne ‘Date prochaine revue’ du fichier 01 pour les couples [Société, SIREN] du périmètre courant.",
+            "Périmètre filtré",
+            "Réservé à l’administrateur et appliqué uniquement sur la base active.",
+        ],
+    ]
+
+    with st.expander("Glossaire & calculs de l’écran Planification des revues", expanded=False):
+        st.caption("Aide documentaire de lecture. Ce bloc n’a aucun impact sur les calculs, les lissages ni les diffusions de l’écran.")
+
+        glossary_tab, calculation_tab = st.tabs(["Glossaire", "Calculs"])
+
+        with glossary_tab:
+            st.dataframe(
+                pd.DataFrame(glossary_rows, columns=["Terme", "Définition"]),
+                use_container_width=True,
+                hide_index=True,
+                height=520,
+            )
+
+        with calculation_tab:
+            render_reference_table(
+                pd.DataFrame(calc_rows, columns=["Indicateur", "Calcul / règle", "Périmètre", "Note"]),
+                column_min_widths=["250px", "760px", "210px", "500px"],
+            )
+
+
+
 def render_review_planning_screen(portfolio: pd.DataFrame, user: dict) -> None:
     render_home_hero("Planification des revues")
     nav = render_primary_navigation("review_dates")
@@ -12410,6 +12525,8 @@ def render_review_planning_screen(portfolio: pd.DataFrame, user: dict) -> None:
     if filtered.empty:
         st.warning("Aucun client ne correspond au périmètre société + filtres sélectionnés.")
         return
+
+    render_review_planning_glossary_expander()
 
     st.divider()
     render_review_planning_content(
