@@ -12518,6 +12518,119 @@ def build_latest_history_snapshot(history_df: pd.DataFrame) -> pd.DataFrame:
 
 
 
+def build_indicator_snapshot_rows(indicator_rows: pd.DataFrame, *, suffix: str) -> pd.DataFrame:
+    base_columns = list(KEY_COLUMNS)
+    if indicator_rows is None or indicator_rows.empty:
+        empty = pd.DataFrame(columns=base_columns)
+        empty[f"Vigilance_{suffix}"] = pd.Series(dtype="string")
+        empty[f"Risque_{suffix}"] = pd.Series(dtype="string")
+        empty[f"Date_snapshot_{suffix}"] = pd.Series(dtype="datetime64[ns]")
+        empty["_cm_history_order"] = pd.Series(dtype="int64")
+        for label in RISK_ORDER:
+            empty[f"Nb_{normalize_text_for_matching(label).replace(' ', '_')}_{suffix}"] = pd.Series(dtype="int64")
+        return empty
+
+    records: list[dict[str, object]] = []
+    for row_order, (_, row) in enumerate(indicator_rows.iterrows()):
+        item: dict[str, object] = {
+            SOC_COL: row.get(SOC_COL),
+            "SIREN": row.get("SIREN"),
+            f"Vigilance_{suffix}": canonical_vigilance_label(row.get("Vigilance statut")) or pd.NA,
+            f"Risque_{suffix}": derive_indicator_row_risk(row) or pd.NA,
+            f"Date_snapshot_{suffix}": compute_latest_indicator_update_from_row(row),
+            "_cm_history_order": row_order,
+        }
+        counts = build_indicator_status_counts_from_row(row)
+        for label in RISK_ORDER:
+            safe_label = normalize_text_for_matching(label).replace(" ", "_")
+            item[f"Nb_{safe_label}_{suffix}"] = int(counts.get(label, 0))
+        records.append(item)
+
+    snapshot = pd.DataFrame(records)
+    if snapshot.empty:
+        return snapshot
+    for col in [f"Vigilance_{suffix}", f"Risque_{suffix}"]:
+        snapshot[col] = snapshot[col].astype("string")
+    snapshot[f"Date_snapshot_{suffix}"] = pd.to_datetime(snapshot[f"Date_snapshot_{suffix}"], errors="coerce")
+    snapshot["_cm_history_order"] = pd.to_numeric(snapshot["_cm_history_order"], errors="coerce").fillna(0).astype(int)
+    for label in RISK_ORDER:
+        safe_label = normalize_text_for_matching(label).replace(" ", "_")
+        col = f"Nb_{safe_label}_{suffix}"
+        snapshot[col] = pd.to_numeric(snapshot[col], errors="coerce").fillna(0).astype(int)
+    return snapshot.reset_index(drop=True)
+
+
+
+def build_history_timeline_summary(history_df: pd.DataFrame) -> tuple[pd.DataFrame, dict[str, pd.Series], dict[str, pd.Series]]:
+    if history_df is None or history_df.empty:
+        empty = pd.DataFrame(columns=[
+            SOC_COL,
+            "SIREN",
+            "Nb snapshots historiques",
+            "Première date historique",
+            "Dernière date historique",
+            "Vigilance_historique_depart",
+            "Risque_historique_depart",
+            "Vigilance_historique_dernier",
+            "Risque_historique_dernier",
+            "Changement_historique_vigilance",
+            "Changement_historique_risque",
+            "Historique_a_bouge",
+        ])
+        return empty, {}, {}
+
+    raw_rows = history_df.reset_index(drop=True).copy()
+    snapshot_rows = build_indicator_snapshot_rows(raw_rows, suffix="historique")
+    if snapshot_rows.empty:
+        return pd.DataFrame(), {}, {}
+
+    first_rows_by_key: dict[str, pd.Series] = {}
+    last_rows_by_key: dict[str, pd.Series] = {}
+    summaries: list[dict[str, object]] = []
+    for (soc, siren), group in snapshot_rows.groupby(KEY_COLUMNS, dropna=False, sort=False):
+        ordered = group.copy()
+        ordered["_cm_date_sort"] = pd.to_datetime(ordered["Date_snapshot_historique"], errors="coerce")
+        ordered = ordered.sort_values(["_cm_date_sort", "_cm_history_order"], ascending=[True, True], na_position="last", kind="stable")
+        if ordered.empty:
+            continue
+        first_row = ordered.iloc[0].copy()
+        last_row = ordered.iloc[-1].copy()
+        first_raw = raw_rows.iloc[int(first_row.get("_cm_history_order", 0) or 0)].copy()
+        last_raw = raw_rows.iloc[int(last_row.get("_cm_history_order", 0) or 0)].copy()
+        key = f"{soc}|{siren}"
+        first_rows_by_key[key] = first_raw
+        last_rows_by_key[key] = last_raw
+        unique_vigilance = {str(v).strip() for v in ordered["Vigilance_historique"].dropna().astype(str) if str(v).strip()}
+        unique_risk = {str(v).strip() for v in ordered["Risque_historique"].dropna().astype(str) if str(v).strip()}
+        change_vig = len(unique_vigilance) > 1
+        change_risk = len(unique_risk) > 1
+        summaries.append({
+            SOC_COL: soc,
+            "SIREN": siren,
+            "Nb snapshots historiques": int(len(ordered)),
+            "Première date historique": pd.to_datetime(first_row.get("Date_snapshot_historique"), errors="coerce"),
+            "Dernière date historique": pd.to_datetime(last_row.get("Date_snapshot_historique"), errors="coerce"),
+            "Vigilance_historique_depart": first_row.get("Vigilance_historique"),
+            "Risque_historique_depart": first_row.get("Risque_historique"),
+            "Vigilance_historique_dernier": last_row.get("Vigilance_historique"),
+            "Risque_historique_dernier": last_row.get("Risque_historique"),
+            "Changement_historique_vigilance": bool(change_vig),
+            "Changement_historique_risque": bool(change_risk),
+            "Historique_a_bouge": bool(change_vig or change_risk),
+        })
+    summary = pd.DataFrame(summaries)
+    if summary.empty:
+        return summary, first_rows_by_key, last_rows_by_key
+    for col in ["Vigilance_historique_depart", "Risque_historique_depart", "Vigilance_historique_dernier", "Risque_historique_dernier"]:
+        summary[col] = summary[col].astype("string")
+    for col in ["Première date historique", "Dernière date historique"]:
+        summary[col] = pd.to_datetime(summary[col], errors="coerce")
+    for col in ["Nb snapshots historiques"]:
+        summary[col] = pd.to_numeric(summary[col], errors="coerce").fillna(0).astype(int)
+    return summary.reset_index(drop=True), first_rows_by_key, last_rows_by_key
+
+
+
 def build_indicator_status_counts_from_row(row: pd.Series) -> dict[str, int]:
     counts = {label: 0 for label in RISK_ORDER}
     for column_name in row.index:
@@ -12702,23 +12815,36 @@ def build_evolution_comparison_dataset(
     identity_columns = [col for col in identity_columns if col in portfolio_df.columns]
     current_identity = build_unique_client_snapshot(portfolio_df, identity_columns)
     current_snapshot = build_indicator_snapshot_frame(indicators_df, suffix="courant")
+    history_summary, first_history_rows_by_key, last_history_rows_by_key = build_history_timeline_summary(history_df)
     latest_history_rows = build_latest_history_snapshot(history_df)
-    history_snapshot = build_indicator_snapshot_frame(latest_history_rows, suffix="historique")
 
     merged = current_identity.merge(current_snapshot, on=KEY_COLUMNS, how="left")
-    merged = merged.merge(history_snapshot, on=KEY_COLUMNS, how="left")
-    merged["Historique disponible"] = merged.get("Vigilance_historique", pd.Series(index=merged.index, dtype="string")).notna()
-    merged["Vigilance historique"] = merged.get("Vigilance_historique").fillna("Sans historique")
+    merged = merged.merge(history_summary, on=KEY_COLUMNS, how="left")
+    merged["Historique disponible"] = merged.get("Vigilance_historique_depart", pd.Series(index=merged.index, dtype="string")).notna()
+    merged["Vigilance historique"] = merged.get("Vigilance_historique_depart").fillna("Sans historique")
+    merged["Vigilance dernier historique"] = merged.get("Vigilance_historique_dernier").fillna("Sans historique")
     merged["Vigilance courante"] = merged.get("Vigilance_courant").fillna("Non renseigné")
-    merged["Risque historique"] = merged.get("Risque_historique").fillna("Sans historique")
+    merged["Risque historique"] = merged.get("Risque_historique_depart").fillna("Sans historique")
+    merged["Risque dernier historique"] = merged.get("Risque_historique_dernier").fillna("Sans historique")
     merged["Risque courant"] = merged.get("Risque_courant").fillna("Non renseigné")
-    merged["Dernière date historique"] = pd.to_datetime(merged.get("Date_snapshot_historique"), errors="coerce")
+    merged["Première date historique"] = pd.to_datetime(merged.get("Première date historique"), errors="coerce")
+    merged["Dernière date historique"] = pd.to_datetime(merged.get("Dernière date historique"), errors="coerce")
+    merged["Nb snapshots historiques"] = pd.to_numeric(merged.get("Nb snapshots historiques"), errors="coerce").fillna(0).astype(int)
+    merged["Historique a bougé"] = merged.get("Historique_a_bouge", pd.Series(False, index=merged.index)).fillna(False).astype(bool)
     merged["Évolution vigilance"] = merged.apply(
-        lambda row: compare_ranked_status(row.get("Vigilance_historique"), row.get("Vigilance_courant"), VIGILANCE_RANK),
+        lambda row: compare_ranked_status(row.get("Vigilance_historique_depart"), row.get("Vigilance_courant"), VIGILANCE_RANK),
         axis=1,
     )
     merged["Évolution risque"] = merged.apply(
-        lambda row: compare_ranked_status(row.get("Risque_historique"), row.get("Risque_courant"), RISK_RANK),
+        lambda row: compare_ranked_status(row.get("Risque_historique_depart"), row.get("Risque_courant"), RISK_RANK),
+        axis=1,
+    )
+    merged["Évolution historique vigilance"] = merged.apply(
+        lambda row: compare_ranked_status(row.get("Vigilance_historique_depart"), row.get("Vigilance_historique_dernier"), VIGILANCE_RANK),
+        axis=1,
+    )
+    merged["Évolution historique risque"] = merged.apply(
+        lambda row: compare_ranked_status(row.get("Risque_historique_depart"), row.get("Risque_historique_dernier"), RISK_RANK),
         axis=1,
     )
 
@@ -12727,10 +12853,6 @@ def build_evolution_comparison_dataset(
     current_rows_by_key = {
         f"{row.get(SOC_COL)}|{row.get('SIREN')}": row
         for _, row in indicators_df.iterrows()
-    }
-    history_rows_by_key = {
-        f"{row.get(SOC_COL)}|{row.get('SIREN')}": row
-        for _, row in latest_history_rows.iterrows()
     }
 
     overall_evolution: list[str] = []
@@ -12744,7 +12866,7 @@ def build_evolution_comparison_dataset(
     for _, merged_row in merged.iterrows():
         client_key = f"{merged_row.get(SOC_COL)}|{merged_row.get('SIREN')}"
         current_row = current_rows_by_key.get(client_key)
-        history_row = history_rows_by_key.get(client_key)
+        history_row = first_history_rows_by_key.get(client_key)
         deltas = build_client_indicator_deltas(current_row, history_row) if current_row is not None else pd.DataFrame()
         detail_map[client_key] = deltas
         degraded = int(deltas["Évolution"].eq("Se dégrade").sum()) if not deltas.empty else 0
@@ -12780,6 +12902,8 @@ def build_evolution_comparison_dataset(
             overall_evolution.append("Se dégrade")
         elif "S’améliore" in {vig_change, risk_change} and "Se dégrade" not in {vig_change, risk_change}:
             overall_evolution.append("S’améliore")
+        elif bool(merged_row.get("Historique a bougé")):
+            overall_evolution.append("A bougé dans l’historique")
         elif vig_change == "Stable" and risk_change == "Stable":
             overall_evolution.append("Stable")
         else:
@@ -12844,8 +12968,8 @@ def build_evolution_comparison_dataset(
         indicator_agg = indicator_agg.sort_values(["Solde net", "Nb se dégrade", "Indicateur"], ascending=[False, False, True], kind="stable").reset_index(drop=True)
 
     merged = merged.sort_values(
-        ["Bascule majeure", "Nb indicateurs aggravés", "Évolution globale", "Dénomination"],
-        ascending=[False, False, True, True],
+        ["Bascule majeure", "Historique a bougé", "Nb indicateurs aggravés", "Évolution globale", "Dénomination"],
+        ascending=[False, False, False, True, True],
         kind="stable",
     ).reset_index(drop=True)
     return merged, indicator_agg, detail_map, latest_history_rows
@@ -12910,11 +13034,11 @@ def filter_evolution_dataframe(df: pd.DataFrame, evolution_filter: str) -> pd.Da
 
 def render_evolution_glossary_expander() -> None:
     glossary_rows = [
-        ["Dernier historique", "État le plus récent disponible dans le fichier 03 pour un couple Société / SIREN, déterminé à partir de la date maximale de mise à jour des indicateurs."],
+        ["Premier historique", "État historique le plus ancien exploitable dans le fichier 03 pour un couple Société / SIREN. Il sert de point de départ de comparaison dans l’écran Évolution."],
         ["Courant", "État actuel issu du fichier 02 pour le couple Société / SIREN."],
-        ["Évolution vigilance", "Comparaison entre la vigilance du dernier historique et la vigilance courante : Se dégrade, S’améliore, Stable ou Sans historique."],
-        ["Évolution risque", "Comparaison entre le risque agrégé issu des statuts indicateurs du dernier historique et le risque agrégé issu des statuts indicateurs courants."],
-        ["Évolution globale", "Lecture synthétique par société : Se dégrade si vigilance ou risque se dégrade ; S’améliore si au moins un axe s’améliore sans dégradation ; Stable si les deux axes sont stables ; Sans historique sinon."],
+        ["Évolution vigilance", "Comparaison entre la vigilance du premier historique exploitable et la vigilance courante : Se dégrade, S’améliore, Stable ou Sans historique."],
+        ["Évolution risque", "Comparaison entre le risque agrégé issu des statuts indicateurs du premier historique exploitable et le risque agrégé issu des statuts indicateurs courants."],
+        ["Évolution globale", "Lecture synthétique par société : Se dégrade si vigilance ou risque se dégrade ; S’améliore si au moins un axe s’améliore sans dégradation ; A bougé dans l’historique si le dossier a changé dans le fichier 03 mais sans écart net entre départ et courant ; Stable si rien n’a bougé ; Sans historique sinon."],
         ["Bascule majeure", "Oui si la société entre en vigilance critique / élevée, passe en risque avéré, ou cumule au moins deux indicateurs qui se dégradent entre le dernier historique et le courant."],
         ["Indicateurs aggravés", "Indicateurs dont le statut courant est plus sévère que le statut du dernier historique."],
         ["Indicateurs nouveaux", "Indicateurs présents au courant mais absents du dernier historique disponible."],
@@ -12924,13 +13048,13 @@ def render_evolution_glossary_expander() -> None:
     calc_rows = [
         [
             "Socle de comparaison",
-            "L’écran compare le dernier état historique disponible du fichier 03 au courant du fichier 02, société par société. Il ne reconstitue pas encore toute la timeline multi-snapshots.",
+            "L’écran compare le premier état historique exploitable du fichier 03 au courant du fichier 02, société par société. Il ne reconstitue pas encore toute la timeline multi-snapshots, mais il signale lorsqu’un dossier a bougé à l’intérieur de l’historique.",
             "Société / SIREN",
             "V1 de l’écran Évolution : pilotage simple, robuste et lisible.",
         ],
         [
             "Vigilance historique et courante",
-            "Vigilance courante = colonne ‘Vigilance statut’ du fichier 02 normalisée. Vigilance historique = même logique sur le dernier état retenu dans le fichier 03.",
+            "Vigilance courante = colonne ‘Vigilance statut’ du fichier 02 normalisée. Vigilance historique = même logique sur le premier état exploitable retenu dans le fichier 03 ; le dernier historique reste visible pour comprendre les mouvements intermédiaires.",
             "Société",
             "La comparaison s’effectue uniquement si un historique existe.",
         ],
@@ -12997,7 +13121,7 @@ def render_evolution_screen(portfolio: pd.DataFrame, indicators: pd.DataFrame, h
     top_left, top_right = st.columns([5.4, 1.1])
     with top_left:
         st.markdown('<h3 class="cm-section-title">Évolution du portefeuille</h3>', unsafe_allow_html=True)
-        st.caption("Comparaison V1 entre le dernier historique disponible du fichier 03 et l’état courant du fichier 02, société par société.")
+        st.caption("Comparaison V1 entre le premier historique disponible du fichier 03 et l’état courant du fichier 02, avec signalement des dossiers qui ont bougé à l’intérieur de l’historique.")
     with top_right:
         if st.button("Réinitialiser", type="secondary", key="evolution_reset"):
             for label in ANALYSIS_PORTFOLIO_FILTER_LABELS:
@@ -13024,7 +13148,7 @@ def render_evolution_screen(portfolio: pd.DataFrame, indicators: pd.DataFrame, h
     with extra_left:
         evolution_filter = st.selectbox(
             "Lecture",
-            options=["Tous", "Se dégrade", "S’améliore", "Stable", "Sans historique", "Bascules majeures"],
+            options=["Tous", "Se dégrade", "S’améliore", "A bougé dans l’historique", "Stable", "Sans historique", "Bascules majeures"],
             key="evolution_global_filter",
         )
     with extra_right:
@@ -13068,12 +13192,13 @@ def render_evolution_screen(portfolio: pd.DataFrame, indicators: pd.DataFrame, h
     c1, c2, c3, c4, c5, c6 = st.columns(6)
     c1.metric("Sociétés analysées", f"{total_clients:,}".replace(",", " "))
     coverage_ratio = (comparable_clients / total_clients) if total_clients else 0.0
+    history_moved_clients = int(evolution_df["Historique a bougé"].fillna(False).astype(bool).sum())
     c2.metric("Avec historique", f"{comparable_clients:,}".replace(",", " "), delta=f"{coverage_ratio:.0%} couverts")
     c3.metric("En dégradation", f"{degraded_clients:,}".replace(",", " "))
     c4.metric("En amélioration", f"{improved_clients:,}".replace(",", " "))
     c5.metric("Δ Vigilance critique", f"{current_critical:,}".replace(",", " "), delta=f"{current_critical - historical_critical:+d}")
     c6.metric("Δ Risque avéré", f"{current_confirmed:,}".replace(",", " "), delta=f"{current_confirmed - historical_confirmed:+d}")
-    st.caption(f"Bascules majeures détectées : {major_switches} dossier(s). Les clients sans historique restent visibles mais ne sont pas intégrés aux matrices de transition.")
+    st.caption(f"Bascules majeures détectées : {major_switches} dossier(s). Dossiers ayant bougé dans l’historique : {history_moved_clients}. Les clients sans historique restent visibles mais ne sont pas intégrés aux matrices de transition.")
 
     if comparable_clients == 0:
         st.warning("Le périmètre filtré ne contient pas encore d’historique exploitable dans le fichier 03. L’écran est prêt, mais il n’y a pas encore de comparaison possible.")
@@ -13091,7 +13216,7 @@ def render_evolution_screen(portfolio: pd.DataFrame, indicators: pd.DataFrame, h
             status_type="vigilance",
         )
         st.altair_chart(
-            build_evolution_distribution_chart(vig_chart_df, title="Vigilance : dernier historique vs courant", order=VIGILANCE_ORDER, status_type="vigilance"),
+            build_evolution_distribution_chart(vig_chart_df, title="Vigilance : premier historique vs courant", order=VIGILANCE_ORDER, status_type="vigilance"),
             use_container_width=True,
         )
     with right_chart:
@@ -13103,14 +13228,14 @@ def render_evolution_screen(portfolio: pd.DataFrame, indicators: pd.DataFrame, h
             status_type="risk",
         )
         st.altair_chart(
-            build_evolution_distribution_chart(risk_chart_df, title="Risque : dernier historique vs courant", order=RISK_ORDER, status_type="risk"),
+            build_evolution_distribution_chart(risk_chart_df, title="Risque : premier historique vs courant", order=RISK_ORDER, status_type="risk"),
             use_container_width=True,
         )
 
     st.divider()
     m1, m2 = st.columns(2)
     with m1:
-        st.markdown('<div class="cm-subsection-title">Transitions de vigilance</div>', unsafe_allow_html=True)
+        st.markdown('<div class="cm-subsection-title">Transitions de vigilance (premier historique → courant)</div>', unsafe_allow_html=True)
         vigilance_matrix = build_evolution_transition_matrix(
             evolution_df,
             historical_col="Vigilance historique",
@@ -13119,7 +13244,7 @@ def render_evolution_screen(portfolio: pd.DataFrame, indicators: pd.DataFrame, h
         ).reset_index()
         render_small_table(vigilance_matrix, bold_numbers=False, scroll_x=True)
     with m2:
-        st.markdown('<div class="cm-subsection-title">Transitions de risque</div>', unsafe_allow_html=True)
+        st.markdown('<div class="cm-subsection-title">Transitions de risque (premier historique → courant)</div>', unsafe_allow_html=True)
         risk_matrix = build_evolution_transition_matrix(
             evolution_df,
             historical_col="Risque historique",
@@ -13133,22 +13258,29 @@ def render_evolution_screen(portfolio: pd.DataFrame, indicators: pd.DataFrame, h
     company_table = evolution_df[[
         "SIREN",
         "Dénomination",
+        "Première date historique",
+        "Dernière date historique",
+        "Nb snapshots historiques",
         "Vigilance historique",
+        "Vigilance dernier historique",
         "Vigilance courante",
         "Évolution vigilance",
         "Risque historique",
+        "Risque dernier historique",
         "Risque courant",
         "Évolution risque",
+        "Historique a bougé",
         "Nb indicateurs aggravés",
         "Nb indicateurs améliorés",
         "Nb indicateurs stables",
         "Nb indicateurs nouveaux",
         "Nb indicateurs sortis",
-        "Dernière date historique",
         "Évolution globale",
         "Bascule majeure",
     ]].copy()
+    company_table["Première date historique"] = pd.to_datetime(company_table["Première date historique"], errors="coerce").dt.strftime("%d/%m/%Y").fillna("Sans historique")
     company_table["Dernière date historique"] = pd.to_datetime(company_table["Dernière date historique"], errors="coerce").dt.strftime("%d/%m/%Y").fillna("Sans historique")
+    company_table["Historique a bougé"] = np.where(company_table["Historique a bougé"].fillna(False).astype(bool), "Oui", "Non")
     company_table = filter_evolution_dataframe(company_table.join(evolution_df[[SOC_COL]]), evolution_filter).drop(columns=[SOC_COL], errors="ignore")
     st.dataframe(company_table, use_container_width=True, hide_index=True, height=420)
     if not company_table.empty:
@@ -13229,9 +13361,11 @@ def render_evolution_screen(portfolio: pd.DataFrame, indicators: pd.DataFrame, h
                 ("SIREN", selected_row.get("SIREN"), None),
                 ("Dénomination", selected_row.get("Dénomination"), None),
                 ("Vigilance historique", selected_row.get("Vigilance historique"), None),
+                ("Vigilance dernier historique", selected_row.get("Vigilance dernier historique"), None),
                 ("Vigilance courante", selected_row.get("Vigilance courante"), None),
                 ("Évolution vigilance", selected_row.get("Évolution vigilance"), None),
                 ("Risque historique", selected_row.get("Risque historique"), None),
+                ("Risque dernier historique", selected_row.get("Risque dernier historique"), None),
                 ("Risque courant", selected_row.get("Risque courant"), None),
                 ("Évolution risque", selected_row.get("Évolution risque"), None),
             ]
@@ -13240,7 +13374,10 @@ def render_evolution_screen(portfolio: pd.DataFrame, indicators: pd.DataFrame, h
             synthesis = pd.DataFrame(
                 [
                     ["Historique disponible", "Oui" if bool(selected_row.get("Historique disponible")) else "Non"],
+                    ["Nb snapshots historiques", int(selected_row.get("Nb snapshots historiques", 0) or 0)],
+                    ["Première date historique", display_value(selected_row.get("Première date historique"))],
                     ["Dernière date historique", display_value(selected_row.get("Dernière date historique"))],
+                    ["Historique a bougé", "Oui" if bool(selected_row.get("Historique a bougé")) else "Non"],
                     ["Nb indicateurs aggravés", int(selected_row.get("Nb indicateurs aggravés", 0) or 0)],
                     ["Nb indicateurs améliorés", int(selected_row.get("Nb indicateurs améliorés", 0) or 0)],
                     ["Nb indicateurs nouveaux", int(selected_row.get("Nb indicateurs nouveaux", 0) or 0)],
