@@ -5500,6 +5500,9 @@ def render_review_simulations_screen(portfolio: pd.DataFrame, user: dict) -> Non
     if nav == "review_dates":
         open_review_dates_view()
         st.rerun()
+    if nav == "evolution":
+        open_evolution_view()
+        st.rerun()
 
     ensure_review_simulation_indicator_reference_state()
     base_df = build_review_simulation_working_table(portfolio)
@@ -11533,6 +11536,9 @@ def render_analysis_screen(portfolio: pd.DataFrame, indicators: pd.DataFrame) ->
         st.rerun()
     if nav == "review_simulations":
         open_review_simulations_view()
+        st.rerun()
+    if nav == "evolution":
+        open_evolution_view()
         st.rerun()
 
     top_left, top_right = st.columns([5.4, 1.2])
