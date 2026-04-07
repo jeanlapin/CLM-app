@@ -455,6 +455,12 @@ FILTER_MAPPING = {
 }
 
 ANALYSIS_STATUS_ORDER = list(RISK_ORDER)
+ANALYSIS_CONTRIBUTIVE_STATUS_ORDER = [
+    "Risque avéré",
+    "Risque potentiel",
+    "Risque mitigé",
+    "Risque levé",
+]
 ANALYSIS_STATUS_DISPLAY = {
     "Aucun risque détecté": "Sans risque",
 }
@@ -6974,11 +6980,11 @@ def analysis_committee_report_prepare_top_table(df: pd.DataFrame, *, max_rows: i
 
 
 def analysis_committee_report_prepare_indicator_table(indicator_table: pd.DataFrame, *, max_rows: int = 10) -> pd.DataFrame:
-    columns = ["Indicateur"] + ANALYSIS_STATUS_ORDER + ["Total cas"]
+    columns = ["Indicateur"] + ANALYSIS_CONTRIBUTIVE_STATUS_ORDER + ["Total cas"]
     if indicator_table is None or indicator_table.empty:
-        return pd.DataFrame(columns=["Indicateur"] + [analysis_status_ui_label(status) for status in ANALYSIS_STATUS_ORDER] + ["Total cas"])
+        return pd.DataFrame(columns=["Indicateur"] + [analysis_status_ui_label(status) for status in ANALYSIS_CONTRIBUTIVE_STATUS_ORDER] + ["Total cas"])
     export = indicator_table[[col for col in columns if col in indicator_table.columns]].copy().head(max_rows)
-    export = export.rename(columns={status: analysis_status_ui_label(status) for status in ANALYSIS_STATUS_ORDER})
+    export = export.rename(columns={status: analysis_status_ui_label(status) for status in ANALYSIS_CONTRIBUTIVE_STATUS_ORDER})
     return export.reset_index(drop=True)
 
 
@@ -8678,7 +8684,7 @@ def render_analysis_glossary_expander() -> None:
         ["Top pays", "Bloc de concentration des indicateurs rattachés à la famille Indicateurs Pays."],
         ["Top produits", "Bloc de concentration des indicateurs rattachés à la famille Indicateurs Produits."],
         ["Top canaux", "Bloc de concentration des indicateurs rattachés à la famille Indicateurs Canal."],
-        ["Indicateurs les plus contributifs", "Classement des indicateurs présentant le plus grand nombre total de cas sur le périmètre filtré."],
+        ["Indicateurs les plus contributifs", "Classement des indicateurs présentant le plus grand nombre de cas réellement contributifs sur le périmètre filtré, hors Sans risque et Non calculable."],
         ["Lecture détaillée des dimensions", "Table de drill-down permettant de partir d’une dimension et d’ouvrir les clients sous-jacents, sans modifier les calculs de Portefeuille."],
         ["Clients sous-jacents", "Liste opérationnelle des clients correspondant au focus sélectionné dans l’écran Analyse."],
     ]
@@ -8752,9 +8758,9 @@ def render_analysis_glossary_expander() -> None:
         ],
         [
             "Indicateurs les plus contributifs",
-            "Table croisée Indicateur × Statut, puis Total cas = somme des 6 statuts ; tri décroissant sur Total cas",
+            "Table croisée Indicateur × Statut, puis Total cas = somme des 4 statuts contributifs (Risque avéré, Risque potentiel, Risque mitigé, Risque levé). Les statuts Sans risque et Non calculable sont exclus du calcul ; tri décroissant sur Total cas.",
             "Indicateur",
-            "Conserve la présentation actuelle du bloc de contribution.",
+            "Le bloc conserve une lecture par indicateur, mais la contribution exclut explicitement Sans risque et Non calculable.",
         ],
         [
             "Filtres Analyse",
@@ -10924,16 +10930,19 @@ def build_analysis_screen_payload(
 
 @st.cache_data(show_spinner=False)
 def build_indicator_analysis_table(indicator_scope: pd.DataFrame) -> pd.DataFrame:
-    columns = ["Indicateur"] + ANALYSIS_STATUS_ORDER + ["Total cas"]
+    columns = ["Indicateur"] + ANALYSIS_CONTRIBUTIVE_STATUS_ORDER + ["Total cas"]
     if indicator_scope is None or indicator_scope.empty:
         return pd.DataFrame(columns=columns)
 
     work = indicator_scope.copy()
     crosstab = pd.crosstab(work["Indicateur"], work["Statut"])
-    for status in ANALYSIS_STATUS_ORDER:
+    for status in ANALYSIS_CONTRIBUTIVE_STATUS_ORDER:
         if status not in crosstab.columns:
             crosstab[status] = 0
-    crosstab["Total cas"] = crosstab[ANALYSIS_STATUS_ORDER].sum(axis=1)
+    crosstab["Total cas"] = crosstab[ANALYSIS_CONTRIBUTIVE_STATUS_ORDER].sum(axis=1)
+    crosstab = crosstab[crosstab["Total cas"] > 0]
+    if crosstab.empty:
+        return pd.DataFrame(columns=columns)
     result = crosstab.reset_index().sort_values(["Total cas", "Indicateur"], ascending=[False, True], kind="stable")
     return result[columns].head(10).reset_index(drop=True)
 
@@ -10944,7 +10953,7 @@ def render_indicator_contribution_chart(indicator_table: pd.DataFrame) -> None:
         return
 
     df = indicator_table.copy().head(10).reset_index(drop=True)
-    numeric_cols = ANALYSIS_STATUS_ORDER + ["Total cas"]
+    numeric_cols = ANALYSIS_CONTRIBUTIVE_STATUS_ORDER + ["Total cas"]
     for col in numeric_cols:
         if col in df.columns:
             df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0).astype(int)
@@ -10970,7 +10979,7 @@ def render_indicator_contribution_chart(indicator_table: pd.DataFrame) -> None:
         rank_fg = "#FFFFFF" if rank <= 3 else PRIMARY_COLOR
         label = escape(str(row.get("Indicateur", "")))
         chips = []
-        for status in ANALYSIS_STATUS_ORDER:
+        for status in ANALYSIS_CONTRIBUTIVE_STATUS_ORDER:
             chip_value = int(row.get(status, 0))
             chip_color = chip_colors.get(status, "#667085")
             chip_label = analysis_status_short_label(status)
@@ -11572,7 +11581,7 @@ def render_analysis_screen(portfolio: pd.DataFrame, indicators: pd.DataFrame) ->
     top_left, top_right = st.columns([5.4, 1.2])
     with top_left:
         st.markdown('<h3 class="cm-section-title">Analyse des indicateurs d’alerte</h3>', unsafe_allow_html=True)
-        st.caption("Le haut de l’écran est consacré aux indicateurs d’alerte : filtres, synthèse, répartitions et concentrations. Le bloc ‘Indicateurs les plus contributifs’ est conservé dans sa présentation de lecture actuelle.")
+        st.caption("Le haut de l’écran est consacré aux indicateurs d’alerte : filtres, synthèse, répartitions et concentrations. Le bloc ‘Indicateurs les plus contributifs’ conserve sa présentation, mais son calcul exclut explicitement les statuts Sans risque et Non calculable.")
     with top_right:
         if st.button("Réinitialiser", type="secondary", key="analysis_reset_all"):
             reset_filters()
