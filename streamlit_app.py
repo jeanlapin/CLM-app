@@ -9706,6 +9706,24 @@ def render_client_screen(
     indicator_rows = indicators[(indicators[SOC_COL] == societe_id) & (indicators["SIREN"] == siren)]
     history_rows = history[(history[SOC_COL] == societe_id) & (history["SIREN"] == siren)]
 
+    render_home_hero("Fiche client")
+    nav = render_primary_navigation("client")
+    if nav == "portfolio":
+        open_portfolio_view()
+        st.rerun()
+    if nav == "analysis":
+        open_analysis_view()
+        st.rerun()
+    if nav == "review_dates":
+        open_review_dates_view()
+        st.rerun()
+    if nav == "review_simulations":
+        open_review_simulations_view()
+        st.rerun()
+    if nav == "evolution":
+        open_evolution_view()
+        st.rerun()
+
     top_left, top_right = st.columns([6, 1])
     with top_left:
         render_client_header(client_row)
@@ -9730,33 +9748,43 @@ def render_client_screen(
 
 
 
+PRIMARY_NAV_LABEL_MAP = {
+    "portfolio": "Portefeuille",
+    "client": "Portefeuille",
+    "analysis": "Analyse",
+    "review_dates": "Planification des revues",
+    "review_simulations": "Revues & Simulations",
+    "evolution": "Évolution",
+}
+PRIMARY_NAV_VIEW_MAP = {label: view for view, label in PRIMARY_NAV_LABEL_MAP.items()}
+PRIMARY_NAV_OPTIONS = list(PRIMARY_NAV_VIEW_MAP.keys())
+
+
+def _set_primary_nav_state_for_view(current_view: str) -> None:
+    current_label = PRIMARY_NAV_LABEL_MAP.get(str(current_view or "portfolio").strip(), "Portefeuille")
+    if st.session_state.get("cm_main_nav_radio") != current_label:
+        st.session_state["cm_main_nav_radio"] = current_label
+
+
+def _on_primary_nav_change() -> None:
+    selected_label = str(st.session_state.get("cm_main_nav_radio", "Portefeuille") or "Portefeuille").strip()
+    next_view = PRIMARY_NAV_VIEW_MAP.get(selected_label, "portfolio")
+    clear_ephemeral_state_if_view_changes(next_view)
+    st.session_state["cm_view"] = next_view
+    st.query_params.clear()
+
+
 def render_primary_navigation(current_view: str) -> str:
-    label_map = {
-        "portfolio": "Portefeuille",
-        "analysis": "Analyse",
-        "review_dates": "Planification des revues",
-        "review_simulations": "Revues & Simulations",
-        "evolution": "Évolution",
-    }
-    options = ["Portefeuille", "Analyse", "Planification des revues", "Revues & Simulations", "Évolution"]
-    current_label = label_map.get(current_view, "Portefeuille")
+    _set_primary_nav_state_for_view(current_view)
     selection = st.radio(
         "Navigation principale",
-        options=options,
+        options=PRIMARY_NAV_OPTIONS,
         horizontal=True,
         label_visibility="collapsed",
-        index=options.index(current_label),
         key="cm_main_nav_radio",
+        on_change=_on_primary_nav_change,
     )
-    if selection == "Analyse":
-        return "analysis"
-    if selection == "Planification des revues":
-        return "review_dates"
-    if selection == "Revues & Simulations":
-        return "review_simulations"
-    if selection == "Évolution":
-        return "evolution"
-    return "portfolio"
+    return PRIMARY_NAV_VIEW_MAP.get(str(selection).strip(), "portfolio")
 
 
 def open_analysis_view() -> None:
